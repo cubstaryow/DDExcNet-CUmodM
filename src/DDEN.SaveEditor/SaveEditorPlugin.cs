@@ -122,15 +122,14 @@ namespace DDEN.SaveEditor
             {
                 if (DdenHub.ManagerLoaded)
                 {
-                    DdenUI.InputGate.Release("saveeditor");
+                    DdenBlocker.Hide();
                     return;
                 }
 
                 if (_standaloneKey != KeyCode.None && Input.GetKeyDown(_standaloneKey)) _standaloneVisible = !_standaloneVisible;
 
-                if (_standaloneVisible) DdenUI.InputGate.Request("saveeditor");
-                else DdenUI.InputGate.Release("saveeditor");
-                DdenUI.InputGate.Enforce();
+                if (_standaloneVisible) DdenBlocker.Show(0.12f);
+                else DdenBlocker.Hide();
             }
             catch (Exception ex)
             {

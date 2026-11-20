@@ -378,9 +378,8 @@ namespace DDEN.MPUnchippedSyncFix
 
                 if (!DdenHub.ManagerLoaded)
                 {
-                    if (_standaloneVisible) DdenUI.InputGate.Request("mpunchipped");
-                    else DdenUI.InputGate.Release("mpunchipped");
-                    DdenUI.InputGate.Enforce();
+                    if (_standaloneVisible) DdenBlocker.Show(0.12f);
+                    else DdenBlocker.Hide();
                 }
 
                 if (!CfgEnabled.Value) return;

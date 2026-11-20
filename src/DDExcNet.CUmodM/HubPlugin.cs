@@ -31,7 +31,8 @@ namespace DDExcNet.CUmodM
         internal static ConfigEntry<float> CfgScale;
         internal static ConfigEntry<bool> CfgAutoFixHotkeys;
         internal static ConfigEntry<bool> CfgScanOnStart;
-        internal static ConfigEntry<bool> CfgBlockGameInput;
+        internal static ConfigEntry<bool> CfgModalBlocker;
+        internal static ConfigEntry<float> CfgBlockerDim;
         internal static ConfigEntry<bool> CfgVerbose;
 
         private Rect _rect = new Rect(80f, 70f, 1180f, 760f);
@@ -40,7 +41,7 @@ namespace DDExcNet.CUmodM
         private Vector2 _configScroll;
         private string _page = "overview";
         private bool _visible;
-        private bool _inputBlocked;
+        private bool _modalActive;
         private float _lastToggleAt = -1f;
         private KeyCode _effectiveKey = KeyCode.F8;
 
@@ -60,9 +61,12 @@ namespace DDExcNet.CUmodM
                 "启动时检测快捷键冲突，冲突则自动改用空闲的 F 键并写入配置。");
             CfgScanOnStart = Config.Bind("Compat", "ScanOnStart", true,
                 "启动时扫描已装模组/补丁栈/旧文件残留，结果显示在“兼容性”页。");
-            CfgBlockGameInput = Config.Bind("UI", "BlockGameInput", true,
-                "鼠标在管理器窗口内时拦截游戏 UI 点击（防止点穿到主菜单的开始/退出）。\n" +
-                "若发现游戏界面反而点不动，把它关掉即可。");
+            CfgModalBlocker = Config.Bind("UI", "ModalBlocker", true,
+                "面板打开时挂一张 uGUI 模态遮罩（和联机模组的做法一样）：吃掉鼠标点击，游戏按钮不会被点穿。\n" +
+                "关闭后不拦截，点击会穿到游戏界面。");
+            CfgBlockerDim = Config.Bind("UI", "BlockerDim", 0.15f,
+                new ConfigDescription("遮罩暗化程度（0 = 全透明只吃点击）。",
+                    new AcceptableValueRange<float>(0f, 0.8f)));
             CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出调试日志。");
 
             Log = DDEN.Shared.Log.For(LogSource, "CUmodM", CfgVerbose.Value);
@@ -214,7 +218,7 @@ namespace DDExcNet.CUmodM
                     Toggle();
                 }
                 if (_visible && Input.GetKeyDown(KeyCode.Escape)) _visible = false;
-                UpdateInputBlock();
+                UpdateBlocker();
             }
             catch (Exception ex)
             {
@@ -222,27 +226,18 @@ namespace DDExcNet.CUmodM
             }
         }
 
-        /// <summary>面板开着就整块屏蔽游戏原交互（uGUI 点击/悬停），关掉立刻恢复。</summary>
-        private void UpdateInputBlock()
+        /// <summary>面板打开时挂 uGUI 模态遮罩（吃掉点击），关闭时撤掉。</summary>
+        private void UpdateBlocker()
         {
-            bool want = _visible && CfgBlockGameInput.Value;
-            if (want) DdenUI.InputGate.Request("hub");
-            else DdenUI.InputGate.Release("hub");
+            bool want = _visible && CfgModalBlocker.Value;
+            if (want) DdenBlocker.Show(CfgBlockerDim.Value);
+            else DdenBlocker.Hide();
 
-            DdenUI.InputGate.Enforce();
-
-            if (want != _inputBlocked)
+            if (want != _modalActive)
             {
-                _inputBlocked = want;
-                Log.Debug(want ? "面板已显示：屏蔽游戏原交互" : "面板已关闭：恢复游戏原交互");
+                _modalActive = want;
+                Log.Debug(want ? "面板已显示：挂上模态遮罩（游戏 UI 点击被吃掉）" : "面板已关闭：撤掉模态遮罩");
             }
-        }
-
-        private void LateUpdate()
-        {
-            // 切场景会新建 EventSystem，这里再压一次，保证“面板开着就一定不响应游戏点击”
-            try { DdenUI.InputGate.Enforce(); }
-            catch (Exception ex) { Log.Debug("LateUpdate: " + ex.Message); }
         }
 
         private void OnGUI()
@@ -520,7 +515,7 @@ namespace DDExcNet.CUmodM
         {
             try
             {
-                DdenUI.InputGate.Clear();
+                DdenBlocker.Hide();
                 PlayerPrefs.SetFloat("DDEN.Hub.X", _rect.x);
                 PlayerPrefs.SetFloat("DDEN.Hub.Y", _rect.y);
                 PlayerPrefs.SetFloat("DDEN.Hub.W", _rect.width);

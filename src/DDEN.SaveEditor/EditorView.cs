@@ -313,10 +313,23 @@ namespace DDEN.SaveEditor
             DdenUI.Section(new Rect(r.x + 8f, r.y + 2f, r.width - 110f, 16f),
                 _limbDiagram ? $"肢体 · 人体图（{LimbLayout.Source}）" : "肢体 · 列表（外=皮肤 内=肌肉）");
 
-            // 图示 / 列表 切换
+            // 图示 / 列表 切换 + 左右侧额外翻转
             if (DdenUI.Button(new Rect(r.xMax - 96f, r.y + 1f, 46f, 18f), _limbDiagram ? "列表" : "图示"))
             {
                 _limbDiagram = !_limbDiagram;
+            }
+            if (_limbDiagram)
+            {
+                if (DdenUI.Button(new Rect(r.xMax - 190f, r.y + 1f, 44f, 18f),
+                        LimbLayout.FlipLeftSide ? "左翻✓" : "左翻", LimbLayout.FlipLeftSide))
+                {
+                    LimbLayout.ToggleFlip(false);
+                }
+                if (DdenUI.Button(new Rect(r.xMax - 142f, r.y + 1f, 44f, 18f),
+                        LimbLayout.FlipRightSide ? "右翻✓" : "右翻", LimbLayout.FlipRightSide))
+                {
+                    LimbLayout.ToggleFlip(true);
+                }
             }
 
             if (!_limbDiagram)
@@ -358,11 +371,18 @@ namespace DDEN.SaveEditor
                 Color col = DdenUI.HealthColor(hp);
                 bool selected = _doc.SelectedLimb == limb.Index;
 
-                if (part.Sprite != null)
+                if (part.Tex != null || part.Sprite != null)
                 {
-                    // 有原版美术就叠一层状态色，没有就用色块
-                    var tint = Color.Lerp(Color.white, col, 0.45f);
-                    DdenUI.DrawSprite(pr, part.Sprite, tint);
+                    // 有原版美术就叠一层状态色；左右镜像用预翻好的贴图（IMGUI 负宽度不可靠）
+                    var tint = Color.Lerp(Color.white, col, 0.40f);
+                    Texture2D tex = LimbLayout.TexFor(part);
+                    bool drew = tex != null
+                        ? DdenUI.DrawTextureUv(pr, tex, part.Uv, tint, false)
+                        : DdenUI.DrawSprite(pr, part.Sprite, tint, LimbLayout.MirrorFor(part));
+                    if (!drew)
+                    {
+                        DdenUI.Fill(pr, new Color(col.r, col.g, col.b, 0.30f + 0.25f * (1f - hp)));
+                    }
                 }
                 else
                 {
