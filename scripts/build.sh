@@ -6,10 +6,7 @@
 #   ./scripts/build.sh Release            # Release 构建，同上
 #   ./scripts/build.sh Debug --with-saveeditor   # 临时把 DDEN.SaveEditor 也部署进去（开发用）
 #
-# 每次部署后会在仓库根目录生成插件备份：
-#   backup/plugins_<时间戳>/*.dll + manifest.txt
-#   backup/latest/            （最近一次部署的副本）
-#   backup/DDEN-plugins-<时间戳>.zip（如果 PowerShell 可用）
+# 注意：本脚本**不再生成插件备份**（2026-11 按用户要求移除）。需要留旧版就在部署前自己复制一份。
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -39,7 +36,7 @@ mkdir -p "$DDEN_DIR"
 
 # 我们的产物清单：**只有这些文件由本脚本负责写/删**。
 # DDEN/ 目录里可能还有别人做的修复 mod，绝不能碰。
-OWNED=("DDEN.Shared.dll" "DDExcNet-CUmodM.dll" "DDEN.MPfix.dll" "DDEN.SaveEditor.dll")
+OWNED=("DDEN.Shared.dll" "DDExcNet-CUmodM.dll" "DDEN.MPfix.dll" "DDEN.NetPerfTracker.dll" "DDEN.SaveEditor.dll")
 LEGACY_IN_DDEN=("DDEN.MPUnchippedSyncFix.dll")
 
 is_owned() {
@@ -51,6 +48,8 @@ is_owned() {
 cp -v "$ROOT/src/DDEN.Shared/bin/$CONFIG/DDEN.Shared.dll"         "$DDEN_DIR/"
 cp -v "$ROOT/src/DDExcNet.CUmodM/bin/$CONFIG/DDExcNet-CUmodM.dll" "$DDEN_DIR/"
 cp -v "$ROOT/src/DDEN.MPfix/bin/$CONFIG/DDEN.MPfix.dll"           "$DDEN_DIR/"
+# 性能分析器：调试用子 mod（不进发布包，但开发时默认部署，方便抓现场）
+cp -v "$ROOT/src/DDEN.NetPerfTracker/bin/$CONFIG/DDEN.NetPerfTracker.dll"             "$DDEN_DIR/"
 
 if [ "$WITH_SAVEEDITOR" = "1" ]; then
   cp -v "$ROOT/src/DDEN.SaveEditor/bin/$CONFIG/DDEN.SaveEditor.dll" "$DDEN_DIR/"
@@ -92,39 +91,5 @@ shopt -u nullglob
 if [ ${#kept[@]} -gt 0 ]; then
   echo "== 保持不动（其它模组 / 非本脚本产物）: ${kept[*]}"
 fi
-
-# ===== 仓库根目录的插件备份 =====
-TS="$(date +%Y%m%d-%H%M%S)"
-BACKUP_ROOT="$ROOT/backup"
-BK="$BACKUP_ROOT/plugins_$TS"
-mkdir -p "$BK"
-
-shopt -s nullglob
-deployed=( "$DDEN_DIR"/*.dll )
-shopt -u nullglob
-if [ ${#deployed[@]} -gt 0 ]; then
-  cp -v "${deployed[@]}" "$BK/"
-fi
-
-{
-  echo "time     : $(date '+%Y-%m-%d %H:%M:%S')"
-  echo "config   : $CONFIG"
-  echo "saveeditor: $([ "$WITH_SAVEEDITOR" = "1" ] && echo deployed || echo skipped)"
-  echo "source   : $DDEN_DIR"
-  echo "files    :"
-  for f in "$BK"/*.dll; do
-    [ -e "$f" ] || continue
-    printf '  %-32s %s bytes  %s\n' "$(basename "$f")" "$(stat -c%s "$f")" "$(md5sum "$f" | cut -d' ' -f1)"
-  done
-} > "$BK/manifest.txt"
-
-rm -rf "$BACKUP_ROOT/latest"
-cp -r "$BK" "$BACKUP_ROOT/latest"
-
-BK_WIN="$(cygpath -m "$BK" 2>/dev/null || echo "$BK")"
-ZIP_WIN="$(cygpath -m "$BACKUP_ROOT/DDEN-plugins-$TS.zip" 2>/dev/null || echo "$BACKUP_ROOT/DDEN-plugins-$TS.zip")"
-powershell.exe -NoProfile -Command "Compress-Archive -Path '$BK_WIN/*' -DestinationPath '$ZIP_WIN' -Force" >/dev/null 2>&1 \
-  && echo "== 备份: backup/plugins_$TS  +  backup/DDEN-plugins-$TS.zip" \
-  || echo "== 备份: backup/plugins_$TS（zip 跳过）"
 
 echo "== 完成。启动游戏后看 BepInEx/LogOutput.log 里的 [CUmodM] / [MPfix] 行（存档编辑器仅 --with-saveeditor 时才有 [SaveEditor]）。"

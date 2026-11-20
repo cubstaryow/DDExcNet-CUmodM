@@ -138,15 +138,17 @@ Together 还会按 attempt 缓存失败回执，同一会话重试仍然失败 �
 表现为“还穿在身上却浮在角色上方”）。**不要**挂到 `Container.UnloadItem / Utils.Create` 上——
 那两个时机一局跑上千次，会把手/包里的物品物理打开。
 
-### 2.5 装备浮在角色头顶附近
+### 2.5 已删除：装备贴合 / 贴图残留 / 孤儿物品（2026-11）
 
-**原因**：正常穿上/手握时局部坐标恒为 0（`Body.WearWearable` 与 `HeldSeat` 都这么设），
-一旦明显非零就说明被别的东西改过（旧版物理保险的位移、同步写回、别的模组）。
+这三节原来分别写的是「装备浮在角色头顶」「身上挂着装备贴图其实没穿」「物品卡在角色身上」。
+**它们对应的模块已整体删除**：`WornItemSnap`、`WearableVisualFix`、`OrphanItemFix`，以及只服务它们的
+`NearbyBodies` 缓存和 7 个开关（`物品物理/SnapWornItems`、`物品物理/SnapMaxPerSession`、
+`联机修正/CleanStaleWearableVisuals`、`联机修正/FixOrphanItems`、`联机修正/MaxOrphanFixPerSession`、
+`性能/ItemSnapScanSeconds`、`性能/WearableVisualScanSeconds`）。
 
-**修法**：`WornItemSnap` —— 穿戴后立即校验 + 每 2 秒扫附近角色，`localPosition` 超过 0.6 单位就归零，
-并把 `parent / localPos / localScale / worldPos` 打进日志（定位到底是谁改的）。
-只改 `localPosition`，**不动 rotation（slotRotation）与 scale（HeldSeat 的肢体补偿）**；每局上限 100 次。
-
+**为什么删**：这三件"病"本来就是早期修复自己造成的（重复修复改了物品父级与 localPosition 导致错位/残留/孤儿），
+其中"贴图残留"从未被证实存在（是上一轮 agent 的推测）。用巡检去猜谁改了父级，风险大于收益 ——
+真出现浮空先查是谁改了父级，别再叠一套会动物品的修复。
 ### 2.6 挖块：血量掉一截又回升、挖掉了又长回来
 
 **现象**：客机挖方块，先掉一段血，紧接着血量回涨一部分；客机那边方块消失了，主机判定没挖掉，
@@ -186,27 +188,7 @@ chunk 同步把原 tile 推回来 → “挖了又出现”。
 **修法**：客机每次打开交易菜单（postfix `PlayerCamera.ToggleTradeMenu`）向主机要一次全量快照，
 走 Together 自己的 `TraderSync.SendTraderState(knetid)`（发包内含 items 列表），不自己序列化任何东西。
 
-### 2.8 身上挂着装备贴图，其实没穿
-
-**原因**：穿戴时 `Wearable.CreateSprites` 在肢体下生成纯视觉子物体（`WearableExtension`，`reference` 指向 Item），
-正常卸下由 `Body.DropWearable → ClearSprites()` 清理；联机里物品常被 `SetParent(null)` / `HeldSeat` 搬走，
-这条路不清理 → 贴图残留。
-
-**修法**：① `DropWearable` 后补一次 `ClearSprites()`（幂等）；② 每 2 秒巡检附近身体的 `WearableExtension`，
-`reference` 为空、或它挂的 Item 已不属于该身体，**连续两次（≥1.5s）**成立才销毁那层视觉。
-只删视觉子物体，绝不碰真实物品。
-
-### 2.9 有件物品卡在角色身上（能打开，但既不算穿着也不在背包）
-
-**原因**：Together 的 `HeldSeat` 把物品挂到 `InventorySlot`（父级=槽位、localPosition=0）来表现远端的手/背包，
-槽位记账错位时物品就一直挂在身体中心，`GetItem(slot)` / `GetAllWearables()` 里都找不到。
-
-**修法**：**只看本地身体**，每 2 秒扫“挂在身体下、父链里没有别的 Item（排除容器内容）、不属于任何槽位/穿戴”的物品，
-连续 2.5 秒成立 → 先 `AutoPickUpItem` 归位；拾不进背包就 `SetParent(null)` 放回地面（物品不删）。
-每局上限 50。**必须避开穿戴兜底正在处理的物品**（`WearGhostFix.RecentlyRequested` 12 秒窗口），
-否则两套修复互相拆台。
-
-### 2.10 娱乐开关「道生一 一生二」
+### 2.8 娱乐开关「道生一 一生二」
 
 主机上给 `Together.TraderCommit.RunBuy(trader, actor, job)` 挂前后缀；购买窗口内由 `Utils.Create` 前缀
 记下生成的 id，后缀在主机侧用同一个 id 再造一件给买家。默认关闭，只主机需要开。
@@ -218,7 +200,7 @@ chunk 同步把原 tile 推回来 → “挖了又出现”。
 ④ `SafeNewGO` 把状态推给客机。模组物品还依赖 `联机合成/FixModItemCraftSpawn` 开着。
 窗口用**时间戳**而不是裸 bool：原方法抛异常时 postfix 不执行，bool 会一直挂着。
 
-### 2.11 已删除：工具耐久同步
+### 2.9 已删除：工具耐久同步
 
 `DurabilityFix` 与配置键 `联机修正/SyncToolDurability` 已整体移除（2026-11）—— 联机模组自身已修好这条。
 它原来要同时猜“主机重跑使用动作时有没有扣过”，双扣/漏扣都比原版更难调，收益不值。
@@ -259,7 +241,7 @@ chunk 同步把原 tile 推回来 → “挖了又出现”。
 ## 五、红线（改代码前先读）
 
 1. 客机永不本地生成物品（合成 / 购买 / 水晶）—— 一切以主机为准，否则必然双份。
-2. 只“打开”不“改写”、只“归位”不“删除”：物理保险不动位置，孤儿/贴图清理不删真实物品，
+2. 只“打开”不“改写”：物理保险不动位置、不删物品，
    幽灵清理先搬内容物、含液体就保留。
 3. 失败要留痕且**不加负缓存**：首次调用可能早于资源/注册表就绪，一旦拉黑整局都失败。
 4. 联机判定宁可不修也不猜人：解析不到发送者就放弃，绝不回落到本机身体。

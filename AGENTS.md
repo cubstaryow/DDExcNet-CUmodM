@@ -8,13 +8,14 @@
 
 ## 0. 这是什么
 
-《Casualties Unknown》(Steam appid 4576490) 的 BepInEx 5 模组工作区。**三个 dll + 一个共享库**，统一由管理器承载界面：
+《Casualties Unknown》(Steam appid 4576490) 的 BepInEx 5 模组工作区。**四个 dll + 一个共享库**，统一由管理器承载界面：
 
 | 产物 | 源码 | 作用 |
 | --- | --- | --- |
 | `DDExcNet-CUmodM.dll` | `src/DDExcNet.CUmodM/` | **管理器**：统一功能界面 + 全部配置界面 + **兼容性总控** |
-| `DDEN.MPfix.dll` | `src/DDEN.MPfix/` | 多人修复合集：无芯片同步 + 联机合成/物品生成兜底 + 物品网络登记 + 穿戴兜底 + 物品物理保险 + 挖块收敛 + 商人快照 + 孤儿物品/贴图清理 + 娱乐（道生一 一生二） |
+| `DDEN.MPfix.dll` | `src/DDEN.MPfix/` | 多人修复合集：无芯片同步 + 联机合成/物品生成兜底 + 物品网络登记 + 穿戴兜底 + 物品物理保险 + 挖块收敛 + 商人快照 + 掉线遗留物品冻结 + 娱乐（道生一 一生二） |
 | `DDEN.SaveEditor.dll` | `src/DDEN.SaveEditor/` | 可视化存档编辑器（图标/血条点选，QoL 多存档位） |
+| `DDEN.NetPerfTracker.dll` | `src/DDEN.NetPerfTracker/` | **性能跟踪器**（正式名 NetPerfTracker，调试/观测工具）：管理器里单独一页，帧数/CPU/物理压力曲线 + 世界对象与网络状态的文字读数；同时写 `BepInEx/config/DDEN/perf-*.log`。**不打任何补丁**，随发布包一起发（玩家不用也不会影响游戏，排查掉帧时让他开着就能抓现场） |
 | `DDEN.Shared.dll` | `src/DDEN.Shared/` | 公共层：反射、日志、联机桥、存档编解码、**IDdenModule / DdenHub / Compat / DdenUI** |
 
 部署目录：**`<游戏>/BepInEx/plugins/DDEN/`**（已实测 BepInEx 会递归扫描子目录）。
@@ -43,16 +44,16 @@ cd L:/github/game/CUmod
 dotnet build CUmod.slnx -v m                  # 只编译
 ```
 
-- **默认不部署存档编辑器**：正常游戏只带共享层 + 管理器 + MPfix；如果之前部署过，脚本会主动把
-  `plugins/DDEN/DDEN.SaveEditor.dll` 撤下来（游戏在跑导致文件被锁时会提示关游戏重跑）。
+- **默认不部署存档编辑器**：正常游戏带共享层 + 管理器 + MPfix + **性能跟踪器**（调试工具，`DDEN.NetPerfTracker.dll`）；
+  如果之前部署过 `plugins/DDEN/DDEN.SaveEditor.dll`，脚本会主动把它撤下来（游戏在跑导致文件被锁时会提示关游戏重跑）。
 - **`DDEN/` 目录不是我们的私有目录**：里面可能还有别人做的修复 mod
   （实例：`ET-NoBatteryFix.dll`、`QoL-EMI-RecipeRowFix.dll`）。`scripts/build.sh` 用**白名单**
-  （`OWNED=(DDEN.Shared / DDExcNet-CUmodM / DDEN.MPfix / DDEN.SaveEditor)`）决定写谁、删谁，
+  （`OWNED=(DDEN.Shared / DDExcNet-CUmodM / DDEN.MPfix / DDEN.NetPerfTracker / DDEN.SaveEditor)`）决定写谁、删谁，
   并在结尾打印 `== 保持不动（其它模组 / 非本脚本产物）: …`。
   **任何情况下都不要对 `DDEN/` 做通配删除**（`rm -rf`、`rm *.dll`）；新增产物必须同时加进 OWNED。
-- **每次部署自动备份到仓库根目录**（`backup/` 已 git-ignore）：
-  `backup/plugins_<时间戳>/*.dll + manifest.txt`（含 md5/大小/配置/是否带编辑器）、
-  `backup/latest/`（最近一次副本）、`backup/DDEN-plugins-<时间戳>.zip`（有 PowerShell 时）。
+- **不做插件备份**（2026-11 按用户要求移除）：`scripts/build.sh` 里原来那套
+  `backup/plugins_<时间戳>` + `backup/latest` + zip 已删掉，**agent 部署时也不要再手工造 `backup/`**。
+  需要留旧版就在部署前自己复制一份。`.gitignore` 里仍保留 `backup/` 一行（防手滑把 dll 提交进去）。
 
 换机器只改 `Directory.Build.props` 的 `<GameDir>`（或 `-p:GameDir=...`）。
 引用白名单：`Assembly-CSharp / UnityEngine.* / BepInEx / 0Harmony / Newtonsoft.Json / CUCoreLib`；
@@ -101,6 +102,19 @@ dotnet build CUmod.slnx -v m                  # 只编译
   用 `MPfixPlugin.ReasonText` 这类映射翻成人话（例：`push` → 「主机主动同步」）。
   技术细节统一写进 [docs/features.md](docs/features.md)（现象 / 诱发原因 / 修复路线 + 日志表），
   README 只讲“用起来是什么样”。**新增界面文字前先问自己：玩家看得懂吗、有没有暴露内部结构。**
+- **性能跟踪器（`DDEN.NetPerfTracker`，正式名 NetPerfTracker）**：调试用的子 mod，管理器侧边栏单独一页「性能分析」。
+  **零补丁**（一个 MonoBehaviour，不装 Harmony，最坏情况只是自己不采样），所以线上排查可以放心让它跑着。
+  - 采样两档：轻采样（帧数/最差帧/CPU%/物理步每帧数，默认 1 秒）与重采样（数 `Item`/`Body`/`Rigidbody2D`/`Collider2D`、
+    反射读 `NetObjectRegistry.SyncRegistry` 与 `ScavPlayer.ClientIdToPlayerDict`，默认 5 秒）；
+    **重采样耗时超过 8ms 自动关掉碰撞体计数**（观察者不许成为元凶），每次耗时都写进日志的 `costMs`。
+  - 页面：4 张曲线（帧数 / CPU / 物理压力 / 世界对象）+ 文字读数（物品·无主·无主且物理开着、刚体、碰撞体、
+    网络对象·已销毁条目、玩家数、targetFrameRate、vSync、timeScale、fixedDt）+ 暂停/清空/写日志/打开目录。
+    曲线按像素列降采样，攒几千个点也不会把这一页画卡。
+  - 日志：`BepInEx/config/DDEN/perf-<时间戳>.log`，一行一个快照 `key=value`（不走 BepInEx 主日志，那边会被新实例截断）。
+  - 用途：抓「一台客机掉线 → 另一台客机巨卡」这类现场 —— 看 `sim`（无主且物理开着）、`deadsync`、`players` 的台阶。
+  - 它**随发布包一起发**（用户 2026-11 明确要求：本地输出要包含全部模块，含存档编辑器与性能跟踪器）；
+    它不打任何补丁，装不装都不影响游戏，只是排查掉帧时能直接抓现场。
+  - ⚠️ `[BepInPlugin(..., "1.2.0")]` 里的版本号读不了 MSBuild 属性：**改 `<DdenVersion>` 时顺手改各插件的 `[BepInPlugin]`**。
 - **窗口必须用无皮肤模式**：`GUI.Window(id, rect, Draw, GUIContent.none, GUIStyle.none)` + 自己画标题栏。
   用默认窗框时它会把 y<20 的第一行内容盖住（表现为“文字上下被切掉”）。
 - **输入隔离（关键：这游戏的菜单按钮不走 uGUI）**：
@@ -156,11 +170,16 @@ dotnet build CUmod.slnx -v m                  # 只编译
   只“打开”不“改写”；任何位移副作用一律删除（早期版本会上移 0.5~3m，位移会残留在局部坐标 →
   表现为“还穿在身上却浮在角色上方”）。
   **不要**把保险挂到 `Container.UnloadItem` / `Utils.Create` 上——那两个时机一局跑上千次，会把手/包里的物品物理打开。
-- **物品贴合修正**：`DDEN.MPfix.WornItemSnap` —— `Body.WearWearable` 后立即校验，且每 2 秒扫一遍附近 Body 的
-  穿戴/手持物品；`localPosition` 超过 0.6 单位（正常恒为 0）就归零，并把
-  `parent / localPos / localScale / worldPos` 打进日志（用来定位究竟是谁改了局部坐标）。
-  只改 localPosition，**不动 rotation（slotRotation）与 scale（HeldSeat 的肢体补偿）**；
-  每局最多 `物品物理/SnapMaxPerSession`（默认 100）次后自动停手。
+- **物品贴合 / 贴图残留 / 孤儿物品：三个模块已整体删除（2026-11，用户口径）**。
+  `WornItemSnap`、`WearableVisualFix`、`OrphanItemFix` 连同 `NearbyBodies`（原本只服务这两个巡检）
+  以及开关 `物品物理/SnapWornItems`、`物品物理/SnapMaxPerSession`、`联机修正/CleanStaleWearableVisuals`、
+  `联机修正/FixOrphanItems`、`联机修正/MaxOrphanFixPerSession`、`性能/ItemSnapScanSeconds`、
+  `性能/WearableVisualScanSeconds` 全部移除。原因：这三件事**是早期修复自己引入的副作用**
+  （重复修复导致的错位/残留/孤儿），而且“贴图残留”从未被证实存在——是上一个 agent 的推测。
+  **不要再加回来**：它们会去改物品的父级与 localPosition，一旦判断错就是"身上物品乱飞/被挪走"，
+  比它想解决的问题更糟。真出现“装备浮空/贴图残留”，先查是谁改了父级，别用巡检去猜。
+- **现在只剩两个周期巡检**：`WearGhostFix.Tick()` 与 `StaleItemFreezer.Tick()`，
+  逐帧计时后每 60 秒汇总一条 `[巡检]`（平均 ≥0.5ms 或峰值 ≥2ms 才写），状态页常驻显示 `巡检开销`。
 - **“一生二”重复物品（重要）**：合成 / 购买 / 生成在客机上**也会跑一遍本地预测**。
   只要客机的 `Utils.Create` 成功造出模组物品，它自己那份 + 主机同步来的那份就是两份。
   所以 `Utils_Create_ModItemPatch` 的第一道闸是 `if (Mp.IsRunning && !Mp.IsServer) return true;`
@@ -211,22 +230,6 @@ dotnet build CUmod.slnx -v m                  # 只编译
   **不要再加回来**：它要同时猜“主机重跑有没有扣过”，双扣/漏扣都比原版更难调。
 - **删幽灵物品必须先保内容物**：`WearGhostFix.TryRetireGhost` 先把子物品逐个脱离落地，
   含液体（`WaterContainerItem.stack`）或取不干净就**保留不删**，只有空壳才 Destroy。
-- **身上挂着装备贴图但其实没穿**：`DDEN.MPfix.WearableVisualFix` —— 穿戴时 `Wearable.CreateSprites`
-  会在肢体下生成纯视觉子物体（`WearableExtension`，`reference` 指向 Item），正常卸下由
-  `Body.DropWearable → ClearSprites()` 清理；但联机里物品常被 Together 用 `SetParent(null)` / `HeldSeat` /
-  同步搬走，这条路不清理 → 贴图残留。
-  修法：① `Body.DropWearable` postfix 再补一次 `ClearSprites()`（幂等）；
-  ② 每 2 秒巡检附近身体的 `WearableExtension`：`reference` 为空、或它挂的 Item 已不属于该身体 →
-  **连续两次巡检（≥1.5s）都成立**才销毁这层视觉（只删视觉子物体，绝不碰真实物品）。
-  开关 `联机修正/CleanStaleWearableVisuals`。
-- **物品卡在玩家中心（能打开、但不算穿戴也不在背包）**：`DDEN.MPfix.OrphanItemFix` ——
-  Together 的 `HeldSeat` 把物品挂到 `InventorySlot`（父级=槽位、localPosition=0）来表现远端的手/背包，
-  槽位记账错位时物品就一直挂在身体中心，`GetItem(slot)` / `GetAllWearables()` 里却找不到。
-  修法：**只看本地身体**，每 2 秒扫“挂在身体下、父链里没有别的 Item（排除容器内容）、不属于任何槽位/穿戴”的物品，
-  连续 2.5 秒成立 → 先 `AutoPickUpItem` 归位；拾不进背包就 `SetParent(null)` 放回地面（物品不删）。
-  每局上限 `联机修正/MaxOrphanFixPerSession`（默认 50），开关 `联机修正/FixOrphanItems`。
-  **必须避开穿戴兜底正在处理的物品**：`WearGhostFix.RecentlyRequested(id)`（12 秒窗口）为真就跳过 ——
-  那件物品“挂在身上但还没穿上”是兜底的正常中间态，孤儿修复插手会把两套修复互相拆掉。
 - **配置界面必须是两行一条**：上行「键 + 控件」，下行说明（`DdenUI.ConfigRow`，行高 44）。
   “全部配置”页必须把**所有模块的配置**都列出来（按模块分块、按 Section 分组），不能要求先选模块才看得到。
   说明放不下时用 `DdenUI.Hover` 让鼠标悬停看全文。
@@ -321,8 +324,8 @@ ilspycmd -o decomp/qol  --nested-directories "<plugins>/QoL Unknown 1.1.5 - 实�
   但**不要** force push、不要改 remote、不要删别人的分支。
 - **发布**：`pwsh scripts/release.ps1` 打包到 `dist/`（已 git-ignore）；`-Upload` 走 gh CLI 或 `GITHUB_TOKEN`
   自动建 Release；用户用的是 **GitHub 桌面版**，它**不能发 Release 也不能建 tag** —— 所以手动发版走
-  `-OpenPage`（复制发布说明 + 打开网页）再拖 zip 上传。版本号只有一处：`Directory.Build.props` 的
-  `<DdenVersion>`（三个 dll 共用）。
+  `-OpenPage`（复制发布说明 + 打开网页）再拖 zip 上传。版本号**两处**要一起改：`Directory.Build.props` 的
+  `<DdenVersion>`（csproj 的 `<Version>` 用它）与各插件的 `[BepInPlugin(..., "x.y.z")]`（特性里读不了 MSBuild 属性）。
 - **CI 构建不了**，别尝试加 Actions：编译需要游戏本体的 `Assembly-CSharp.dll` / `UnityEngine.*` 与
   `0Harmony.dll`，这些是商业游戏安装文件，不能进仓库也不能传 CI —— 只能本地构建再上传产物。
 - 不提交 `decomp/`、`bin/`、`obj/`、`dist/`、`backup/`、`artifacts/`。

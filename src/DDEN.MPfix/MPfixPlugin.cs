@@ -52,17 +52,14 @@ namespace DDEN.MPfix
 
         // ===== 物品物理保险 =====
         internal static ConfigEntry<bool> CfgPhysicsGuard;
-        internal static ConfigEntry<bool> CfgSnapWornItems;
-        internal static ConfigEntry<int> CfgSnapWornMax;
 
-        // ===== 联机修正（商人商品表 / 挖块） =====
+        // ===== 联机修正（商人商品表 / 挖块 / 掉线遗留物品） =====
         internal static ConfigEntry<bool> CfgTraderSnapshot;
         internal static ConfigEntry<bool> CfgBlockBreakSync;
         internal static ConfigEntry<float> CfgBlockDamageRatio;
         internal static ConfigEntry<float> CfgBlockBreakMinFraction;
-        internal static ConfigEntry<bool> CfgCleanWearableVisuals;
-        internal static ConfigEntry<bool> CfgOrphanItemFix;
-        internal static ConfigEntry<int> CfgOrphanFixMax;
+        internal static ConfigEntry<bool> CfgFreezeGhostItems;
+        internal static ConfigEntry<int> CfgFreezeGhostMax;
 
         // ===== 娱乐 =====
         internal static ConfigEntry<bool> CfgDoublePurchase;
@@ -146,12 +143,6 @@ namespace DDEN.MPfix
             CfgWearRebuild = Config.Bind("穿戴兜底", "RebuildIfHostLacksItem", false,
                 "只有主机真的找不到这件装备时才用：先脱下来放地上，再请主机造一件新的。\n" +
                 "默认关闭（会有多出一件的风险），只当最后手段。");
-            CfgSnapWornItems = Config.Bind("物品物理", "SnapWornItems", true,
-                "装备或手持物品明明在身上，却浮在角色头顶附近时，把它贴回原位。\n" +
-                "每 2 秒检查一次附近角色，只改位置，不改大小和角度。");
-            CfgSnapWornMax = Config.Bind("物品物理", "SnapMaxPerSession", 100,
-                new ConfigDescription("一局最多修正几次，超过就停手。",
-                    new AcceptableValueRange<int>(1, 1000)));
             CfgPhysicsGuard = Config.Bind("物品物理", "GuardDropPhysics", true,
                 "丢东西后补一道保险：让落地物品恢复正常碰撞，别穿墙掉到地图外面。\n" +
                 "只处理真正丢在地上的物品，不会挪动它们。");
@@ -170,15 +161,13 @@ namespace DDEN.MPfix
                 new ConfigDescription("判定门槛：主机记录里这块方块至少已经掉了这个比例的血，才会接受“已经挖穿”的结论。\n" +
                                       "调低更灵敏（更容易修好），调高更保守（更难靠一句上报敲穿硬墙）。",
                     new AcceptableValueRange<float>(0f, 0.95f)));
-            CfgCleanWearableVisuals = Config.Bind("联机修正", "CleanStaleWearableVisuals", true,
-                "修“人身上还挂着一件装备的贴图，其实并没有穿”。\n" +
-                "只清理那层贴图，不碰真实物品。");
-            CfgOrphanItemFix = Config.Bind("联机修正", "FixOrphanItems", true,
-                "修“有件物品一直贴在角色身上：能打开看内容，但既不算穿着也不在背包里”。\n" +
-                "判定持续一小会儿后：能放回背包就放回，放不进就从身上取下放到地上（物品不会消失）。");
-            CfgOrphanFixMax = Config.Bind("联机修正", "MaxOrphanFixPerSession", 50,
-                new ConfigDescription("一局最多处理几件，超过就停手。",
-                    new AcceptableValueRange<int>(1, 500)));
+            CfgFreezeGhostItems = Config.Bind("联机修正", "FreezeGhostItems", true,
+                "修“一台客机掉线后，另一台客机帧数暴跌”。\n" +
+                "掉线玩家的物品有时会留在你这边变成「没人认领、还在一直下坠」的东西，\n" +
+                "它们会一直消耗物理计算，把人拖到十几帧。开启后会把这些物品**原地停下**（不移动、不删除）。");
+            CfgFreezeGhostMax = Config.Bind("联机修正", "FreezeGhostItemsMaxPerSession", 400,
+                new ConfigDescription("一局最多停下几件，超过就停手。",
+                    new AcceptableValueRange<int>(0, 4000)));
             CfgDoublePurchase = Config.Bind("娱乐", "道生一 一生二", false,
                 "道生一，一生二：在商人那里买东西时额外多送一份，直接放进背包。\n" +
                 "纯娱乐开关，默认关闭。只需要主机打开，客机买东西同样会多一件。");
@@ -193,7 +182,6 @@ namespace DDEN.MPfix
             TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropItem_GuardPatch), "物品掉落物理保险（丢出）");
             TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropWearable_GuardPatch), "物品掉落物理保险（卸下）");
             ItemPhysicsGuard.InstallHeldQuietRepair(harmony);
-            TryPatch(harmony, typeof(WornItemSnap.Body_WearWearable_SnapPatch), "穿戴贴合修正（防浮空错位）");
             TryPatch(harmony, typeof(TraderSnapshotFix.ToggleTradeMenu_Postfix), "打开商人时索要商品表");
             if (CfgBlockBreakSync.Value)
             {
@@ -204,7 +192,6 @@ namespace DDEN.MPfix
             {
                 Log.Info("挖块收敛与比例放宽未启用（联机修正/SyncBlockBreak = false）。");
             }
-            TryPatch(harmony, typeof(WearableVisualFix.Body_DropWearable_ClearPatch), "卸下时清理穿戴贴图");
 
             MigrateOldWatchdog();
 
@@ -213,10 +200,11 @@ namespace DDEN.MPfix
             TraderSnapshotFix.RegisterHost();
             BlockDamageSyncFix.RegisterHost();
             DoublePurchase.Install(harmony);
+            _warmupUntil = Time.realtimeSinceStartup + 6f;      // 巡检耗时统计跳过冷启动
             DdenHub.Register(this);
             _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
 
-            Log.Info("已加载：无芯片同步 + 联机物品/合成 + 穿戴兜底 + 物品物理 + 挖块收敛 + 娱乐开关。");
+            Log.Info("已加载：无芯片同步 + 联机物品/合成 + 穿戴兜底 + 物品物理 + 挖块收敛 + 掉线遗留物品 + 娱乐开关。");
             LogMpCompatReport();
             if (UnchippedSelfTest.Requested) StartCoroutine(SelfTestDelayed());
         }
@@ -325,10 +313,11 @@ namespace DDEN.MPfix
             GUI.enabled = true;
 
             y += 32f;
-            GUI.Label(new Rect(area.x, y, area.width, 60f),
+            GUI.Label(new Rect(area.x, y, area.width, 76f),
                 "无芯片：联机时以主机的设置为准，本机自动跟着改（默认每 30 秒核对一次）。\n" +
                 "合成 / 物品：模组加的东西在联机里也能正常做出来、捡起来、穿上去。\n" +
-                $"挖块：两边的方块血量与破坏结果保持一致（信任上限 {CfgBlockDamageRatio.Value:0.#} 倍、判定门槛 {CfgBlockBreakMinFraction.Value:P0}）。",
+                $"挖块：两边的方块血量与破坏结果保持一致（信任上限 {CfgBlockDamageRatio.Value:0.#} 倍、判定门槛 {CfgBlockBreakMinFraction.Value:P0}）。\n" +
+                $"巡检开销：{TickCostText}（每帧合计；数值大时日志里会有 [巡检] 明细）",
                 DdenUI.Wrap);
         }
 
@@ -569,10 +558,15 @@ namespace DDEN.MPfix
                     DdenHub.SetPanelVisible("mpfix", _standaloneVisible);
                 }
 
+                // 两个周期巡检（穿戴兜底 / 掉线遗留物品）：各自内部有节拍，这里只量"本模块每帧吃了多少"，
+                // 每 60 秒汇总一条日志 —— 让"巡检是不是卡顿源"有数据，而不是靠感觉。
+                float t0 = Time.realtimeSinceStartup;
                 WearGhostFix.Tick();
-                WornItemSnap.Tick();
-                WearableVisualFix.Tick();
-                OrphanItemFix.Tick();
+                float t1 = Time.realtimeSinceStartup;
+                StaleItemFreezer.Tick();
+                float t2 = Time.realtimeSinceStartup;
+
+                ReportTickCost((t2 - t0) * 1000f, (t1 - t0) * 1000f, (t2 - t1) * 1000f);
 
                 if (!CfgChipEnabled.Value) return;
                 if (!Mp.CoreAvailable) return;
@@ -588,6 +582,50 @@ namespace DDEN.MPfix
             {
                 Log.Exception(ex, "Update 异常");
             }
+        }
+
+        private float _tickSum;
+        private float _tickMax;
+        private int _tickCount;
+        private float _tickLogAt = -99f;
+        private float _warmupUntil;
+
+        /// <summary>本模块 Tick 的平均/峰值耗时（毫秒，只统计热身之后的稳态）。状态页与日志都用它。</summary>
+        internal static string TickCostText
+        {
+            get
+            {
+                MPfixPlugin p = Instance;
+                if (p == null || p._tickCount <= 0) return "热身中…";
+                return $"{p._tickSum / p._tickCount:0.000}ms / 峰值 {p._tickMax:0.000}ms";
+            }
+        }
+
+        private void ReportTickCost(float total, float wear, float freezer)
+        {
+            // 开局 6 秒是冷启动（JIT、资源加载），这段时间的数字没有参考价值，别记进来
+            if (Time.realtimeSinceStartup < _warmupUntil) return;
+
+            _tickSum += total;
+            _tickCount++;
+            if (total > _tickMax) _tickMax = total;
+
+            // 至少攒 180 帧（约 3 秒）再看平均，避免"拿一次冷启动当结论"
+            if (_tickCount < 180) return;
+            if (Time.unscaledTime - _tickLogAt < 60f) return;
+            _tickLogAt = Time.unscaledTime;
+
+            float avg = _tickSum / _tickCount;
+            float peak = _tickMax;
+            _tickSum = 0f;
+            _tickMax = 0f;
+            _tickCount = 0;
+
+            // 平均 <0.5ms 且峰值 <2ms 就是噪声级，不刷日志（状态页随时能看）
+            if (avg < 0.5f && peak < 2f) return;
+
+            MPfixPlugin.Log.Info($"[巡检] 本模块每帧合计 平均 {avg:0.000}ms / 峰值 {peak:0.000}ms " +
+                                 $"（最近一次：穿戴兜底 {wear:0.000} / 遗留冻结 {freezer:0.000}）");
         }
 
         private void TickHost()

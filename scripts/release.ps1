@@ -16,7 +16,7 @@
 
 .NOTES
   · 版本号默认取 Directory.Build.props 里的 <DdenVersion>，改版本只改那一行。
-  · 发布包内容 = 三个 dll + 许可与说明文件；存档编辑器不打包（可选组件）。
+  · 发布包内容 = **全部五个 dll**（共享层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器）+ 许可与说明文件。
   · 不会自动 push 分支；发版前请确认 master 已经是最新的。
 #>
 [CmdletBinding()]
@@ -53,10 +53,14 @@ try {
     }
 
     $releaseBin = @{
-        'DDEN.Shared.dll'        = 'src/DDEN.Shared/bin/Release/DDEN.Shared.dll'
-        'DDExcNet-CUmodM.dll'    = 'src/DDExcNet.CUmodM/bin/Release/DDExcNet-CUmodM.dll'
-        'DDEN.MPfix.dll'         = 'src/DDEN.MPfix/bin/Release/DDEN.MPfix.dll'
+        'DDEN.Shared.dll'           = 'src/DDEN.Shared/bin/Release/DDEN.Shared.dll'
+        'DDExcNet-CUmodM.dll'       = 'src/DDExcNet.CUmodM/bin/Release/DDExcNet-CUmodM.dll'
+        'DDEN.MPfix.dll'            = 'src/DDEN.MPfix/bin/Release/DDEN.MPfix.dll'
+        'DDEN.NetPerfTracker.dll'   = 'src/DDEN.NetPerfTracker/bin/Release/DDEN.NetPerfTracker.dll'
+        'DDEN.SaveEditor.dll'       = 'src/DDEN.SaveEditor/bin/Release/DDEN.SaveEditor.dll'
     }
+    # 注意：发布包 = 全部模块（含存档编辑器与性能跟踪器）。性能跟踪器只是观测工具，
+    # 不装任何补丁，玩家不用它也不会影响游戏，但排查问题时让他开着能直接抓现场。
     foreach ($pair in $releaseBin.GetEnumerator()) {
         if (-not (Test-Path $pair.Value)) { throw "缺少产物：$($pair.Value)（先构建 Release）" }
     }
@@ -101,27 +105,39 @@ try {
     $lines = New-Object System.Collections.Generic.List[string]
     $lines.Add("## DDEN $Tag")
     $lines.Add('')
-    $lines.Add("适用：Casualties Unknown（Unity 2022.3）· BepInEx 5 · 联机框架 Together / CasualtiesMP 5.5.x")
-    $lines.Add('')
-    $lines.Add('### 安装')
-    $lines.Add('1. 先装好 BepInEx 5；')
-    $lines.Add('2. 把压缩包里的 dll **一起**放进 `BepInEx/plugins/DDEN/`（别拆开、别改名）；')
-    $lines.Add('3. 联机修复需要 CUCoreLib 与 Together / CasualtiesMP，缺了也能进游戏，只是联机那部分不生效。')
-    $lines.Add('')
-    $lines.Add('### 本次改动')
-    foreach ($c in $commits) { $lines.Add($c) }
-    if ($Notes) {
+    # 正文全部来自 docs/release-page.md（适用版本 / 安装 / 模块说明 / 修复的功能模块与核心开关），
+    # 之后只追加「校验」与「授权」。标题统一降一级：它自己的 # 变成 ##，嵌在 Release 页里层级才顺。
+    $pageDoc = Join-Path $Root 'docs/release-page.md'
+    if (Test-Path $pageDoc) {
+        $skippedTitle = $false
+        $inComment = $false
+        foreach ($l in (Get-Content $pageDoc)) {
+            # 作者备注（<!-- … --> 注释块）不进发布页
+            if ($inComment) { if ($l -match '-->') { $inComment = $false }; continue }
+            if ($l -match '^\s*<!--') { if ($l -notmatch '-->') { $inComment = $true }; continue }
+            if (-not $skippedTitle -and $l -match '^#\s') { $skippedTitle = $true; continue }   # 文件自带的一级标题不进发布页
+            if ($l -match '^#{1,5}\s') { $lines.Add('#' + $l) } else { $lines.Add($l) }
+        }
+        while ($lines.Count -gt 0 -and [string]::IsNullOrWhiteSpace($lines[$lines.Count - 1])) { $lines.RemoveAt($lines.Count - 1) }
         $lines.Add('')
+    }
+    if ($Notes) {
         $lines.Add('### 说明')
         $lines.Add($Notes)
+        $lines.Add('')
     }
-    $lines.Add('')
+
+    # 校验
     $lines.Add('### 校验')
     $lines.Add('```')
     $lines.Add("SHA256(DDEN-$Tag.zip) = $hash")
+    $lines.Add("大小 = $size KB")
     $lines.Add('```')
     $lines.Add('')
-    $lines.Add('授权：代码 MPL-2.0；图标、名称与世界观文本保留所有权利（见包内 LICENSE / LICENSE-ASSETS）。')
+
+    # 授权：细节指向仓库内文件，发布页不重复法律文本
+    $lines.Add('### 授权')
+    $lines.Add('见仓库内 `LICENSE`（代码，MPL-2.0）、`LICENSE-ASSETS`（图标 / 名称 / 世界观文本，保留所有权利）、`NOTICE`（第三方归属）。作者：**cubstaryow**')
 
     $notesPath = Join-Path $dist "RELEASE-$Tag.md"
     [IO.File]::WriteAllText($notesPath, ($lines -join "`r`n"), (New-Object Text.UTF8Encoding($false)))

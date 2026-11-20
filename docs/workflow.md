@@ -70,9 +70,11 @@ pwsh scripts/release.ps1 -Version 1.2.1 -Notes "顺手修了什么" -Upload
 
 1. 读 `Directory.Build.props` 的 `<DdenVersion>` 作为版本号（**改版本只改这一行**）；
 2. `dotnet build -c Release`；
-3. 组装 `dist/DDEN-v<版本>/`：三个 dll + `README.md` + `LICENSE` + `LICENSE-ASSETS` + `NOTICE`；
+3. 组装 `dist/DDEN-v<版本>/`：**全部五个 dll**（共享层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器）
+   + `README.md` + `LICENSE` + `LICENSE-ASSETS` + `NOTICE`；
 4. 压成 `dist/DDEN-v<版本>.zip`，打印 **SHA256**；
-5. 生成 `dist/RELEASE-v<版本>.md`（安装步骤 + 上次 tag 以来的提交 + 校验值 + 授权说明）；
+5. 生成 `dist/RELEASE-v<版本>.md`（安装步骤 + **`docs/release-page.md` 的模块说明** + 上次 tag 以来的提交 + 校验值 + 授权说明）；
+   想改发布页文案只改 `docs/release-page.md`，不用动脚本；
 6. 加 `-Upload` 时创建 tag `v<版本>` 的 Release 并挂上 zip。
 
 上传需要三选一：
