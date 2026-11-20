@@ -15,7 +15,7 @@
 | `DDExcNet-CUmodM.dll` | `src/DDExcNet.CUmodM/` | **管理器**：统一功能界面 + 全部配置界面 + **兼容性总控** |
 | `DDEN.MPfix.dll` | `src/DDEN.MPfix/` | 多人修复合集：无芯片同步 + 联机合成/物品生成兜底 + 物品网络登记 + 穿戴兜底 + 物品物理保险 + 挖块收敛 + 商人快照 + 孤儿物品/贴图清理 + 娱乐（道生一 一生二） |
 | `DDEN.SaveEditor.dll` | `src/DDEN.SaveEditor/` | 可视化存档编辑器（图标/血条点选，QoL 多存档位） |
-| `DDEN.NetPerfTracker.dll` | `src/DDEN.NetPerfTracker/` | **性能跟踪器**（调试用子 mod，正式名 NetPerfTracker）：管理器里单独一页，帧数/CPU/物理压力曲线 + 世界对象与网络状态的文字读数；同时写 `BepInEx/config/DDEN/perf-*.log`。**不打任何补丁**，不进发布包 |
+| `DDEN.NetPerfTracker.dll` | `src/DDEN.NetPerfTracker/` | **性能跟踪器**（正式名 NetPerfTracker，调试/观测工具）：管理器里单独一页，帧数/CPU/物理压力曲线 + 世界对象与网络状态的文字读数；同时写 `BepInEx/config/DDEN/perf-*.log`。**不打任何补丁**，随发布包一起发（玩家不用也不会影响游戏，排查掉帧时让他开着就能抓现场） |
 | `DDEN.Shared.dll` | `src/DDEN.Shared/` | 公共层：反射、日志、联机桥、存档编解码、**IDdenModule / DdenHub / Compat / DdenUI** |
 
 部署目录：**`<游戏>/BepInEx/plugins/DDEN/`**（已实测 BepInEx 会递归扫描子目录）。
@@ -112,7 +112,8 @@ dotnet build CUmod.slnx -v m                  # 只编译
     曲线按像素列降采样，攒几千个点也不会把这一页画卡。
   - 日志：`BepInEx/config/DDEN/perf-<时间戳>.log`，一行一个快照 `key=value`（不走 BepInEx 主日志，那边会被新实例截断）。
   - 用途：抓「一台客机掉线 → 另一台客机巨卡」这类现场 —— 看 `sim`（无主且物理开着）、`deadsync`、`players` 的台阶。
-  - 它**不进发布包**：`release.ps1` 只打三个 dll；`build.sh` 的 OWNED 白名单里有它，所以开发时会被部署。
+  - 它**随发布包一起发**（用户 2026-11 明确要求：本地输出要包含全部模块，含存档编辑器与性能跟踪器）；
+    它不打任何补丁，装不装都不影响游戏，只是排查掉帧时能直接抓现场。
   - ⚠️ `[BepInPlugin(..., "1.2.0")]` 里的版本号读不了 MSBuild 属性：**改 `<DdenVersion>` 时顺手改各插件的 `[BepInPlugin]`**。
 - **窗口必须用无皮肤模式**：`GUI.Window(id, rect, Draw, GUIContent.none, GUIStyle.none)` + 自己画标题栏。
   用默认窗框时它会把 y<20 的第一行内容盖住（表现为“文字上下被切掉”）。
