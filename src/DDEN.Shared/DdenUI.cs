@@ -186,7 +186,7 @@ namespace DDEN.Shared
             return true;
         }
 
-        /// <summary>带边框的图标格；返回是否被点击。tooltip 会写进 GUI.tooltip，由调用方决定怎么显示。</summary>
+        /// <summary>带边框的图标格；返回是否被点击。tooltip 用 Hover 登记，由 DrawTooltip 统一画在窗口内。</summary>
         public static bool IconCell(Rect r, string id, Color border, bool selected, out Sprite sprite, string tooltip = null)
         {
             Fill(r, selected ? PanelAlt : Panel);
@@ -197,20 +197,51 @@ namespace DDEN.Shared
             {
                 GUI.Label(inner, "?", TabStyle);
             }
-            return GUI.Button(r, string.IsNullOrEmpty(tooltip) ? GUIContent.none : new GUIContent(string.Empty, tooltip), GUIStyle.none);
+            Hover(r, tooltip);
+            return GUI.Button(r, GUIContent.none, GUIStyle.none);
         }
 
-        /// <summary>鼠标悬停提示（在内容绘制完后调用）。</summary>
-        public static void DrawTooltip()
+        // ===== 悬停提示：自己管，不用 GUI.tooltip（那个会残留，表现为“鼠标后面跟着黑框”）=====
+
+        private static string _tip;
+
+        /// <summary>每帧开始清一次，避免上一帧的提示粘在鼠标上。</summary>
+        public static void BeginFrame() => _tip = null;
+
+        public static void Hover(Rect r, string text)
         {
-            string tip = GUI.tooltip;
-            if (string.IsNullOrEmpty(tip)) return;
-            Vector2 mp = Event.current != null ? Event.current.mousePosition : Vector2.zero;
-            var size = Row.CalcSize(new GUIContent(tip));
-            var rect = new Rect(mp.x + 16f, mp.y + 18f, Mathf.Min(size.x + 10f, 420f), 20f);
-            Fill(rect, new Color(0f, 0f, 0f, 0.85f));
+            if (string.IsNullOrEmpty(text)) return;
+            try
+            {
+                if (r.Contains(Event.current.mousePosition)) _tip = text;
+            }
+            catch { /* ignored */ }
+        }
+
+        /// <summary>在窗口内画提示（自动贴边，不会跑到窗口外的游戏界面上）。</summary>
+        public static void DrawTooltip(Rect bounds)
+        {
+            if (string.IsNullOrEmpty(_tip) || Event.current == null) return;
+
+            Vector2 mp = Event.current.mousePosition;
+            bool twoLine = _tip.IndexOf('\n') >= 0;
+            string[] lines = twoLine ? _tip.Split('\n') : new[] { _tip };
+            float w = 0f;
+            foreach (string line in lines) w = Mathf.Max(w, Row.CalcSize(new GUIContent(line)).x);
+            w = Mathf.Min(w + 12f, Mathf.Max(80f, bounds.width - 8f));
+            float h = twoLine ? 38f : 22f;
+
+            float x = Mathf.Clamp(mp.x + 16f, bounds.x, Mathf.Max(bounds.x, bounds.xMax - w - 2f));
+            float y = Mathf.Clamp(mp.y + 18f, bounds.y, Mathf.Max(bounds.y, bounds.yMax - h - 2f));
+            var rect = new Rect(x, y, w, h);
+
+            Fill(rect, new Color(0f, 0f, 0f, 0.88f));
             Frame(rect, AccentDim);
-            GUI.Label(new Rect(rect.x + 5f, rect.y + 2f, rect.width - 10f, 18f), tip, Row);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                GUI.Label(new Rect(rect.x + 6f, rect.y + 2f + i * 18f, rect.width - 12f, 18f),
+                    ElideToWidth(lines[i], rect.width - 12f, Row), Row);
+            }
         }
 
         // ===== 常用控件 =====

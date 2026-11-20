@@ -31,6 +31,7 @@ namespace DDExcNet.CUmodM
         internal static ConfigEntry<float> CfgScale;
         internal static ConfigEntry<bool> CfgAutoFixHotkeys;
         internal static ConfigEntry<bool> CfgScanOnStart;
+        internal static ConfigEntry<bool> CfgBlockGameInput;
         internal static ConfigEntry<bool> CfgVerbose;
 
         private Rect _rect = new Rect(80f, 70f, 1180f, 760f);
@@ -59,6 +60,9 @@ namespace DDExcNet.CUmodM
                 "启动时检测快捷键冲突，冲突则自动改用空闲的 F 键并写入配置。");
             CfgScanOnStart = Config.Bind("Compat", "ScanOnStart", true,
                 "启动时扫描已装模组/补丁栈/旧文件残留，结果显示在“兼容性”页。");
+            CfgBlockGameInput = Config.Bind("UI", "BlockGameInput", true,
+                "鼠标在管理器窗口内时拦截游戏 UI 点击（防止点穿到主菜单的开始/退出）。\n" +
+                "若发现游戏界面反而点不动，把它关掉即可。");
             CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出调试日志。");
 
             Log = DDEN.Shared.Log.For(LogSource, "CUmodM", CfgVerbose.Value);
@@ -134,13 +138,14 @@ namespace DDExcNet.CUmodM
             // 最后一站停在存档编辑器页，留时间给人/截图检查（标签页会自动轮播）
             _page = "saveeditor";
             InvokeModuleMethod("saveeditor", "SmokeLoad");
-            Log.Info("[UITEST] 停留在存档编辑页 16 秒（标签页自动轮播），供人工/截图核对。");
-            yield return new WaitForSecondsRealtime(16f);
+            Log.Info("[UITEST] 停留在存档编辑页 6 秒（标签页自动轮播）");
+            yield return new WaitForSecondsRealtime(6f);
 
-            _visible = false;
-            InvokeModuleMethod("saveeditor", "SmokeStop");
+            // 停在“肢体/人体图”页，方便核对图形化肢体（不自动关闭，按 F11 关）
+            InvokeModuleMethod("saveeditor", "SmokeLimb");
+            Log.Info("[UITEST] PASS：所有页面绘制完成，无异常；现停留在“肢体 · 人体图”，按热键关闭。");
             try { File.Delete(UiTestMarker); } catch { /* ignored */ }
-            Log.Info("[UITEST] PASS：所有页面绘制完成，无异常。");
+            yield break;
         }
 
         /// <summary>跨程序集调用模块的可选方法（不硬引用模块 dll）。</summary>
@@ -203,6 +208,7 @@ namespace DDExcNet.CUmodM
             {
                 KeyCapture.Tick();
                 if (_effectiveKey != KeyCode.None && Input.GetKeyDown(_effectiveKey)) Toggle();
+                if (_visible && Input.GetKeyDown(KeyCode.Escape)) _visible = false;
                 UpdateInputBlock();
             }
             catch (Exception ex)
@@ -214,6 +220,12 @@ namespace DDExcNet.CUmodM
         /// <summary>鼠标在本窗口内时关掉 EventSystem，避免点击穿透到主菜单的开始/退出按钮。</summary>
         private void UpdateInputBlock()
         {
+            if (!CfgBlockGameInput.Value)
+            {
+                if (_inputBlocked) { _inputBlocked = false; DdenUI.BlockGameInput(false); }
+                return;
+            }
+
             float s = Mathf.Clamp(CfgScale.Value, 0.75f, 2f);
             var screen = new Rect(_rect.x * s, _rect.y * s, _rect.width * s, _rect.height * s);
             bool block = _visible && DdenUI.PointerOver(screen);
@@ -255,6 +267,7 @@ namespace DDExcNet.CUmodM
 
         private void DrawWindow(int id)
         {
+            DdenUI.BeginFrame();
             DdenUI.Fill(new Rect(0, 0, _rect.width, _rect.height), DdenUI.Bg);
 
             // 顶部标题条
@@ -280,6 +293,7 @@ namespace DDExcNet.CUmodM
                 $"快捷键 {_effectiveKey} 开关 · 缩放 {CfgScale.Value:0.00} · 模块 {DdenHub.Modules.Count} 个 · 拖动标题栏移动", DdenUI.Sub);
 
             GUI.DragWindow(new Rect(0, 0, _rect.width, 36f));
+            DdenUI.DrawTooltip(new Rect(0, 0, _rect.width, _rect.height));
         }
 
         private void DrawSidebar(Rect area)

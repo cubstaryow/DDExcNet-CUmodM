@@ -110,6 +110,8 @@ namespace DDEN.SaveEditor
 
         public void SmokeStop() => _view.SmokeStop();
 
+        public void SmokeLimb() => _view.SmokeLimb();
+
         public bool DrawSettings(Rect area)
         {
             return false;

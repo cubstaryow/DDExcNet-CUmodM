@@ -42,6 +42,14 @@ namespace DDEN.SaveEditor
 
         public void SmokeStop() => _smoke = false;
 
+        /// <summary>界面冒烟：停在人体图上，方便截图核对（不再自动轮播）。</summary>
+        public void SmokeLimb()
+        {
+            _smoke = false;
+            _tab = "limbs";
+            _limbDiagram = true;
+        }
+
         public void RefreshTargets()
         {
             _targets.Clear();
@@ -70,7 +78,7 @@ namespace DDEN.SaveEditor
             DrawTargets(left);
             DrawTabs(mid);
             DrawInspector(right);
-            DdenUI.DrawTooltip();
+            DdenUI.DrawTooltip(area);
         }
 
         // ===== 工具条 =====
@@ -302,8 +310,122 @@ namespace DDEN.SaveEditor
 
         private void DrawLimbs(Rect r)
         {
-            DdenUI.Section(new Rect(r.x + 8f, r.y + 2f, r.width - 16f, 16f), "肢体（外=皮肤 内=肌肉；点格子选中）");
+            DdenUI.Section(new Rect(r.x + 8f, r.y + 2f, r.width - 110f, 16f),
+                _limbDiagram ? $"肢体 · 人体图（{LimbLayout.Source}）" : "肢体 · 列表（外=皮肤 内=肌肉）");
 
+            // 图示 / 列表 切换
+            if (DdenUI.Button(new Rect(r.xMax - 96f, r.y + 1f, 46f, 18f), _limbDiagram ? "列表" : "图示"))
+            {
+                _limbDiagram = !_limbDiagram;
+            }
+
+            if (!_limbDiagram)
+            {
+                DrawLimbGrid(r);
+                return;
+            }
+
+            EnsureLimbLayout();
+
+            Rect area = new Rect(r.x + 6f, r.y + 22f, r.width - 12f, r.height - 28f);
+            float availH = Mathf.Max(120f, area.height - 74f);
+            float boxW = area.width - 8f;
+            float boxH = boxW / Mathf.Max(0.15f, LimbLayout.Aspect);
+            if (boxH > availH)
+            {
+                boxH = availH;
+                boxW = boxH * Mathf.Max(0.15f, LimbLayout.Aspect);
+            }
+
+            var canvas = new Rect(area.x + (area.width - boxW) * 0.5f, area.y, boxW, boxH);
+            DdenUI.Fill(canvas, new Color(0f, 0f, 0f, 0.28f));
+            DdenUI.Frame(canvas, DdenUI.AccentDim);
+
+            // 合成布局没有头：补一个装饰头（游戏里 head 不属于 limbs）
+            if (LimbLayout.DrawHead)
+            {
+                var head = new Rect(
+                    canvas.x + 0.35f * canvas.width,
+                    canvas.y + 0.004f * canvas.height,
+                    Mathf.Max(14f, 0.30f * canvas.width),
+                    Mathf.Max(16f, 0.105f * canvas.height));
+                DdenUI.Fill(head, new Color(0.32f, 0.36f, 0.43f, 0.70f));
+                DdenUI.Frame(head, DdenUI.AccentDim);
+                GUI.Label(new Rect(head.x, head.y + head.height * 0.5f - 8f, head.width, 16f), "头", DdenUI.IconStyle);
+            }
+
+            foreach (LimbPart part in LimbLayout.Parts)
+            {
+                SaveDocument.LimbView limb = _doc.Limbs.FirstOrDefault(l => l.Index == part.Index);
+                if (limb == null) continue;
+
+                var pr = new Rect(
+                    canvas.x + part.Norm.x * canvas.width,
+                    canvas.y + part.Norm.y * canvas.height,
+                    Mathf.Max(6f, part.Norm.width * canvas.width),
+                    Mathf.Max(6f, part.Norm.height * canvas.height));
+
+                float skin = limb.Skin != null ? (float)limb.Skin.Number / 100f : 1f;
+                float muscle = limb.Muscle != null ? (float)limb.Muscle.Number / 100f : 1f;
+                float hp = Mathf.Clamp01(Mathf.Min(skin, muscle));
+                Color col = DdenUI.HealthColor(hp);
+                bool selected = _doc.SelectedLimb == limb.Index;
+
+                if (part.Sprite != null)
+                {
+                    // 有原版美术就叠一层状态色，没有就用色块
+                    var tint = Color.Lerp(Color.white, col, 0.45f);
+                    DdenUI.DrawSprite(pr, part.Sprite, tint);
+                }
+                else
+                {
+                    DdenUI.Fill(pr, new Color(col.r, col.g, col.b, 0.30f + 0.25f * (1f - hp)));
+                }
+                DdenUI.Frame(pr, selected ? DdenUI.Accent : new Color(col.r, col.g, col.b, 0.85f), selected ? 2f : 1f);
+
+                string tip = $"{part.Name}  #{limb.Index}\n皮肤 {skin * 100f:0}   肌肉 {muscle * 100f:0}";
+                DdenUI.Hover(pr, tip);
+                if (GUI.Button(pr, GUIContent.none, GUIStyle.none))
+                {
+                    _doc.SelectedLimb = limb.Index;
+                    _flash = tip.Replace("\n", "  ");
+                }
+            }
+
+            // 图例 + 选中部位简报
+            float ly = canvas.yMax + 4f;
+            DdenUI.Label(new Rect(area.x, ly, area.width, 16f),
+                "<color=#8cd97c>■</color> 健康  <color=#f0a>■</color> 受损  <color=#f66>■</color> 危重", DdenUI.Sub);
+
+            SaveDocument.LimbView sel = _doc.Limbs.FirstOrDefault(l => l.Index == _doc.SelectedLimb);
+            if (sel != null && ly + 34f < area.yMax)
+            {
+                float skin = sel.Skin != null ? (float)sel.Skin.Number / 100f : 1f;
+                float muscle = sel.Muscle != null ? (float)sel.Muscle.Number / 100f : 1f;
+                GUI.Label(new Rect(area.x, ly + 16f, 150f, 16f), sel.Label + $"  #{sel.Index}", DdenUI.Row);
+                DdenUI.Bar(new Rect(area.x + 152f, ly + 17f, area.width - 200f, 7f), skin, DdenUI.HealthColor(skin));
+                DdenUI.Bar(new Rect(area.x + 152f, ly + 26f, area.width - 200f, 7f), muscle, DdenUI.HealthColor(muscle));
+            }
+
+        }
+
+        private void EnsureLimbLayout()
+        {
+            bool inWorld = Game.InWorld;
+            if (inWorld != _wasInWorld)
+            {
+                _wasInWorld = inWorld;
+                LimbLayout.Invalidate();
+            }
+            LimbLayout.Ensure();
+        }
+
+        private bool _limbDiagram = true;
+        private bool _wasInWorld;
+
+        /// <summary>列表模式：保留原来的 15 格血条视图（图示看位置，列表看数值）。</summary>
+        private void DrawLimbGrid(Rect r)
+        {
             Rect grid = new Rect(r.x + 6f, r.y + 22f, r.width - 12f, Mathf.Min(240f, r.height * 0.55f));
             const float cw = 92f;
             const float ch = 52f;
@@ -568,7 +690,9 @@ namespace DDEN.SaveEditor
             SaveDocument.LimbView limb = _doc.Limbs.FirstOrDefault(l => l.Index == _doc.SelectedLimb);
             if (limb == null)
             {
-                DdenUI.Label(r, "在左侧点一个肢体格子来精修。", DdenUI.Wrap);
+                DdenUI.Label(r, _limbDiagram
+                    ? "在左侧人体图上点一个部位来精修。\n颜色 = 皮肤/肌肉里较差的一项；悬停可看具体数值。"
+                    : "在左侧点一个肢体格子来精修。", DdenUI.Wrap);
                 return;
             }
 
