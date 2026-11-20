@@ -80,6 +80,12 @@ dotnet build CUmod.slnx -v m    # 只编译
   Overflow 是为了中文行高不被切，但会横向溢出到邻居控件，凡是定宽列一律先截断。
 - **悬停提示别用 `GUI.tooltip`**：那个值会残留，表现为“鼠标后面一直跟着一个黑框”。
   用 `DdenUI.Hover(rect, text)` + 每帧 `DdenUI.BeginFrame()` + 末尾 `DdenUI.DrawTooltip(bounds)`（会钳在窗口内）。
+- **联机合成“无法生成物品”**：Together 主机侧自己实现了一份 spawn
+  （`PlayerCamera_TryCraft_MultiplayerPatch.RecipeResult_SpawnResult` → `Utils.Create` → `Resources.Load(id)`），
+  模组物品不在 Resources 里 → `CraftReason.SpawnFailed`（客户端文案 `craft_deny_spawnfailed`）。
+  修复在 `DDExcNet.CUmodM.CompatCraftSpawnPatch`：给 `Utils.Create` 加前缀，Resources 找不到时用
+  `CUCoreLib.Helpers.CustomInstantiate.InstantiateReturn` 生成（开关 `Compat/FixModItemCraftSpawn`）。
+  注意 Together 会按 attempt 缓存失败 receipt，同一会话重试仍失败，换层/重连才会清 —— 这是“过一层又能合成”的来源。
 - **不要在模块里重复造兼容判断**，也别各自写自己的弹窗系统。
 - **存档编辑红线**：只改用户点过的字段；`cheatedSave`（禁用成就）**绝不自动写入**，仅由“进度/成就”页手动切换；
   写盘只走 `SaveCodec.Write` + `SyncMeta`（原子 + `.cumod.bak`），写前查 `Compat.IsQolAutosaveBusy()`。

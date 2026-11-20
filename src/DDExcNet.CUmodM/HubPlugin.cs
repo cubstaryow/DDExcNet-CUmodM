@@ -34,6 +34,7 @@ namespace DDExcNet.CUmodM
         internal static ConfigEntry<bool> CfgScanOnStart;
         internal static ConfigEntry<bool> CfgModalBlocker;
         internal static ConfigEntry<float> CfgBlockerDim;
+        internal static ConfigEntry<bool> CfgFixModItemCraftSpawn;
         internal static ConfigEntry<bool> CfgVerbose;
 
         private Rect _rect = new Rect(80f, 70f, 1180f, 760f);
@@ -68,6 +69,10 @@ namespace DDExcNet.CUmodM
             CfgBlockerDim = Config.Bind("UI", "BlockerDim", 0.15f,
                 new ConfigDescription("遮罩暗化程度（0 = 全透明只吃点击）。",
                     new AcceptableValueRange<float>(0f, 0.8f)));
+            CfgFixModItemCraftSpawn = Config.Bind("Compat", "FixModItemCraftSpawn", true,
+                "修复联机合成模组物品时报“无法合成：无法生成物品”。\n" +
+                "原因：Together 主机侧用 Utils.Create → Resources.Load(id) 生成成品，而模组物品不在 Resources 里。\n" +
+                "开启后用 CUCoreLib 的 CustomInstantiate 兜底（对掉落/世界生成同样有效）。");
             CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出调试日志。");
 
             Log = DDEN.Shared.Log.For(LogSource, "CUmodM", CfgVerbose.Value);
@@ -77,6 +82,15 @@ namespace DDExcNet.CUmodM
             DdenHub.OpenRequested += OnOpenRequested;
             try { new Harmony(Guid).PatchAll(typeof(AdaptiveButton_ClickGuard)); }
             catch (Exception ex) { Log.Exception(ex, "菜单按钮拦截补丁失败"); }
+            try
+            {
+                new Harmony(Guid).PatchAll(typeof(Utils_Create_ModItemPatch));
+                Log.Info("已启用联机合成兜底：模组物品不在 Resources 时用 CustomInstantiate 生成。");
+            }
+            catch (Exception ex)
+            {
+                Log.Exception(ex, "Utils.Create 兼容补丁失败（联机合成模组物品仍可能失败）");
+            }
             _rect = LoadRect();
 
             _effectiveKey = Compat.ResolveHotkey(CfgToggleKey, Guid, CfgAutoFixHotkeys.Value);
