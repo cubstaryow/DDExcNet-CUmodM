@@ -62,12 +62,6 @@ namespace DDEN.MPfix
         internal static ConfigEntry<bool> CfgSyncBuildingDamage;
         internal static ConfigEntry<bool> CfgRelayGhostItems;
 
-        // ===== 卡顿应急 =====
-        internal static ConfigEntry<bool> CfgRescueEnabled;
-        internal static ConfigEntry<float> CfgRescueFps;
-        internal static ConfigEntry<float> CfgRescueSeconds;
-        internal static ConfigEntry<int> CfgRescuePerPass;
-
         // ===== 娱乐 =====
         internal static ConfigEntry<bool> CfgDoublePurchase;
 
@@ -181,19 +175,6 @@ namespace DDEN.MPfix
                 "原理：主机把退场玩家的物品收进存档时，会把这份清单广播给所有客机，\n" +
                 "客机据此删掉本地那份「没人管、一直下坠」的副本。这是照着联机框架自己的退场流程做的，不靠猜。\n" +
                 "主机没开这个开关就不会有这类残留，客机也就不会删任何东西。");
-            CfgRescueEnabled = Config.Bind("卡顿应急", "Enable", true,
-                "只在真的卡的时候才动手（平时完全不碰世界）：帧数持续低于阈值时，\n" +
-                "清掉网络登记表里的死条目，并把吃物理最狠的无主对象冻住（位置不动、对象不删）。\n" +
-                "冻结期间会跳过我们自己的“恢复碰撞”保险，否则刚冻上就被打开，等于白冻。");
-            CfgRescueFps = Config.Bind("卡顿应急", "TriggerFps", 45f,
-                new ConfigDescription("帧数低于这个值才算卡。",
-                    new AcceptableValueRange<float>(5f, 144f)));
-            CfgRescueSeconds = Config.Bind("卡顿应急", "TriggerSeconds", 2f,
-                new ConfigDescription("连续卡这么久才动手（避免偶发掉帧就乱冻）。",
-                    new AcceptableValueRange<float>(0.5f, 30f)));
-            CfgRescuePerPass = Config.Bind("卡顿应急", "MaxPerPass", 25,
-                new ConfigDescription("每轮最多冻几个对象（每轮至少间隔 5 秒）。",
-                    new AcceptableValueRange<int>(1, 200)));
             CfgDoublePurchase = Config.Bind("娱乐", "道生一 一生二", false,
                 "道生一，一生二：在商人那里买东西时额外多送一份，直接放进背包。\n" +
                 "纯娱乐开关，默认关闭。只需要主机打开，客机买东西同样会多一件。");
@@ -593,7 +574,6 @@ namespace DDEN.MPfix
                 WearGhostFix.Tick();
                 float t1 = Time.realtimeSinceStartup;
                 GhostItemRelay.Tick();
-                PerfRescue.Tick();
                 float t2 = Time.realtimeSinceStartup;
 
                 ReportTickCost((t2 - t0) * 1000f, (t1 - t0) * 1000f, (t2 - t1) * 1000f);

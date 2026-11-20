@@ -57,7 +57,6 @@ namespace DDEN.MPfix
                 if (item == null) return;
                 if (!MPfixPlugin.CfgPhysicsGuard.Value) return;
                 if (!IsFree(item)) return;
-                if (PerfRescue.IsFrozen(item)) return;      // 卡顿应急冻住的对象：别再给它恢复碰撞
                 if (!NearPlayer(item)) return;              // 只看身边的，远处不恢复碰撞
 
                 Collider2D[] cols = item.GetComponentsInChildren<Collider2D>(true);
