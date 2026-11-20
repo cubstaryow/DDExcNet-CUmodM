@@ -131,8 +131,9 @@ namespace DDEN.MPfix
                 "仅在主机确实找不到这件物品时才用：取消穿戴 → 掉地 → 请求主机重建。\n" +
                 "默认关闭（只做“认出并穿上”）；开着会有复制风险，仅作最后手段。");
             CfgPhysicsGuard = Config.Bind("物品物理", "GuardDropPhysics", true,
-                "丢出/生成物品时：打开它自己与子物品的碰撞体、rigidbody 设为 Continuous，\n" +
-                "若正压在墙块里就向上挪到不重叠。用于修联机里“丢东西穿墙往下掉”。");
+                "只在“丢出/卸下”这些真正的动作后做保险：只处理自由物品（不在手/身/包里），\n" +
+                "脚下没有地板且卡在实体里才上移脱困；同一件最多挪 3 次、整局最多 200 次，超了自动停用。\n" +
+                "用于修联机里“丢东西穿墙往下掉”，同时避免把正常物品的物理打开。" );
             CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出调试日志。");
 
             Log = DDEN.Shared.Log.For(LogSource, "MPfix", CfgVerbose.Value);
@@ -143,8 +144,6 @@ namespace DDEN.MPfix
             TryPatch(harmony, typeof(WearGhostFix.Body_WearWearable_RecordPatch), "穿戴兜底（幽灵装备）");
             TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropItem_GuardPatch), "物品掉落物理保险（丢出）");
             TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropWearable_GuardPatch), "物品掉落物理保险（卸下）");
-            TryPatch(harmony, typeof(ItemPhysicsGuard.Container_UnloadItem_GuardPatch), "物品掉落物理保险（容器）");
-            TryPatch(harmony, typeof(ItemPhysicsGuard.Utils_Create_GuardPatch), "物品掉落物理保险（生成）");
             ItemPhysicsGuard.InstallHeldQuietRepair(harmony);
 
             MigrateOldWatchdog();
