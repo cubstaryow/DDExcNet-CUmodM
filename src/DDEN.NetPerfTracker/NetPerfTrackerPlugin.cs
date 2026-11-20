@@ -11,7 +11,7 @@ using BepInEx.Logging;
 using DDEN.Shared;
 using UnityEngine;
 
-namespace DDEN.Perf
+namespace DDEN.NetPerfTracker
 {
     /// <summary>
     /// DDEN.Perf —— 只读的**可视化性能分析器**（子 mod，管理器里单独一页）。
@@ -26,14 +26,14 @@ namespace DDEN.Perf
     ///  · 图表只画窗口内可见的列数（宽 600px 最多 600 次 Fill），不会因为攒了几千个点而变卡。
     ///  · 同时把数据写进 `BepInEx/config/DDEN/perf-*.log`（一行一个快照，key=value），方便事后 diff / 发给我。
     /// </summary>
-    [BepInPlugin(Guid, "DDEN Perf Probe", "1.2.0")]
+    [BepInPlugin(Guid, "DDEN NetPerfTracker", "1.2.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
-    public class PerfPlugin : BaseUnityPlugin, IDdenModule
+    public class NetPerfTrackerPlugin : BaseUnityPlugin, IDdenModule
     {
         public const string Guid = "com.dden.perf";
         public const string Title = "性能分析";
 
-        internal static PerfPlugin Instance;
+        internal static NetPerfTrackerPlugin Instance;
         internal static ManualLogSource LogSource;
         internal static LogChannel Log;
 

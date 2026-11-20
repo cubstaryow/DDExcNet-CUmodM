@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <AssemblyName>DDEN.Perf</AssemblyName>
-    <RootNamespace>DDEN.Perf</RootNamespace>
+    <AssemblyName>DDEN.NetPerfTracker</AssemblyName>
+    <RootNamespace>DDEN.NetPerfTracker</RootNamespace>
     <Version>$(DdenVersion)</Version>
   </PropertyGroup>
 

@@ -15,7 +15,7 @@
 | `DDExcNet-CUmodM.dll` | `src/DDExcNet.CUmodM/` | **管理器**：统一功能界面 + 全部配置界面 + **兼容性总控** |
 | `DDEN.MPfix.dll` | `src/DDEN.MPfix/` | 多人修复合集：无芯片同步 + 联机合成/物品生成兜底 + 物品网络登记 + 穿戴兜底 + 物品物理保险 + 挖块收敛 + 商人快照 + 孤儿物品/贴图清理 + 娱乐（道生一 一生二） |
 | `DDEN.SaveEditor.dll` | `src/DDEN.SaveEditor/` | 可视化存档编辑器（图标/血条点选，QoL 多存档位） |
-| `DDEN.Perf.dll` | `src/DDEN.Perf/` | **性能分析器**（调试用子 mod）：管理器里单独一页，帧数/CPU/物理压力曲线 + 世界对象与网络状态的文字读数；同时写 `BepInEx/config/DDEN/perf-*.log`。**不打任何补丁**，不进发布包 |
+| `DDEN.NetPerfTracker.dll` | `src/DDEN.NetPerfTracker/` | **性能跟踪器**（调试用子 mod，正式名 NetPerfTracker）：管理器里单独一页，帧数/CPU/物理压力曲线 + 世界对象与网络状态的文字读数；同时写 `BepInEx/config/DDEN/perf-*.log`。**不打任何补丁**，不进发布包 |
 | `DDEN.Shared.dll` | `src/DDEN.Shared/` | 公共层：反射、日志、联机桥、存档编解码、**IDdenModule / DdenHub / Compat / DdenUI** |
 
 部署目录：**`<游戏>/BepInEx/plugins/DDEN/`**（已实测 BepInEx 会递归扫描子目录）。
@@ -44,11 +44,11 @@ cd L:/github/game/CUmod
 dotnet build CUmod.slnx -v m                  # 只编译
 ```
 
-- **默认不部署存档编辑器**：正常游戏带共享层 + 管理器 + MPfix + **性能分析器**（调试工具）；
+- **默认不部署存档编辑器**：正常游戏带共享层 + 管理器 + MPfix + **性能跟踪器**（调试工具，`DDEN.NetPerfTracker.dll`）；
   如果之前部署过 `plugins/DDEN/DDEN.SaveEditor.dll`，脚本会主动把它撤下来（游戏在跑导致文件被锁时会提示关游戏重跑）。
 - **`DDEN/` 目录不是我们的私有目录**：里面可能还有别人做的修复 mod
   （实例：`ET-NoBatteryFix.dll`、`QoL-EMI-RecipeRowFix.dll`）。`scripts/build.sh` 用**白名单**
-  （`OWNED=(DDEN.Shared / DDExcNet-CUmodM / DDEN.MPfix / DDEN.Perf / DDEN.SaveEditor)`）决定写谁、删谁，
+  （`OWNED=(DDEN.Shared / DDExcNet-CUmodM / DDEN.MPfix / DDEN.NetPerfTracker / DDEN.SaveEditor)`）决定写谁、删谁，
   并在结尾打印 `== 保持不动（其它模组 / 非本脚本产物）: …`。
   **任何情况下都不要对 `DDEN/` 做通配删除**（`rm -rf`、`rm *.dll`）；新增产物必须同时加进 OWNED。
 - **不做插件备份**（2026-11 按用户要求移除）：`scripts/build.sh` 里原来那套
@@ -102,7 +102,7 @@ dotnet build CUmod.slnx -v m                  # 只编译
   用 `MPfixPlugin.ReasonText` 这类映射翻成人话（例：`push` → 「主机主动同步」）。
   技术细节统一写进 [docs/features.md](docs/features.md)（现象 / 诱发原因 / 修复路线 + 日志表），
   README 只讲“用起来是什么样”。**新增界面文字前先问自己：玩家看得懂吗、有没有暴露内部结构。**
-- **性能分析器（`DDEN.Perf`）**：调试用的子 mod，管理器侧边栏单独一页「性能分析」。
+- **性能跟踪器（`DDEN.NetPerfTracker`，正式名 NetPerfTracker）**：调试用的子 mod，管理器侧边栏单独一页「性能分析」。
   **零补丁**（一个 MonoBehaviour，不装 Harmony，最坏情况只是自己不采样），所以线上排查可以放心让它跑着。
   - 采样两档：轻采样（帧数/最差帧/CPU%/物理步每帧数，默认 1 秒）与重采样（数 `Item`/`Body`/`Rigidbody2D`/`Collider2D`、
     反射读 `NetObjectRegistry.SyncRegistry` 与 `ScavPlayer.ClientIdToPlayerDict`，默认 5 秒）；
