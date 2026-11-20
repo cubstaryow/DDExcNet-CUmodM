@@ -69,8 +69,8 @@ namespace DDEN.MPfix
                 Item item = made.GetComponent<Item>();
                 if (item == null)
                 {
-                    WarnOnce(id, $"[CraftFix] 生成失败 '{id}'：拿到的对象 {made.name} 没有 Item 组件（{reason}）。");
-                    UnityEngine.Object.Destroy(made);
+                    // Resolve 已经做过校验，正常不会走到这里；万一走到，也只记录、不销毁任何对象。
+                    WarnOnce(id, $"[CraftFix] 生成失败 '{id}'：拿到的对象没有 Item 组件（{reason}），已跳过兜底。");
                     return true;
                 }
 
@@ -96,37 +96,37 @@ namespace DDEN.MPfix
         /// 最后一级专治“修理类配方”：玩家手里必然有一件同 id 的破损物品（它就是材料），
         /// 拿它的外壳克隆一份，比任何注册表都可靠。
         /// </summary>
+        /// <summary>
+        /// 只走 CUCoreLib 的两条正路，**不克隆、不销毁**任何物品：
+        ///  ① 先 `ResolvePrefab` 拿到预制体并确认它带 Item 组件，再 `Instantiate`（不产生“造出来又不能用的残次品”）；
+        ///  ② 退一步直接用 CCL 的 `InstantiateReturn`（它内部会建模板 + 实例化）。
+        /// 两条都不行 → 放弃兜底，交回原版逻辑（该配方在这局仍会失败，但与我们无关，也不会留下副作用）。
+        /// </summary>
         private static GameObject Resolve(string id, Vector2 pos, Quaternion quat, out string reason)
         {
             var notes = new List<string>();
+            Vector3 at = new Vector3(pos.x, pos.y, 0f);
 
-            try
-            {
-                GameObject made = CUCoreLib.Helpers.CustomInstantiate.InstantiateReturn(id, pos, quat);
-                if (made != null)
-                {
-                    reason = "CustomInstantiate";
-                    return made;
-                }
-                notes.Add("CustomInstantiate=null");
-            }
-            catch (Exception ex)
-            {
-                notes.Add("CustomInstantiate 异常：" + ex.Message);
-            }
-
+            // ① 预制体路径：先验证，再实例化
             try
             {
                 GameObject prefab = CUCoreLib.Helpers.CustomInstantiate.ResolvePrefab(id);
                 if (prefab != null)
                 {
-                    GameObject made = UnityEngine.Object.Instantiate(prefab, new Vector3(pos.x, pos.y, 0f), quat);
-                    if (made != null)
+                    if (prefab.GetComponent<Item>() == null)
                     {
-                        reason = "ResolvePrefab+Instantiate";
-                        return made;
+                        notes.Add("ResolvePrefab 有对象但没有 Item 组件");
                     }
-                    notes.Add("Instantiate(prefab)=null");
+                    else
+                    {
+                        GameObject made = UnityEngine.Object.Instantiate(prefab, at, quat);
+                        if (made != null)
+                        {
+                            reason = "ResolvePrefab+Instantiate";
+                            return made;
+                        }
+                        notes.Add("Instantiate(prefab)=null");
+                    }
                 }
                 else
                 {
@@ -138,69 +138,32 @@ namespace DDEN.MPfix
                 notes.Add("ResolvePrefab 异常：" + ex.Message);
             }
 
+            // ② CCL 自带模板构建
             try
             {
-                GameObject clone = CloneExisting<Item>(id, pos, quat, out string cloneNote);
-                if (clone != null)
+                GameObject made = CUCoreLib.Helpers.CustomInstantiate.InstantiateReturn(id, pos, quat);
+                if (made != null)
                 {
-                    reason = "克隆现存同 id 物品";
-                    return clone;
+                    if (made.GetComponent<Item>() != null)
+                    {
+                        reason = "CustomInstantiate";
+                        return made;
+                    }
+                    // 造出来但不是物品：不销毁（避免任何“删东西”的行为），只记录并放弃兜底。
+                    notes.Add("CustomInstantiate 产出的对象没有 Item 组件（已忽略，未做销毁）");
                 }
-                notes.Add(cloneNote);
+                else
+                {
+                    notes.Add("CustomInstantiate=null");
+                }
             }
             catch (Exception ex)
             {
-                notes.Add("克隆异常：" + ex.Message);
+                notes.Add("CustomInstantiate 异常：" + ex.Message);
             }
 
             reason = string.Join("；", notes) + "；注册表查询：" + RegistryInfo(id);
             return null;
-        }
-
-        private static GameObject CloneExisting<T>(string id, Vector2 pos, Quaternion quat, out string note) where T : Component
-        {
-            note = "场上没有同 id 物品可克隆";
-            T[] all;
-            try { all = UnityEngine.Object.FindObjectsOfType<T>(true); }
-            catch (Exception ex) { note = "FindObjectsOfType 失败：" + ex.Message; return null; }
-
-            foreach (T comp in all)
-            {
-                if (comp == null) continue;
-                Item src = comp as Item;
-                if (src == null || src.id != id) continue;
-
-                GameObject clone = UnityEngine.Object.Instantiate(src.gameObject, new Vector3(pos.x, pos.y, 0f), quat);
-                if (clone == null) continue;
-
-                // 克隆出来的外壳要清干净：子物品不能跟着复制（否则等于凭空多出一堆东西），
-                // 缩放/父级也归位（原件可能正被 HeldSeat 按肢体缩放过）。
-                StripChildItems(clone);
-                clone.transform.localScale = Vector3.one;
-                note = "由现存实例克隆";
-                return clone;
-            }
-            return null;
-        }
-
-        private static void StripChildItems(GameObject root)
-        {
-            try
-            {
-                var kids = new List<Transform>();
-                foreach (Transform t in root.transform)
-                {
-                    if (t != null && t.GetComponent<Item>() != null) kids.Add(t);
-                }
-                for (int i = 0; i < kids.Count; i++)
-                {
-                    if (kids[i] != null) UnityEngine.Object.Destroy(kids[i].gameObject);
-                }
-            }
-            catch (Exception ex)
-            {
-                MPfixPlugin.Log.Debug("清理克隆子物品失败：" + ex.Message);
-            }
         }
 
         /// <summary>日志里带上注册表信息，方便判断到底是“没注册”还是“注册了但造不出来”。</summary>
