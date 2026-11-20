@@ -1,4 +1,6 @@
 using System;
+using System.Collections;
+using System.Reflection;
 using System.Collections.Generic;
 using DDEN.Shared;
 using HarmonyLib;
@@ -209,9 +211,17 @@ namespace DDEN.MPfix
             MPfixPlugin.Log.Warn(message);
         }
         /// <summary>
-        /// 主机侧把模组物品登记进联机的网络对象表。
-        /// 不登记的话：客机拿起/穿上后，主机在 <c>ServerReceiver__ItemWearing</c> 里 TryGetItem 找不到它
-        /// → “Server declines itemwearing” → 主机看到物品掉在地上、过一会又被客机拽回身上（就是那个闪烁）。
+        /// 主机侧把模组物品登记进联机的网络对象表。**幂等**：同一件物品无论被我们调还是被
+        /// Together 的 <c>TryGetSyncInfoOrRegister</c> 调，都只会产生一个实体。
+        ///
+        /// 为什么必须幂等（2026-11 修「客机买一件变两份」）：
+        /// `NetObjectRegistry.Server_EnsureItemIsNetworkRegistered`（反编译 140755）只有在
+        /// **`SyncRegistry` 里已有该对象**时才提前返回；否则它会 `ServerEntityManager.AddEntity` 建**新实体**，
+        /// 而把这个 `go` 写回 `SyncRegistry` 的那一步**只在“对象是水晶”的分支里**做。
+        /// 也就是说：普通物品第一次调用建了实体却没进表 → 下一次调用又建一个。
+        /// 而 `TraderCommit.RunBuy`（142460）在我们之后还会调一次 `TryGetSyncInfoOrRegister`，
+        /// 于是同一件物品出现两个实体 → 客机收到两份。
+        /// 所以这里补上 Together 漏掉的"写回表"，让第二次调用命中去重。
         /// </summary>
         internal static void RegisterOnHost(GameObject go)
         {
@@ -222,17 +232,95 @@ namespace DDEN.MPfix
                 Type regType = CUCoreLib.Networking.MultiplayerApi.ResolveKrokMpType("NetObjectRegistry");
                 if (regType == null) return;
 
+                IDictionary registry = SyncRegistry(regType);
+                if (registry == null) return;
+
+                // ① 表里已经有这个对象 → 已登记，直接返回（这是"重复实体"的根因所在）
+                try
+                {
+                    if (registry.Contains(go)) return;
+                }
+                catch { /* ignored */ }
+
+                // ② 对象身上已有现成的 SyncInfo → 只把它挂回表，不新建实体
+                object existing = TrackerSyncInfo(go);
+                if (existing != null)
+                {
+                    Adopt(registry, go, existing);
+                    return;
+                }
+
+                // ③ 真正登记一次，并把结果写回 SyncRegistry（Together 只给水晶做这一步）
                 System.Reflection.MethodInfo mi = CUCoreLib.Networking.MultiplayerApi.FindKrokMpMethod(
                     regType, "Server_EnsureItemIsNetworkRegistered", new[] { typeof(GameObject) });
                 if (mi == null) return;
 
-                mi.Invoke(null, new object[] { go });
+                object made = mi.Invoke(null, new object[] { go });
+                if (made != null) Adopt(registry, go, made);
             }
             catch (Exception ex)
             {
                 MPfixPlugin.Log.Debug("物品网络登记失败：" + ex.Message);
             }
         }
+
+        private static IDictionary _syncRegistry;
+        private static Type _syncRegistryOwner;
+
+        private static IDictionary SyncRegistry(Type regType)
+        {
+            if (_syncRegistry != null && _syncRegistryOwner == regType) return _syncRegistry;
+            try
+            {
+                FieldInfo f = regType.GetField("SyncRegistry",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                _syncRegistry = f == null ? null : f.GetValue(null) as IDictionary;
+                _syncRegistryOwner = regType;
+            }
+            catch { _syncRegistry = null; }
+            return _syncRegistry;
+        }
+
+        /// <summary>对象身上的 `SyncInfoGameObjectTracker.syncInfo`（没有就返回 null）。</summary>
+        private static object TrackerSyncInfo(GameObject go)
+        {
+            try
+            {
+                Type trackerType = CUCoreLib.Networking.MultiplayerApi.ResolveKrokMpType("SyncInfoGameObjectTracker");
+                if (trackerType == null) return null;
+                Component tracker = go.GetComponent(trackerType);
+                if (tracker == null) return null;
+                FieldInfo f = trackerType.GetField("syncInfo", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                return f == null ? null : f.GetValue(tracker);
+            }
+            catch { return null; }
+        }
+
+        /// <summary>把 SyncInfo 写回 SyncRegistry，并补上它反向指向的 go（缺了这一步下次仍会重复建实体）。</summary>
+        private static void Adopt(IDictionary registry, GameObject go, object syncInfo)
+        {
+            try
+            {
+                registry[go] = syncInfo;
+
+                FieldInfo goField = syncInfo.GetType().GetField("go",
+                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                if (goField != null && goField.GetValue(syncInfo) == null) goField.SetValue(syncInfo, go);
+
+                // 有这一行说明"写回表"确实发生了 —— 之后 Together 的 TryGetSyncInfoOrRegister 会命中去重
+                if (Time.unscaledTime - _lastAdoptLog > 0.5f)
+                {
+                    _lastAdoptLog = Time.unscaledTime;
+                    MPfixPlugin.Log.Debug("[CraftFix] 已把登记结果写回网络对象表（避免重复实体 → 客机不再收到两份）");
+                }
+            }
+            catch (Exception ex)
+            {
+                MPfixPlugin.Log.Debug("登记后写回注册表失败：" + ex.Message);
+            }
+        }
+
+        private static float _lastAdoptLog = -99f;
 
         /// <summary>
         /// 把一件已经在主机侧改过状态的物品推给所有客机：<c>NetObjectRegistry.SafeNewGO</c>。
