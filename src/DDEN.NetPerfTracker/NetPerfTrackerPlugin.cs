@@ -365,7 +365,8 @@ namespace DDEN.NetPerfTracker
                 int live = 0;
                 for (int i = 0; i < rbs.Length; i++)
                 {
-                    if (rbs[i] != null && rbs[i].simulated) live++;
+                    // 只数"真正参与物理求解"的：运动学/静态刚体（被冻结的幽灵物品会变成这种）不算压力
+                    if (rbs[i] != null && rbs[i].simulated && rbs[i].bodyType == RigidbodyType2D.Dynamic) live++;
                 }
                 _rigid = live;
             }

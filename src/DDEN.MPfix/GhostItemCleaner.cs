@@ -39,13 +39,16 @@ namespace DDEN.MPfix
 
         private static readonly Dictionary<int, float> Seen = new Dictionary<int, float>();
         private static readonly Dictionary<int, int> Strikes = new Dictionary<int, int>();
+        private static readonly Dictionary<int, bool> Kinematic = new Dictionary<int, bool>();
+        private static readonly Dictionary<int, Vector2> FirstPos = new Dictionary<int, Vector2>();
         private static float _next;
-        private static int _frozen, _deleted, _registeredSkipped, _session;
+        private static int _frozen, _deleted, _kinematic, _registeredSkipped, _session;
         private static float _lastLogAt = -99f;
         private static bool _disabled;
 
         private static MethodInfo _isRegistered;
         private static MethodInfo _deleteUnregistered;
+        private static MethodInfo _safeDestroy;
         private static bool _lookedUp;
 
         private static float _startAt;
@@ -113,11 +116,13 @@ namespace DDEN.MPfix
 
             if (!ResolveApis()) return;
 
-            int frozenNow = 0, deletedNow = 0, regNow = 0;
+            int frozenNow = 0, deletedNow = 0, regNow = 0, kineNow = 0;
             try
             {
                 Body local = Game.LocalBody;
                 Vector2 at = local != null ? (Vector2)local.transform.position : Vector2.zero;
+
+                RestoreHeldOnes(out int restored);
 
                 foreach (Item item in UnityEngine.Object.FindObjectsOfType<Item>(true))
                 {
@@ -129,6 +134,14 @@ namespace DDEN.MPfix
 
                     int key = item.GetInstanceID();
 
+                    // 已经是"运动学冻结"状态：只要它还是无主就继续按住，别再重复计数
+                    if (Kinematic.ContainsKey(key))
+                    {
+                        if (rb.simulated) rb.velocity = Vector2.zero;
+                        Seen.Remove(key);
+                        continue;
+                    }
+
                     if (!rb.simulated || rb.IsSleeping())
                     {
                         // 已经停下/已经静止：不占成本，清掉记录
@@ -138,45 +151,54 @@ namespace DDEN.MPfix
                     }
 
                     float since;
-                    if (!Seen.TryGetValue(key, out since)) { Seen[key] = now; continue; }
+                    if (!Seen.TryGetValue(key, out since))
+                    {
+                        Seen[key] = now;
+                        FirstPos[key] = t.position;
+                        continue;
+                    }
                     if (now - since < GraceSeconds) continue;
 
                     if (local != null && Vector2.Distance(t.position, at) < NearPlayerSkip) continue;
 
-                    if (Registered(item.gameObject))
-                    {
-                        // 主机认得它：客户端怎么改都会被同步写回来，只统计（每 60 秒提示一次）
-                        regNow++;
-                        Seen.Remove(key);
-                        continue;
-                    }
+                    Vector2 start;
+                    if (!FirstPos.TryGetValue(key, out start)) { FirstPos[key] = t.position; continue; }
+                    float dropped = start.y - t.position.y;
+                    bool falling = dropped >= 1.5f || (now - since >= 8f && rb.velocity.y < -0.5f);
 
                     int strikes;
                     Strikes.TryGetValue(key, out strikes);
                     strikes++;
                     Strikes[key] = strikes;
 
-                    if (strikes <= 1)
+                    bool registered = Registered(item.gameObject);
+                    if (registered) regNow++;
+
+                    if (strikes <= 1 && !falling)
                     {
+                        // 第一段：只停物理（可逆），谁的物品都不删
                         Freeze(rb, item);
                         frozenNow++;
                     }
-                    else if (Delete(item.gameObject))
+                    else if (CanDestroy(item) && DestroyGhost(item.gameObject))
                     {
+                        // 确认是「无主 + 一直下坠」的遗留物 → 走 MP 自己的销毁通道（它会先卸掉容器内容物）
                         deletedNow++;
                         Seen.Remove(key);
                         Strikes.Remove(key);
+                        FirstPos.Remove(key);
                         _session++;
                     }
                     else
                     {
-                        // Together 拒绝删（对方认为不该同步）：退回冻结，不再升级
-                        Freeze(rb, item);
-                        frozenNow++;
-                        Strikes[key] = int.MaxValue / 2;
+                        // 容器里还有东西（或销毁失败）：不删，改成运动学冻结，至少不再吃物理
+                        KinematicFreeze(rb, item);
+                        Seen.Remove(key);
+                        FirstPos.Remove(key);
+                        kineNow++;
                     }
 
-                    if (frozenNow + deletedNow >= PerPassBudget || _session >= cap) break;
+                    if (frozenNow + deletedNow + kineNow >= PerPassBudget || _session >= cap) break;
                 }
 
                 if (Seen.Count > 2048) Seen.Clear();
@@ -189,14 +211,40 @@ namespace DDEN.MPfix
 
             _frozen += frozenNow;
             _deleted += deletedNow;
+            _kinematic += kineNow;
             _registeredSkipped = regNow;
 
-            if ((frozenNow > 0 || deletedNow > 0 || regNow > 0) && now - _lastLogAt > 10f)
+            if ((frozenNow > 0 || deletedNow > 0 || regNow > 0 || kineNow > 0) && now - _lastLogAt > 10f)
             {
                 _lastLogAt = now;
-                MPfixPlugin.Log.Info($"[幽灵物品] 本次：冻结 {frozenNow} 件、删除 {deletedNow} 件" +
-                                     (regNow > 0 ? $"、主机仍认得 {regNow} 件（那种只能主机侧解决）" : "") +
-                                     $"；本局累计 冻结 {_frozen} / 删除 {_deleted}。");
+                MPfixPlugin.Log.Info($"[幽灵物品] 本次：冻结 {frozenNow} 件、删除 {deletedNow} 件、运动学冻结 {kineNow} 件" +
+                                     (regNow > 0 ? $"（其中主机仍认得 {regNow} 件，按运动学处理）" : "") +
+                                     $"；本局累计 冻结 {_frozen} / 删除 {_deleted} / 运动学 {_kinematic}。");
+            }
+        }
+
+        /// <summary>容器里还有内容物就不删（避免牵连真实物品），交给运动学冻结处理。</summary>
+        private static bool CanDestroy(Item item)
+        {
+            try
+            {
+                return item.GetComponentsInChildren<Item>(true).Length <= 1;
+            }
+            catch { return false; }
+        }
+
+        /// <summary>走 Together 自己的销毁通道：先卸容器内容物 → 摘注册表 → Destroy。</summary>
+        private static bool DestroyGhost(GameObject go)
+        {
+            try
+            {
+                _safeDestroy.Invoke(null, new object[] { go });
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MPfixPlugin.Log.Debug("[幽灵物品] 销毁失败：" + ex.Message);
+                return false;
             }
         }
 
@@ -212,6 +260,66 @@ namespace DDEN.MPfix
                 {
                     if (cols[i] != null) cols[i].enabled = false;
                 }
+            }
+            catch { /* ignored */ }
+        }
+
+        /// <summary>
+        /// 运动学冻结：不参与重力/求解，但仍是"活着的刚体"，被同步写回位置也不会有物理开销。
+        /// 这是对"主机还认得、只关 simulated 又会被写回来"的那批物品的兜底手段。
+        /// </summary>
+        private static void KinematicFreeze(Rigidbody2D rb, Item item)
+        {
+            try
+            {
+                rb.velocity = Vector2.zero;
+                rb.angularVelocity = 0f;
+                if (!rb.simulated) rb.simulated = true;      // 保持 true，避免和同步逻辑互相打架
+                if (rb.bodyType != RigidbodyType2D.Kinematic) rb.bodyType = RigidbodyType2D.Kinematic;
+                if (rb.gravityScale != 0f) rb.gravityScale = 0f;
+
+                Collider2D[] cols = item.GetComponentsInChildren<Collider2D>(true);
+                for (int i = 0; i < cols.Length; i++)
+                {
+                    if (cols[i] != null) cols[i].enabled = false;
+                }
+
+                Kinematic[item.GetInstanceID()] = true;
+            }
+            catch { /* ignored */ }
+        }
+
+        /// <summary>被玩家捡起/穿上（有了父级）就把刚体类型还回去，别影响正常玩法。</summary>
+        private static void RestoreHeldOnes(out int restored)
+        {
+            restored = 0;
+            if (Kinematic.Count == 0) return;
+            try
+            {
+                var done = new List<int>(8);
+                foreach (var pair in Kinematic)
+                {
+                    Transform tr = null;
+                    foreach (Item it in UnityEngine.Object.FindObjectsOfType<Item>(true))
+                    {
+                        if (it == null || it.GetInstanceID() != pair.Key) continue;
+                        tr = it.transform;
+                        if (tr != null && tr.parent != null)
+                        {
+                            Rigidbody2D rb = it.rb;
+                            if (rb != null)
+                            {
+                                if (rb.bodyType != RigidbodyType2D.Dynamic) rb.bodyType = RigidbodyType2D.Dynamic;
+                                if (rb.gravityScale == 0f) rb.gravityScale = 1f;
+                                restored++;
+                            }
+                        }
+                        done.Add(pair.Key);
+                        break;
+                    }
+                    if (tr == null) done.Add(pair.Key);      // 对象没了，清记录
+                }
+                for (int i = 0; i < done.Count; i++) Kinematic.Remove(done[i]);
             }
             catch { /* ignored */ }
         }
@@ -256,7 +364,7 @@ namespace DDEN.MPfix
 
         private static bool ResolveApis()
         {
-            if (_lookedUp) return _isRegistered != null && _deleteUnregistered != null;
+            if (_lookedUp) return _isRegistered != null && _safeDestroy != null;
             _lookedUp = true;
             try
             {
@@ -269,7 +377,8 @@ namespace DDEN.MPfix
                 }
                 _isRegistered = AccessTools.Method(t, "IsRegistered", new[] { typeof(GameObject) });
                 _deleteUnregistered = AccessTools.Method(t, "Client_DeleteUnregisteredSyncableObject", new[] { typeof(GameObject) });
-                if (_isRegistered == null || _deleteUnregistered == null)
+                _safeDestroy = AccessTools.Method(t, "SafeDestroyObject", new[] { typeof(GameObject) });
+                if (_isRegistered == null || _safeDestroy == null)
                 {
                     _disabled = true;
                     MPfixPlugin.Log.Warn("[幽灵物品] 注册表接口不完整，这条修复不启用（宁可不修，也不盲删）。");
