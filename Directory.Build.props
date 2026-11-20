@@ -1,0 +1,83 @@
+<Project>
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>10</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <Deterministic>true</Deterministic>
+    <DebugType>portable</DebugType>
+    <DebugSymbols>true</DebugSymbols>
+    <NoWarn>$(NoWarn);CS0436;MSB3277;CS0618;MSB3246</NoWarn>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <!-- ===== 本机路径（换机器只改这里或传 -p:GameDir=...） ===== -->
+  <PropertyGroup>
+    <GameDir Condition="'$(GameDir)' == ''">L:\SteamLibrary\steamapps\common\Casualties Unknown</GameDir>
+    <ManagedDir>$(GameDir)\CasualtiesUnknown_Data\Managed</ManagedDir>
+    <BepInExCoreDir>$(GameDir)\BepInEx\core</BepInExCoreDir>
+    <BepInExPluginsDir>$(GameDir)\BepInEx\plugins</BepInExPluginsDir>
+    <!-- DDEN 系列统一放在 plugins\DDEN\ 子目录（BepInEx 会递归扫描） -->
+    <DdenPluginsDir>$(BepInExPluginsDir)\DDEN</DdenPluginsDir>
+    <!-- 社区前置：CUCoreLib -->
+    <CoreLibDll>$(BepInExPluginsDir)\CUCoreLib.dll</CoreLibDll>
+    <!-- 部署开关：dotnet build -p:DeployOnBuild=true 直接把 dll 丢进 plugins -->
+    <DeployOnBuild Condition="'$(DeployOnBuild)' == ''">false</DeployOnBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- BepInEx 5 + HarmonyX -->
+    <Reference Include="BepInEx">
+      <HintPath>$(BepInExCoreDir)\BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>$(BepInExCoreDir)\0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- 游戏本体 -->
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(ManagedDir)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(ManagedDir)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(ManagedDir)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>$(ManagedDir)\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(ManagedDir)\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(ManagedDir)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(ManagedDir)\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(ManagedDir)\Newtonsoft.Json.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- 社区前置 CUCoreLib（MultiplayerBridge / MultiplayerSyncRegistry / ConsoleCommandRegistry） -->
+    <Reference Include="CUCoreLib" Condition="Exists('$(CoreLibDll)')">
+      <HintPath>$(CoreLibDll)</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+</Project>

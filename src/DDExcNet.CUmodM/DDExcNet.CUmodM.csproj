@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>DDExcNet-CUmodM</AssemblyName>
+    <RootNamespace>DDExcNet.CUmodM</RootNamespace>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DDEN.Shared\DDEN.Shared.csproj">
+      <Private>true</Private>
+    </ProjectReference>
+  </ItemGroup>
+
+  <Target Name="DeployPlugin" AfterTargets="Build" Condition="'$(DeployOnBuild)' == 'true'">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(DdenPluginsDir)" />
+  </Target>
+
+</Project>

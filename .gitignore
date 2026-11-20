@@ -1,0 +1,19 @@
+# 构建产物
+bin/
+obj/
+*.user
+*.suo
+
+# 反编译参考（本地生成，体积大、可随时重生成）
+decomp/
+
+# 编辑器/系统垃圾
+.vs/
+.idea/
+Thumbs.db
+desktop.ini
+
+# 本地调试产物
+*.cumod.bak
+*.cumod-tmp
+artifacts/

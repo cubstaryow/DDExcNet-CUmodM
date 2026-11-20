@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <AssemblyName>DDEN.Shared</AssemblyName>
+    <RootNamespace>DDEN.Shared</RootNamespace>
+  </PropertyGroup>
+
+</Project>
