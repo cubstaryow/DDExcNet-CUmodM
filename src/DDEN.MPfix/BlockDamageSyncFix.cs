@@ -273,7 +273,7 @@ namespace DDEN.MPfix
         }
 
         /// <summary>世界设置里的攻击伤害倍率（原版 Body.Attack:3547 用的就是它）。读不到 / 非法值按 1。</summary>
-        private static float AttackDamageMultiplier()
+        internal static float AttackDamageMultiplier()
         {
             try
             {

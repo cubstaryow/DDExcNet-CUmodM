@@ -59,6 +59,7 @@ namespace DDEN.MPfix
         internal static ConfigEntry<bool> CfgBlockBreakSync;
         internal static ConfigEntry<float> CfgBlockDamageRatio;
         internal static ConfigEntry<float> CfgBlockBreakMinFraction;
+        internal static ConfigEntry<bool> CfgSyncBuildingDamage;
         internal static ConfigEntry<bool> CfgRelayGhostItems;
 
         // ===== 卡顿应急 =====
@@ -171,6 +172,10 @@ namespace DDEN.MPfix
                 new ConfigDescription("判定门槛：主机记录里这块方块至少已经掉了这个比例的血，才会接受“已经挖穿”的结论。\n" +
                                       "调低更灵敏（更容易修好），调高更保守（更难靠一句上报敲穿硬墙）。",
                     new AcceptableValueRange<float>(0f, 0.95f)));
+            CfgSyncBuildingDamage = Config.Bind("联机修正", "SyncBuildingDamage", true,
+                "修“打储物箱、植物、动物时，血量掉一下又弹回去”。\n" +
+                "和挖块是同一个原因：主机替客机结算伤害时少了世界伤害倍率，\n" +
+                "补上之后客机打出的伤害和主机结算的一致，血量不再回弹。");
             CfgRelayGhostItems = Config.Bind("联机修正", "RelayGhostItems", true,
                 "修“一台客机掉线后，另一台客机帧数暴跌、地上的东西还在原地闪”。\n" +
                 "原理：主机把退场玩家的物品收进存档时，会把这份清单广播给所有客机，\n" +
@@ -213,6 +218,8 @@ namespace DDEN.MPfix
             {
                 Log.Info("挖块收敛与比例放宽未启用（联机修正/SyncBlockBreak = false）。");
             }
+            // 打单位（箱子/植物/动物）与挖块同一根因，独立开关
+            if (CfgSyncBuildingDamage.Value) BuildingDamageRelax.Install(harmony);
 
             MigrateOldWatchdog();
 
