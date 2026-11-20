@@ -15,13 +15,19 @@
 | `DDEN.SaveEditor.dll` | 可视化存档编辑器（图标/血条点选，QoL 多存档位） |
 | `DDEN.Shared.dll` | 公共层（模块契约、UI 皮肤、兼容层、反射、存档编解码） |
 
-BepInEx 会递归扫描 `plugins` 子目录，已实测四个 dll 从 `plugins/DDEN/` 正常加载。
+BepInEx 会递归扫描 `plugins` 子目录，已实测各 dll 从 `plugins/DDEN/` 正常加载。
 `scripts/build.sh` 会自动部署并删除旧命名残留（`plugins/CUmod.*.dll`）。
 
 ```bash
 cd L:/github/game/CUmod
-./scripts/build.sh          # 构建 + 部署（先关游戏，否则 dll 被锁）
+./scripts/build.sh                            # 构建 + 部署（先关游戏，否则 dll 被锁）
+                                              # 默认只部署 Shared / CUmodM / MPfix，**不带存档编辑器**
+./scripts/build.sh Debug --with-saveeditor    # 需要存档编辑器时显式加参数
 ```
+
+- 若之前部署过 `DDEN.SaveEditor.dll`，默认构建会**主动把它撤下来**（正常游戏不带它）；
+- 每次部署都会在仓库根目录生成备份：`backup/plugins_<时间戳>/{*.dll,manifest.txt}`、
+  `backup/latest/`、`backup/DDEN-plugins-<时间戳>.zip`（`backup/` 不进 git）。
 
 ---
 

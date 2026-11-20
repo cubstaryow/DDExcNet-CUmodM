@@ -157,15 +157,24 @@ namespace DDExcNet.CUmodM
                 }
             }
 
-            // 最后一站停在存档编辑器页，留时间给人/截图检查（标签页会自动轮播）
-            _page = "saveeditor";
-            InvokeModuleMethod("saveeditor", "SmokeLoad");
-            Log.Info("[UITEST] 停留在存档编辑页 6 秒（标签页自动轮播）");
-            yield return new WaitForSecondsRealtime(6f);
+            // 最后一站：有存档编辑器就停在它（标签页自动轮播），没有就停在总览
+            IDdenModule editor = DdenHub.Find("saveeditor");
+            if (editor != null)
+            {
+                _page = "saveeditor";
+                InvokeModuleMethod("saveeditor", "SmokeLoad");
+                Log.Info("[UITEST] 停留在存档编辑页 6 秒（标签页自动轮播）");
+                yield return new WaitForSecondsRealtime(6f);
 
-            // 停在“肢体/人体图”页，方便核对图形化肢体（不自动关闭，按 F11 关）
-            InvokeModuleMethod("saveeditor", "SmokeLimb");
-            Log.Info("[UITEST] PASS：所有页面绘制完成，无异常；现停留在“肢体 · 人体图”，按热键关闭。");
+                // 停在“肢体/人体图”页，方便核对图形化肢体（不自动关闭，按 F11 关）
+                InvokeModuleMethod("saveeditor", "SmokeLimb");
+                Log.Info("[UITEST] PASS：所有页面绘制完成，无异常；现停留在“肢体 · 人体图”，按热键关闭。");
+            }
+            else
+            {
+                _page = "overview";
+                Log.Info("[UITEST] PASS：所有页面绘制完成，无异常（存档编辑器未部署，跳过其页面）；现停留在总览，按热键关闭。");
+            }
             try { File.Delete(UiTestMarker); } catch { /* ignored */ }
             yield break;
         }

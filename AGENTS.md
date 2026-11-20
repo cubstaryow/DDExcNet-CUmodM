@@ -35,10 +35,17 @@
 
 ```bash
 cd L:/github/game/CUmod
-./scripts/build.sh              # 构建四件套 → 复制到 plugins/DDEN，并删除旧 CUmod.*.dll 残留
-./scripts/build.sh Release
-dotnet build CUmod.slnx -v m    # 只编译
+./scripts/build.sh                            # Debug：部署 Shared / CUmodM / MPfix（**不带存档编辑器**）
+./scripts/build.sh Release                    # Release 同上
+./scripts/build.sh Debug --with-saveeditor    # 临时把 DDEN.SaveEditor 也部署进去（开发/调试用）
+dotnet build CUmod.slnx -v m                  # 只编译
 ```
+
+- **默认不部署存档编辑器**：正常游戏只带共享层 + 管理器 + MPfix；如果之前部署过，脚本会主动把
+  `plugins/DDEN/DDEN.SaveEditor.dll` 撤下来（游戏在跑导致文件被锁时会提示关游戏重跑）。
+- **每次部署自动备份到仓库根目录**（`backup/` 已 git-ignore）：
+  `backup/plugins_<时间戳>/*.dll + manifest.txt`（含 md5/大小/配置/是否带编辑器）、
+  `backup/latest/`（最近一次副本）、`backup/DDEN-plugins-<时间戳>.zip`（有 PowerShell 时）。
 
 换机器只改 `Directory.Build.props` 的 `<GameDir>`（或 `-p:GameDir=...`）。
 引用白名单：`Assembly-CSharp / UnityEngine.* / BepInEx / 0Harmony / Newtonsoft.Json / CUCoreLib`；
