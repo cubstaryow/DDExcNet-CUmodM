@@ -60,6 +60,7 @@ namespace DDEN.MPfix
         internal static ConfigEntry<float> CfgBlockDamageRatio;
         internal static ConfigEntry<float> CfgBlockBreakMinFraction;
         internal static ConfigEntry<bool> CfgSyncBuildingDamage;
+        internal static ConfigEntry<bool> CfgQuietTraderUIModItems;
         internal static ConfigEntry<bool> CfgRelayGhostItems;
 
         // ===== 娱乐 =====
@@ -170,6 +171,10 @@ namespace DDEN.MPfix
                 "修“打储物箱、植物、动物时，血量掉一下又弹回去”。\n" +
                 "和挖块是同一个原因：主机替客机结算伤害时少了世界伤害倍率，\n" +
                 "补上之后客机打出的伤害和主机结算的一致，血量不再回弹。");
+            CfgQuietTraderUIModItems = Config.Bind("联机修正", "QuietTraderUIModItems", true,
+                "联机时商人界面每次刷新都会自检货架，模组物品不在游戏资源里，\n" +
+                "于是每次刷一条「prefab=null」的错误日志（控制台会一直刷）。\n" +
+                "开启后只对这种“模组物品”的情况静音；真出问题（货架和主机不同步）照常报警。");
             CfgRelayGhostItems = Config.Bind("联机修正", "RelayGhostItems", true,
                 "修“一台客机掉线后，另一台客机帧数暴跌、地上的东西还在原地闪”。\n" +
                 "原理：主机把退场玩家的物品收进存档时，会把这份清单广播给所有客机，\n" +
@@ -190,6 +195,7 @@ namespace DDEN.MPfix
             TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropWearable_GuardPatch), "物品掉落物理保险（卸下）");
             ItemPhysicsGuard.InstallHeldQuietRepair(harmony);
             TryPatch(harmony, typeof(TraderSnapshotFix.ToggleTradeMenu_Postfix), "打开商人时索要商品表");
+            if (CfgQuietTraderUIModItems.Value) TraderUIQuietFix.Install(harmony);
             if (CfgBlockBreakSync.Value)
             {
                 TryPatch(harmony, typeof(BlockDamageSyncFix.DamageBlock_Patch), "客机挖块伤害收敛（上报）");
