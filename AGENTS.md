@@ -64,8 +64,11 @@ dotnet build CUmod.slnx -v m    # 只编译
 - **UI**：只用 `DdenUI`（配色/精灵/条/配置行），保证四个页面观感一致；`GUI.depth = -1000` 画在别人上面。
 - **窗口必须用无皮肤模式**：`GUI.Window(id, rect, Draw, GUIContent.none, GUIStyle.none)` + 自己画标题栏。
   用默认窗框时它会把 y<20 的第一行内容盖住（表现为“文字上下被切掉”）。
-- **必须挡点击穿透**：鼠标在窗口矩形内时调 `DdenUI.BlockGameInput(true)`（内部关掉 EventSystem），
-  否则点管理器按钮会同时点到主菜单的「开始游戏 / 退出」。窗口隐藏或鼠标移出时置 false。
+- **输入隔离（面板开=游戏停，面板关=游戏恢复）**：
+  面板可见时 `DdenUI.InputGate.Request("模块id")`，关闭时 `Release`，并在 `Update`/`LateUpdate` 里 `Enforce()`。
+  闸门会禁用场景里**所有** EventSystem（`FindObjectsOfType` 一次，之后只做廉价保持），因此菜单的开始/退出按钮不会再被点穿；
+  面板关掉立刻恢复。不要在窗口矩形上做坐标判断 —— 缩放/坐标一错就会时灵时不灵。
+  快捷键要加去抖（同一键 0.25s 内只认一次），否则一次按键会被处理成开+关。
 - **标签统一 `clipping = Overflow` 并按宽度截断**：`DdenUI.ElideToWidth(text, width)`；
   Overflow 是为了中文行高不被切，但会横向溢出到邻居控件，凡是定宽列一律先截断。
 - **悬停提示别用 `GUI.tooltip`**：那个值会残留，表现为“鼠标后面一直跟着一个黑框”。

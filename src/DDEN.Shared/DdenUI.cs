@@ -47,9 +47,112 @@ namespace DDEN.Shared
             return s;
         }
 
-        // ===== 输入隔离：别让点击穿透到游戏菜单按钮 =====
+        // ===== 输入隔离：面板开着就屏蔽游戏原交互，面板关闭立刻恢复 =====
 
-        /// <summary>鼠标是否落在给定屏幕矩形内（IMGUI 坐标是左上原点，Input.mousePosition 是左下原点）。</summary>
+        /// <summary>
+        /// 引用计数式输入闸门：只要还有 DDEN 面板开着，就压住游戏的 EventSystem（uGUI 点击/悬停全停），
+        /// 全部面板关掉后立刻恢复。不支持“只挡窗口内”的花活 —— 那样容易被缩放/坐标算错，
+        /// 而面板开着时用户本来也不需要点游戏界面。
+        /// </summary>
+        public static class InputGate
+        {
+            private static readonly HashSet<string> Owners = new HashSet<string>(StringComparer.Ordinal);
+            private static readonly List<UnityEngine.EventSystems.EventSystem> Suppressed = new List<UnityEngine.EventSystems.EventSystem>();
+            private static bool _applied;
+            private static int _lastLogCount = -1;
+
+            public static bool Active
+            {
+                get { return Owners.Count > 0; }
+            }
+
+            public static void Request(string owner)
+            {
+                if (string.IsNullOrEmpty(owner)) return;
+                Owners.Add(owner);
+                Apply();
+            }
+
+            public static void Release(string owner)
+            {
+                if (string.IsNullOrEmpty(owner)) return;
+                Owners.Remove(owner);
+                Apply();
+            }
+
+            public static void Clear()
+            {
+                Owners.Clear();
+                Apply();
+            }
+
+            /// <summary>每帧调用：只做廉价的“保持压住”，重扫留给 Apply（最多 1 秒一次）。</summary>
+            public static void Enforce()
+            {
+                if (Owners.Count == 0 || Suppressed.Count == 0) return;
+                try
+                {
+                    for (int i = 0; i < Suppressed.Count; i++)
+                    {
+                        UnityEngine.EventSystems.EventSystem es = Suppressed[i];
+                        if (es != null && es.enabled) es.enabled = false;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug("InputGate.Enforce 失败：" + ex.Message);
+                }
+            }
+
+            private static void Apply()
+            {
+                try
+                {
+                    bool block = Owners.Count > 0;
+                    if (block)
+                    {
+                        // 不止一个 EventSystem 的情况也要盖住（菜单/世界各一套时 EventSystem.current 未必是正在用的那个）
+                        UnityEngine.EventSystems.EventSystem[] all =
+                            UnityEngine.Object.FindObjectsOfType<UnityEngine.EventSystems.EventSystem>();
+                        foreach (UnityEngine.EventSystems.EventSystem es in all)
+                        {
+                            if (es == null) continue;
+                            if (!Suppressed.Contains(es)) Suppressed.Add(es);
+                            if (es.enabled) es.enabled = false;
+                        }
+
+                        if (all.Length != _lastLogCount)
+                        {
+                            _lastLogCount = all.Length;
+                            Log.Info($"[InputGate] 面板显示：已屏蔽 {all.Length} 个 EventSystem（游戏原交互暂停）");
+                        }
+                        _applied = true;
+                    }
+                    else if (_applied || Suppressed.Count > 0)
+                    {
+                        foreach (UnityEngine.EventSystems.EventSystem es in Suppressed)
+                        {
+                            if (es != null) es.enabled = true;
+                        }
+                        Suppressed.Clear();
+                        _applied = false;
+                        _lastLogCount = -1;
+                        Log.Info("[InputGate] 面板关闭：游戏原交互已恢复");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug("InputGate 失败：" + ex.Message);
+                }
+            }
+
+            public static bool Applied
+            {
+                get { return _applied; }
+            }
+        }
+
+        /// <summary>鼠标是否落在给定屏幕矩形内（保留给需要精确判断的场合）。</summary>
         public static bool PointerOver(Rect screenRect)
         {
             try
@@ -63,18 +166,11 @@ namespace DDEN.Shared
             }
         }
 
-        /// <summary>临时关掉 EventSystem，阻止 uGUI（主菜单的开始游戏/退出等）接到鼠标事件。</summary>
+        /// <summary>兼容旧调用：等价于 InputGate.Request/Release 的匿名持有者。</summary>
         public static void BlockGameInput(bool block)
         {
-            try
-            {
-                UnityEngine.EventSystems.EventSystem es = UnityEngine.EventSystems.EventSystem.current;
-                if (es != null && es.enabled == block) es.enabled = !block;
-            }
-            catch (Exception ex)
-            {
-                Log.Debug("BlockGameInput 失败：" + ex.Message);
-            }
+            if (block) InputGate.Request("legacy");
+            else InputGate.Release("legacy");
         }
 
         public static void Fill(Rect r, Color c)

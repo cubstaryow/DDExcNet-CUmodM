@@ -26,7 +26,6 @@ namespace DDEN.SaveEditor
         internal static ConfigEntry<bool> CfgVerbose;
 
         private readonly EditorView _view = new EditorView();
-        private Vector2 _standaloneScroll;
         private bool _standaloneVisible;
         private Rect _standaloneRect;
         private KeyCode _standaloneKey = KeyCode.F9;
@@ -121,11 +120,17 @@ namespace DDEN.SaveEditor
         {
             try
             {
-                if (DdenHub.ManagerLoaded) return;
+                if (DdenHub.ManagerLoaded)
+                {
+                    DdenUI.InputGate.Release("saveeditor");
+                    return;
+                }
+
                 if (_standaloneKey != KeyCode.None && Input.GetKeyDown(_standaloneKey)) _standaloneVisible = !_standaloneVisible;
 
-                // 兜底小窗也要挡住穿透：鼠标在窗口内就关掉 EventSystem
-                DdenUI.BlockGameInput(_standaloneVisible && DdenUI.PointerOver(_standaloneRect));
+                if (_standaloneVisible) DdenUI.InputGate.Request("saveeditor");
+                else DdenUI.InputGate.Release("saveeditor");
+                DdenUI.InputGate.Enforce();
             }
             catch (Exception ex)
             {

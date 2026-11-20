@@ -36,12 +36,12 @@ namespace DDExcNet.CUmodM
 
         private Rect _rect = new Rect(80f, 70f, 1180f, 760f);
         private Vector2 _sideScroll;
-        private Vector2 _contentScroll;
         private Vector2 _compatScroll;
         private Vector2 _configScroll;
         private string _page = "overview";
         private bool _visible;
         private bool _inputBlocked;
+        private float _lastToggleAt = -1f;
         private KeyCode _effectiveKey = KeyCode.F8;
 
         private const int WindowId = 0x4444454E; // 'DDEN'
@@ -207,7 +207,12 @@ namespace DDExcNet.CUmodM
             try
             {
                 KeyCapture.Tick();
-                if (_effectiveKey != KeyCode.None && Input.GetKeyDown(_effectiveKey)) Toggle();
+                float now = Time.unscaledTime;
+                if (_effectiveKey != KeyCode.None && Input.GetKeyDown(_effectiveKey) && now - _lastToggleAt > 0.25f)
+                {
+                    _lastToggleAt = now;
+                    Toggle();
+                }
                 if (_visible && Input.GetKeyDown(KeyCode.Escape)) _visible = false;
                 UpdateInputBlock();
             }
@@ -217,24 +222,27 @@ namespace DDExcNet.CUmodM
             }
         }
 
-        /// <summary>鼠标在本窗口内时关掉 EventSystem，避免点击穿透到主菜单的开始/退出按钮。</summary>
+        /// <summary>面板开着就整块屏蔽游戏原交互（uGUI 点击/悬停），关掉立刻恢复。</summary>
         private void UpdateInputBlock()
         {
-            if (!CfgBlockGameInput.Value)
-            {
-                if (_inputBlocked) { _inputBlocked = false; DdenUI.BlockGameInput(false); }
-                return;
-            }
+            bool want = _visible && CfgBlockGameInput.Value;
+            if (want) DdenUI.InputGate.Request("hub");
+            else DdenUI.InputGate.Release("hub");
 
-            float s = Mathf.Clamp(CfgScale.Value, 0.75f, 2f);
-            var screen = new Rect(_rect.x * s, _rect.y * s, _rect.width * s, _rect.height * s);
-            bool block = _visible && DdenUI.PointerOver(screen);
-            if (block != _inputBlocked)
+            DdenUI.InputGate.Enforce();
+
+            if (want != _inputBlocked)
             {
-                _inputBlocked = block;
-                Log.Debug(block ? "开始拦截游戏 UI 点击（鼠标在管理器窗口内）" : "放开游戏 UI 点击");
+                _inputBlocked = want;
+                Log.Debug(want ? "面板已显示：屏蔽游戏原交互" : "面板已关闭：恢复游戏原交互");
             }
-            DdenUI.BlockGameInput(block);
+        }
+
+        private void LateUpdate()
+        {
+            // 切场景会新建 EventSystem，这里再压一次，保证“面板开着就一定不响应游戏点击”
+            try { DdenUI.InputGate.Enforce(); }
+            catch (Exception ex) { Log.Debug("LateUpdate: " + ex.Message); }
         }
 
         private void OnGUI()
@@ -512,7 +520,7 @@ namespace DDExcNet.CUmodM
         {
             try
             {
-                DdenUI.BlockGameInput(false);
+                DdenUI.InputGate.Clear();
                 PlayerPrefs.SetFloat("DDEN.Hub.X", _rect.x);
                 PlayerPrefs.SetFloat("DDEN.Hub.Y", _rect.y);
                 PlayerPrefs.SetFloat("DDEN.Hub.W", _rect.width);

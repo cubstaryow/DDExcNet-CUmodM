@@ -378,7 +378,9 @@ namespace DDEN.MPUnchippedSyncFix
 
                 if (!DdenHub.ManagerLoaded)
                 {
-                    DdenUI.BlockGameInput(_standaloneVisible && DdenUI.PointerOver(_standaloneRect));
+                    if (_standaloneVisible) DdenUI.InputGate.Request("mpunchipped");
+                    else DdenUI.InputGate.Release("mpunchipped");
+                    DdenUI.InputGate.Enforce();
                 }
 
                 if (!CfgEnabled.Value) return;

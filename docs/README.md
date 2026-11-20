@@ -54,6 +54,7 @@ IEnumerable<ConfigEntryBase> ConfigEntries { get; }
 | **补丁栈** | `Harmony.GetPatchInfo` 看同一方法上有哪些 owner | `SaveSystem.SaveGame`: CasualtiesMP + QoL + CUCoreLib；`PlayerCamera.Update`: 5 个 owner |
 | **旧 dll / 重复程序集** | 扫 `CUmod.*.dll` 残留、同名 dll 多目录同时存在 | 部署脚本自动清理 |
 | **QoL 自动存档互斥** | 写档前查 `QoL_Unknown.SaveManager.autosaveInProgress` | 忙时拒绝写并提示 |
+| **点击穿透** | 面板显示期间禁用场景里全部 EventSystem（`DdenUI.InputGate`，引用计数），关闭即恢复；快捷键带 0.25s 去抖 | 面板开：点不到开始/退出；面板关：正常交互 |
 | **联机写档风险** | `Mp.IsRunning` → 提示“只改本地文件，主机世界不受影响” | — |
 | **控制台指令撞名** | 注册前 `Compat.ConsoleHasCommand` | `dden` / `saveedit` |
 

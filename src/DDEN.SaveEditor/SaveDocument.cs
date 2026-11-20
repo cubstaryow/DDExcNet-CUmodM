@@ -118,7 +118,6 @@ namespace DDEN.SaveEditor
         public FieldRow Condition;
         public FieldRow Favourited;
         public FieldRow Label;
-        public Sprite Icon;
 
         public float ConditionValue => Condition != null ? (float)Condition.Number : 1f;
     }
