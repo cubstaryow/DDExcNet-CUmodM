@@ -94,7 +94,7 @@ namespace DDEN.MPfix
         /// 不登记的话：客机拿起/穿上后，主机在 <c>ServerReceiver__ItemWearing</c> 里 TryGetItem 找不到它
         /// → “Server declines itemwearing” → 主机看到物品掉在地上、过一会又被客机拽回身上（就是那个闪烁）。
         /// </summary>
-        private static void RegisterOnHost(GameObject go)
+        internal static void RegisterOnHost(GameObject go)
         {
             try
             {

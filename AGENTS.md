@@ -87,6 +87,10 @@ dotnet build CUmod.slnx -v m    # 只编译
   `CUCoreLib.Helpers.CustomInstantiate.InstantiateReturn` 生成，并在主机侧补 `NetObjectRegistry.Server_EnsureItemIsNetworkRegistered`
   （开关 `联机合成/FixModItemCraftSpawn`、`联机合成/RegisterSpawnedItemsOnHost`）。
   注意 Together 会按 attempt 缓存失败 receipt，同一会话重试仍失败，换层/重连才会清 —— 这是“过一层又能合成”的来源。
+- **穿戴兜底（幽灵装备）**：`DDEN.MPfix.WearGhostFix` 在客机 `Body.WearWearable` 后 1.5s 经 CUCoreLib 频道问主机
+  “这个位置有这件 id 的物品吗”；主机答没有 → `Body.DropWearable` 让它掉地 → 请求主机 `Utils.Create` 重建并登记 →
+  销毁本地幽灵，最多闪一次。**保守原则**：任何异常/通道失败就本会话禁用并 Warn；每局有次数上限；
+  查询失败时一律当成“主机认识”，绝不误删玩家物品。无芯片 watchdog 默认 **30s**（旧配置 0.5 会自动迁移）。
 - **配置界面必须是两行一条**：上行「键 + 控件」，下行说明（`DdenUI.ConfigRow`，行高 44）。
   “全部配置”页必须把**所有模块的配置**都列出来（按模块分块、按 Section 分组），不能要求先选模块才看得到。
   说明放不下时用 `DdenUI.Hover` 让鼠标悬停看全文。

@@ -40,6 +40,11 @@ namespace DDEN.MPfix
         internal static ConfigEntry<bool> CfgFixModItemCraftSpawn;
         internal static ConfigEntry<bool> CfgRegisterSpawnedItems;
 
+        // ===== 穿戴兜底 =====
+        internal static ConfigEntry<bool> CfgWearFix;
+        internal static ConfigEntry<float> CfgWearGrace;
+        internal static ConfigEntry<int> CfgWearFixMax;
+
         // ===== 其它 =====
         internal static ConfigEntry<KeyboardShortcut> CfgStandaloneKey;
         internal static ConfigEntry<bool> CfgVerbose;
@@ -92,9 +97,9 @@ namespace DDEN.MPfix
             CfgOverrideIndividualRule = Config.Bind("无芯片同步", "OverrideIndividualRule", true,
                 "把 Together 的 UnchippedIsIndividual 置为 false（全员一致），\n" +
                 "使名牌 / 附近语音 / 状态栏等 Together 自己的判定也跟随主机。");
-            CfgWatchdogSeconds = Config.Bind("无芯片同步", "WatchdogSeconds", 0.5f,
-                new ConfigDescription("客机纠偏轮询间隔（秒）。0 = 关闭轮询。",
-                    new AcceptableValueRange<float>(0f, 10f)));
+            CfgWatchdogSeconds = Config.Bind("无芯片同步", "WatchdogSeconds", 30f,
+                new ConfigDescription("客机纠偏轮询间隔（秒）。芯片状态通常一次同步就够，默认 30 秒；0 = 关闭轮询。",
+                    new AcceptableValueRange<float>(0f, 600f)));
             CfgAnnounce = Config.Bind("无芯片同步", "AnnounceToOtherPlayers", false,
                 "客机被纠偏时在控制台打印一行说明（排查用）。");
 
@@ -109,6 +114,16 @@ namespace DDEN.MPfix
 
             CfgStandaloneKey = Config.Bind("UI", "StandaloneKey", new KeyboardShortcut(KeyCode.F10),
                 "管理器缺席时的兜底面板快捷键（管理器在跑时请用管理器）。");
+            CfgWearFix = Config.Bind("穿戴兜底", "Enabled", true,
+                "客机穿上“主机不认识”的物品（水晶层本地生成的幽灵装备）时，主机会静默拒绝穿戴同步，\n" +
+                "表现为主机看到装备反复掉落又回到身上。开启后：取消穿戴让它掉在地上 → 请求主机按 id 重建并登记 →\n" +
+                "销毁本地幽灵，最多只闪一次。");
+            CfgWearGrace = Config.Bind("穿戴兜底", "GraceSeconds", 1.5f,
+                new ConfigDescription("穿上后等多久再去问主机（秒）。太快可能撞上还没同步完。",
+                    new AcceptableValueRange<float>(0.3f, 10f)));
+            CfgWearFixMax = Config.Bind("穿戴兜底", "MaxPerSession", 20,
+                new ConfigDescription("每局最多兜底几次；超过就停手（防止异常情况下反复生成物品）。",
+                    new AcceptableValueRange<int>(1, 200)));
             CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出调试日志。");
 
             Log = DDEN.Shared.Log.For(LogSource, "MPfix", CfgVerbose.Value);
@@ -116,8 +131,12 @@ namespace DDEN.MPfix
             Harmony harmony = new Harmony(Guid);
             TryPatch(harmony, typeof(WorldGeneration_SetUnchipped_Patch), "无芯片变更广播");
             TryPatch(harmony, typeof(Utils_Create_ModItemPatch), "联机合成/物品生成兜底");
+            TryPatch(harmony, typeof(WearGhostFix.Body_WearWearable_RecordPatch), "穿戴兜底（幽灵装备）");
+
+            MigrateOldWatchdog();
 
             RegisterChannels();
+            WearGhostFix.RegisterHostHandlers();
             DdenHub.Register(this);
             _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
 
@@ -167,6 +186,21 @@ namespace DDEN.MPfix
             catch (Exception ex)
             {
                 Log.Exception(ex, "补丁失败：" + what);
+            }
+        }
+
+        /// <summary>老配置里 WatchdogSeconds 还是旧默认 0.5 时，迁移成 30 秒（芯片状态通常一次同步就够）。</summary>
+        private static void MigrateOldWatchdog()
+        {
+            try
+            {
+                if (Math.Abs(CfgWatchdogSeconds.Value - 0.5f) > 0.001f) return;
+                CfgWatchdogSeconds.Value = 30f;
+                Log.Info("已把无芯片纠偏间隔从旧默认 0.5s 迁移为 30s（想更灵敏可在配置里调小）。");
+            }
+            catch (Exception ex)
+            {
+                Log.Debug("迁移 WatchdogSeconds 失败：" + ex.Message);
             }
         }
 
@@ -443,6 +477,8 @@ namespace DDEN.MPfix
                     else DdenBlocker.Hide();
                     DdenHub.SetPanelVisible("mpfix", _standaloneVisible);
                 }
+
+                WearGhostFix.Tick();
 
                 if (!CfgChipEnabled.Value) return;
                 if (!Mp.CoreAvailable) return;
