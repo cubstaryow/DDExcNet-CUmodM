@@ -3,7 +3,7 @@
   <PropertyGroup>
     <AssemblyName>DDEN.SaveEditor</AssemblyName>
     <RootNamespace>DDEN.SaveEditor</RootNamespace>
-    <Version>1.1.0</Version>
+    <Version>$(DdenVersion)</Version>
   </PropertyGroup>
 
   <ItemGroup>

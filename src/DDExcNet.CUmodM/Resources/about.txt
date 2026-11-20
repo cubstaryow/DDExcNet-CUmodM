@@ -1,0 +1,8 @@
+# 管理器「关于 DDExcNet」页展示的文字。
+# 本文件属于「资源」，不在 MPL-2.0 授权范围内 —— 见仓库根目录 LICENSE-ASSETS。
+# 格式：每行 key = value；# 开头是注释；\n 表示换行。
+
+title = DDExcNet
+subtitle = 龙域信息交换网络标准
+author = cubstaryow
+body = DDExcNet 是「幼龙云」所属「视界」世界观下的<b>龙域信息交换网络标准</b>——一套约定「不同端口、不同实现之间怎么互相认出对方、怎么交换状态」的接口规范。\n本仓库是它在《Casualties Unknown》里的落地实现：一个管理器、一套联机修复、一个可选的存档编辑器。

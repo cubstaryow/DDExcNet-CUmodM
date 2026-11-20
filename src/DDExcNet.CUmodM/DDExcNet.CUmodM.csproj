@@ -3,7 +3,7 @@
   <PropertyGroup>
     <AssemblyName>DDExcNet-CUmodM</AssemblyName>
     <RootNamespace>DDExcNet.CUmodM</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>$(DdenVersion)</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,9 +12,11 @@
     </ProjectReference>
   </ItemGroup>
 
-  <!-- 图标等内嵌资源（像素图 dragon_cloud.png 打进 dll，运行时按资源名读出） -->
+  <!-- 图标与「关于」页文本等内嵌资源（打进 dll，运行时按资源名读出）
+       注意：这些属于「资源」，不适用根目录 LICENSE（MPL-2.0），见 LICENSE-ASSETS -->
   <ItemGroup>
     <EmbeddedResource Include="Resources\*.png" />
+    <EmbeddedResource Include="Resources\*.txt" />
   </ItemGroup>
 
   <Target Name="DeployPlugin" AfterTargets="Build" Condition="'$(DeployOnBuild)' == 'true'">

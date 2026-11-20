@@ -663,6 +663,80 @@ namespace DDExcNet.CUmodM
         /// <summary>内嵌像素图标（Resources/dragon_cloud.png，16×16，按 Point 过滤放大）。</summary>
         private Texture2D Logo => _logo ??= LoadLogo();
 
+        /// <summary>
+        /// 「关于」页文字：正文与名称都从内嵌的 Resources/about.txt 读（那属于「资源」，不适用 MPL-2.0，
+        /// 见仓库根目录 LICENSE-ASSETS）。文件缺失时用这里的兜底，保证界面不会空掉。
+        /// </summary>
+        private static readonly string[] AboutFallback =
+        {
+            "DDExcNet",
+            "龙域信息交换网络标准",
+            "cubstaryow",
+            "DDExcNet 是「幼龙云」所属「视界」世界观下的<b>龙域信息交换网络标准</b>。\n" +
+            "本仓库是它在《Casualties Unknown》里的落地实现：一个管理器、一套联机修复、一个可选的存档编辑器。"
+        };
+
+        private static string[] _about;
+
+        private static string[] AboutText => _about ??= LoadAboutText();
+
+        private static string[] LoadAboutText()
+        {
+            try
+            {
+                System.Reflection.Assembly asm = typeof(HubPlugin).Assembly;
+                string name = null;
+                foreach (string n in asm.GetManifestResourceNames())
+                {
+                    if (n.EndsWith("about.txt", StringComparison.OrdinalIgnoreCase)) { name = n; break; }
+                }
+                if (name == null)
+                {
+                    Log.Debug("未找到内嵌的 about.txt（csproj 的 EmbeddedResource 掉了？）");
+                    return AboutFallback;
+                }
+
+                string text;
+                using (Stream s = asm.GetManifestResourceStream(name))
+                {
+                    if (s == null) return AboutFallback;
+                    using (var reader = new StreamReader(s, System.Text.Encoding.UTF8))
+                    {
+                        text = reader.ReadToEnd();
+                    }
+                }
+
+                var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (string raw in text.Replace("\r", string.Empty).Split('\n'))
+                {
+                    string line = raw.Trim();
+                    if (line.Length == 0 || line.StartsWith("#", StringComparison.Ordinal)) continue;
+                    int eq = line.IndexOf('=');
+                    if (eq <= 0) continue;
+                    map[line.Substring(0, eq).Trim()] = line.Substring(eq + 1).Trim().Replace("\\n", "\n");
+                }
+
+                string Pick(string key, string fallback)
+                {
+                    return map.TryGetValue(key, out string v) && !string.IsNullOrEmpty(v) ? v : fallback;
+                }
+
+                Log.Info($"[UI] 关于页文本已加载：{name}（{map.Count} 个字段）");
+                return new[]
+                {
+                    Pick("title", AboutFallback[0]),
+                    Pick("subtitle", AboutFallback[1]),
+                    Pick("author", AboutFallback[2]),
+                    Pick("body", AboutFallback[3])
+                };
+            }
+            catch (Exception ex)
+            {
+                Log.Debug("读取关于页文本失败：" + ex.Message);
+                return AboutFallback;
+            }
+        }
+
         private static Texture2D LoadLogo()
         {
             try
@@ -725,17 +799,14 @@ namespace DDExcNet.CUmodM
             float w = Mathf.Max(120f, area.xMax - x);
             float y = top;
 
-            GUI.Label(new Rect(x, y, w, 30f), "<size=22><b>DDExcNet</b></size>", DdenUI.Title);
+            string[] about = AboutText;
+            GUI.Label(new Rect(x, y, w, 30f), "<size=22><b>" + about[0] + "</b></size>", DdenUI.Title);
             y += 32f;
-            GUI.Label(new Rect(x, y, w, 18f), "龙域信息交换网络标准", DdenUI.Sub);
+            GUI.Label(new Rect(x, y, w, 18f), about[1], DdenUI.Sub);
             y += 20f;
-            GUI.Label(new Rect(x, y, w, 18f), "模组作者：<color=#8cd97c>cubstaryow</color>", DdenUI.Row);
+            GUI.Label(new Rect(x, y, w, 18f), "模组作者：<color=#8cd97c>" + about[2] + "</color>", DdenUI.Row);
             y += 24f;
-            GUI.Label(new Rect(x, y, w, 76f),
-                "DDExcNet 是「幼龙云」所属「视界」世界观下的<b>龙域信息交换网络标准</b>——" +
-                "一套约定「不同端口、不同实现之间怎么互相认出对方、怎么交换状态」的接口规范。\n" +
-                "本仓库是它在《Casualties Unknown》里的落地实现：一个管理器、一套联机修复、一个可选的存档编辑器。",
-                DdenUI.Wrap);
+            GUI.Label(new Rect(x, y, w, 76f), about[3], DdenUI.Wrap);
 
             float ly = top + logoSize + 18f;
             DdenUI.Section(new Rect(area.x, ly, area.width, 18f), "本仓库组成");
