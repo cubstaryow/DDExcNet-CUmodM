@@ -142,7 +142,7 @@ dotnet build CUmod.slnx -v m                  # 只编译
   在客机上也会跑一遍“本地预测”，让客机成功造出模组物品就会和主机同步来的那份重复
   （典型症状：**客机买商人东西买两份**）。客机保持原版行为，生成物一律由主机权威下发。
   生成后在主机侧补 `NetObjectRegistry.Server_EnsureItemIsNetworkRegistered`
-  （开关 `联机合成/FixModItemCraftSpawn`、`联机合成/RegisterSpawnedItemsOnHost`）。
+  （开关只剩 `联机合成/修“无法生成物品”（FixModItemCraftSpawn）`；登记已改为无条件且幂等，不再有开关）。
   **两条都不行就放弃兜底**（交回原版，该配方该失败就失败）——**绝不克隆现存物品、绝不做任何 Destroy**：
   克隆容器会把内容物一起复制（凭空刷物品），清理子物品又是一次删除，风险远大于收益。
   **失败必须留痕**：会打一条 `[CraftFix] 生成失败 '<id>'：…（含注册表是否命中）`（同 id 30s 去重）。
@@ -158,14 +158,14 @@ dotnet build CUmod.slnx -v m                  # 只编译
   **铁律：绝不把“解析不到发送者”回落成 `Game.LocalBody`** —— 那会把客机的物品穿到主机自己身上；
   解析不到就 `Fail("no-body")`。发送者通道注册失败 → 本会话整块停手并 Warn（宁可不修，不猜人）。
   记录类异常只记 Debug，**不因此禁用整个兜底**；只有频道/`Body_ForceWearWearable` 找不到才停。
-  只有 `RebuildIfHostLacksItem`（默认 false）开启且主机真的找不到时才走“掉地+重建”。
+  **没有“重建”这条路了**（`RebuildIfHostLacksItem` 与 `wearrespawn` 频道已删除）：主机找不到就保持现状，绝不复制。
   无芯片 watchdog 默认 **30s**（旧配置 0.5 会自动迁移）。
 - **物品穿墙掉落（联机）**：真凶是 Together 的 `HeldQuiet`（`Internal/HeldQuiet`）——
   `Awake` 里把物品所有 `Collider2D` 关掉并记下当时状态，`Restore()` 再写回；
   若挂上那一刻碰撞体本来就是关的（物品在背包里 / 模组物品后加的碰撞体不在名单里），写回后仍然是关的，
   而 `HeldSeat` 已经把 `rb.simulated = true` → **无碰撞 + 有物理 = 穿过墙块往下掉**。
   修复在 `DDEN.MPfix.ItemPhysicsGuard`：① Harmony postfix 到 `HeldQuiet.Restore`（反射按名字找类型）恢复后**只补碰撞体**，
-  **且只管 `物品物理/GuardRadius`（默认 12 米）以内的物品** —— 远处恢复碰撞对玩家没意义，纯属多花开销；
+  **且只管 `物品物理/被动恢复碰撞范围（GuardRadius）`（默认 5 米，约等于刚丢出去的距离）以内的物品** —— 远处恢复碰撞对玩家没意义，纯属多花开销；
   ② 只在 `Body.DropItem` / `Body.DropWearable`（真正的丢出动作）后**补开碰撞体 / 打开物理**，**绝不移动物品**。
   **三条铁律**（2026-11 因“主机物品一直掉落/浮空”两次收紧）：只处理 `IsFree` 的自由物品（无父级、不在 Container 里）；
   只“打开”不“改写”；任何位移副作用一律删除（早期版本会上移 0.5~3m，位移会残留在局部坐标 →
