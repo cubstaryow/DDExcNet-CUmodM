@@ -167,6 +167,12 @@ dotnet build CUmod.slnx -v m                  # 只编译
   ② 每 2 秒巡检附近身体的 `WearableExtension`：`reference` 为空、或它挂的 Item 已不属于该身体 →
   **连续两次巡检（≥1.5s）都成立**才销毁这层视觉（只删视觉子物体，绝不碰真实物品）。
   开关 `联机修正/CleanStaleWearableVisuals`。
+- **物品卡在玩家中心（能打开、但不算穿戴也不在背包）**：`DDEN.MPfix.OrphanItemFix` ——
+  Together 的 `HeldSeat` 把物品挂到 `InventorySlot`（父级=槽位、localPosition=0）来表现远端的手/背包，
+  槽位记账错位时物品就一直挂在身体中心，`GetItem(slot)` / `GetAllWearables()` 里却找不到。
+  修法：**只看本地身体**，每 2 秒扫“挂在身体下、父链里没有别的 Item（排除容器内容）、不属于任何槽位/穿戴”的物品，
+  连续 2.5 秒成立 → 先 `AutoPickUpItem` 归位；拾不进背包就 `SetParent(null)` 放回地面（物品不删）。
+  每局上限 `联机修正/MaxOrphanFixPerSession`（默认 50），开关 `联机修正/FixOrphanItems`。
 - **配置界面必须是两行一条**：上行「键 + 控件」，下行说明（`DdenUI.ConfigRow`，行高 44）。
   “全部配置”页必须把**所有模块的配置**都列出来（按模块分块、按 Section 分组），不能要求先选模块才看得到。
   说明放不下时用 `DdenUI.Hover` 让鼠标悬停看全文。

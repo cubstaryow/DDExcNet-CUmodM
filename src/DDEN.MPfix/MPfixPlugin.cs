@@ -56,6 +56,8 @@ namespace DDEN.MPfix
         internal static ConfigEntry<bool> CfgToolDurability;
         internal static ConfigEntry<bool> CfgBlockBreakSync;
         internal static ConfigEntry<bool> CfgCleanWearableVisuals;
+        internal static ConfigEntry<bool> CfgOrphanItemFix;
+        internal static ConfigEntry<int> CfgOrphanFixMax;
 
         // ===== 娱乐 =====
         internal static ConfigEntry<bool> CfgDoublePurchase;
@@ -163,6 +165,12 @@ namespace DDEN.MPfix
             CfgCleanWearableVisuals = Config.Bind("联机修正", "CleanStaleWearableVisuals", true,
                 "清理“人身上还挂着一件装备贴图、其实没穿戴”的残留视觉层（WearableExtension）。\n" +
                 "只删纯视觉子物体，不碰任何真实物品。");
+            CfgOrphanItemFix = Config.Bind("联机修正", "FixOrphanItems", true,
+                "修“有一件真实物品一直卡在玩家中心（能打开内容、但不算穿戴也不在背包里）”。\n" +
+                "判定持续 2.5 秒后：先尝试重新拾取归位；拾不进背包就从身上摘下放回地面（物品本体不删）。");
+            CfgOrphanFixMax = Config.Bind("联机修正", "MaxOrphanFixPerSession", 50,
+                new ConfigDescription("每局最多处理多少个孤儿物品；超过就停手。",
+                    new AcceptableValueRange<int>(1, 500)));
             CfgDoublePurchase = Config.Bind("娱乐", "道生一 一生二", false,
                 "道生一，一生二：主机在商人购买时额外奉送一份（同样的物品，直接进买家背包）。\n" +
                 "纯娱乐开关，默认关闭。只在主机生效，客机购买也会多一件。");
@@ -537,6 +545,7 @@ namespace DDEN.MPfix
                 WearGhostFix.Tick();
                 WornItemSnap.Tick();
                 WearableVisualFix.Tick();
+                OrphanItemFix.Tick();
 
                 if (!CfgChipEnabled.Value) return;
                 if (!Mp.CoreAvailable) return;
