@@ -52,6 +52,7 @@ namespace DDEN.MPfix
 
         // ===== 物品物理保险 =====
         internal static ConfigEntry<bool> CfgPhysicsGuard;
+        internal static ConfigEntry<float> CfgGuardRadius;
 
         // ===== 联机修正（商人商品表 / 挖块 / 掉线遗留物品） =====
         internal static ConfigEntry<bool> CfgTraderSnapshot;
@@ -59,8 +60,12 @@ namespace DDEN.MPfix
         internal static ConfigEntry<float> CfgBlockDamageRatio;
         internal static ConfigEntry<float> CfgBlockBreakMinFraction;
         internal static ConfigEntry<bool> CfgRelayGhostItems;
-        internal static ConfigEntry<bool> CfgCleanGhostItems;
-        internal static ConfigEntry<int> CfgCleanGhostMax;
+
+        // ===== 卡顿应急 =====
+        internal static ConfigEntry<bool> CfgRescueEnabled;
+        internal static ConfigEntry<float> CfgRescueFps;
+        internal static ConfigEntry<float> CfgRescueSeconds;
+        internal static ConfigEntry<int> CfgRescuePerPass;
 
         // ===== 娱乐 =====
         internal static ConfigEntry<bool> CfgDoublePurchase;
@@ -144,6 +149,10 @@ namespace DDEN.MPfix
             CfgWearRebuild = Config.Bind("穿戴兜底", "RebuildIfHostLacksItem", false,
                 "只有主机真的找不到这件装备时才用：先脱下来放地上，再请主机造一件新的。\n" +
                 "默认关闭（会有多出一件的风险），只当最后手段。");
+            CfgGuardRadius = Config.Bind("物品物理", "GuardRadius", 12f,
+                new ConfigDescription("被动恢复碰撞只管这么近的物品（米）：更远的物品恢复碰撞对玩家没意义，白白多开销。\n" +
+                                      "玩家自己丢出来的东西不受这个限制，一定会恢复。",
+                    new AcceptableValueRange<float>(1f, 60f)));
             CfgPhysicsGuard = Config.Bind("物品物理", "GuardDropPhysics", true,
                 "丢东西后补一道保险：让落地物品恢复正常碰撞，别穿墙掉到地图外面。\n" +
                 "只处理真正丢在地上的物品，不会挪动它们。");
@@ -167,13 +176,19 @@ namespace DDEN.MPfix
                 "原理：主机把退场玩家的物品收进存档时，会把这份清单广播给所有客机，\n" +
                 "客机据此删掉本地那份「没人管、一直下坠」的副本。这是照着联机框架自己的退场流程做的，不靠猜。\n" +
                 "主机没开这个开关就不会有这类残留，客机也就不会删任何东西。");
-            CfgCleanGhostItems = Config.Bind("联机修正", "CleanGhostItems", false,
-                "【备用，默认关】只在本机自己判断哪些是没人要的遗留物（靠“无主 + 一直在动”）。\n" +
-                "判据不稳定（物品也可能真的掉很久，还有浮空机制），所以正常请用上面的 RelayGhostItems。\n" +
-                "它只冻结/清理本机看到的无主物品，作为最后兜底。");
-            CfgCleanGhostMax = Config.Bind("联机修正", "CleanGhostItemsMaxPerSession", 400,
-                new ConfigDescription("一局最多处理几件，超过就停手。",
-                    new AcceptableValueRange<int>(0, 4000)));
+            CfgRescueEnabled = Config.Bind("卡顿应急", "Enable", true,
+                "只在真的卡的时候才动手（平时完全不碰世界）：帧数持续低于阈值时，\n" +
+                "清掉网络登记表里的死条目，并把吃物理最狠的无主对象冻住（位置不动、对象不删）。\n" +
+                "冻结期间会跳过我们自己的“恢复碰撞”保险，否则刚冻上就被打开，等于白冻。");
+            CfgRescueFps = Config.Bind("卡顿应急", "TriggerFps", 45f,
+                new ConfigDescription("帧数低于这个值才算卡。",
+                    new AcceptableValueRange<float>(5f, 144f)));
+            CfgRescueSeconds = Config.Bind("卡顿应急", "TriggerSeconds", 2f,
+                new ConfigDescription("连续卡这么久才动手（避免偶发掉帧就乱冻）。",
+                    new AcceptableValueRange<float>(0.5f, 30f)));
+            CfgRescuePerPass = Config.Bind("卡顿应急", "MaxPerPass", 25,
+                new ConfigDescription("每轮最多冻几个对象（每轮至少间隔 5 秒）。",
+                    new AcceptableValueRange<int>(1, 200)));
             CfgDoublePurchase = Config.Bind("娱乐", "道生一 一生二", false,
                 "道生一，一生二：在商人那里买东西时额外多送一份，直接放进背包。\n" +
                 "纯娱乐开关，默认关闭。只需要主机打开，客机买东西同样会多一件。");
@@ -571,7 +586,7 @@ namespace DDEN.MPfix
                 WearGhostFix.Tick();
                 float t1 = Time.realtimeSinceStartup;
                 GhostItemRelay.Tick();
-                GhostItemCleaner.Tick();
+                PerfRescue.Tick();
                 float t2 = Time.realtimeSinceStartup;
 
                 ReportTickCost((t2 - t0) * 1000f, (t1 - t0) * 1000f, (t2 - t1) * 1000f);

@@ -164,7 +164,8 @@ dotnet build CUmod.slnx -v m                  # 只编译
   `Awake` 里把物品所有 `Collider2D` 关掉并记下当时状态，`Restore()` 再写回；
   若挂上那一刻碰撞体本来就是关的（物品在背包里 / 模组物品后加的碰撞体不在名单里），写回后仍然是关的，
   而 `HeldSeat` 已经把 `rb.simulated = true` → **无碰撞 + 有物理 = 穿过墙块往下掉**。
-  修复在 `DDEN.MPfix.ItemPhysicsGuard`：① Harmony postfix 到 `HeldQuiet.Restore`（反射按名字找类型）恢复后**只补碰撞体**；
+  修复在 `DDEN.MPfix.ItemPhysicsGuard`：① Harmony postfix 到 `HeldQuiet.Restore`（反射按名字找类型）恢复后**只补碰撞体**，
+  **且只管 `物品物理/GuardRadius`（默认 12 米）以内的物品** —— 远处恢复碰撞对玩家没意义，纯属多花开销；
   ② 只在 `Body.DropItem` / `Body.DropWearable`（真正的丢出动作）后**补开碰撞体 / 打开物理**，**绝不移动物品**。
   **三条铁律**（2026-11 因“主机物品一直掉落/浮空”两次收紧）：只处理 `IsFree` 的自由物品（无父级、不在 Container 里）；
   只“打开”不“改写”；任何位移副作用一律删除（早期版本会上移 0.5~3m，位移会残留在局部坐标 →
@@ -178,7 +179,7 @@ dotnet build CUmod.slnx -v m                  # 只编译
   （重复修复导致的错位/残留/孤儿），而且“贴图残留”从未被证实存在——是上一个 agent 的推测。
   **不要再加回来**：它们会去改物品的父级与 localPosition，一旦判断错就是"身上物品乱飞/被挪走"，
   比它想解决的问题更糟。真出现“装备浮空/贴图残留”，先查是谁改了父级，别用巡检去猜。
-- **掉线后另一台客机掉帧（`GhostItemRelay` 主机点名 + `GhostItemCleaner` 备用，2026-11 第三版）**：
+- **掉线后另一台客机掉帧（`GhostItemRelay` 主机点名 + `PerfRescue` 卡顿应急，2026-11 第四版）**：
   **先读 MP 自己的退场流程**（decomp/mp554）：主机 `ScavPlayer.OnDestroy` → `PlayerCheckpoint.WriteOne` →
   `new PlayerSavedState(body)`：物品 `SetParent` 到 `SAVESTATE_<nb>` → `NetObjectRegistry.DetachSyncKeepMesh(go)` → 容器 `SetActive(false)`。
   **`DetachSyncKeepMesh` 是 `if (!Net.IsServer) return;`，只改主机注册表、不给客机发任何消息** ——
@@ -191,13 +192,16 @@ dotnet build CUmod.slnx -v m                  # 只编译
     客机 `RegisterClientHandler` 收到后按 **id + 1.5m 内** 精确命中本地"无主副本"，调
     `NetObjectRegistry.SafeDestroyObject`（MP 自己的销毁通道：先卸容器内容物 → 摘注册表 → Destroy）删掉。
     **不用任何"是不是在下坠/还登不登记"的猜测**；开关 `联机修正/RelayGhostItems`（默认开）。
-  - **备用 `GhostItemCleaner`**：只在 `联机修正/CleanGhostItems`（**默认关**）打开时生效，
-    按"无主 + 一直在动 + 首见以来 y 掉 ≥1.5m"判断，先冻结、第二轮才删。用户明确说这条判据不稳
-    （物品可能真的掉很久、也有浮空机制），所以它只是兜底，别再把它当主修。
+  - **启发式已删除**（用户口径 2026-11）：`GhostItemCleaner` 连同 `CleanGhostItems` / `CleanGhostItemsMaxPerSession`
+    一起删掉。理由：判据不稳（物品可能真的掉很久、还有浮空机制），不靠猜。
+  - **卡顿应急 `PerfRescue`**（`卡顿应急/Enable`，默认开）：只在**真的卡**时动手（帧数连续低于
+    `TriggerFps`（45）达 `TriggerSeconds`（2s），每轮间隔 ≥5s，每轮最多 `MaxPerPass`（25）个）：① 清
+    `SyncRegistry` 里 key 已销毁的死条目；② 把"无主 + Dynamic + 没睡着"的对象冻成运动学（`gravityScale=0`、
+    关碰撞体、`simulated` 保持 true），位置不动、对象不删。**冻结对象登记进 `PerfRescue.FrozenIds`，
+    `ItemPhysicsGuard` 见到就跳过** —— 否则刚冻上就被它恢复碰撞，等于白冻（前几版失效的原因之一）。
   - `NetPerfTracker` 的「活跃刚体」只数 `Dynamic`（运动学/静态刚体不算压力），指标才反映真实开销。
-- **现在有三个周期节拍**：`WearGhostFix.Tick()`、`GhostItemRelay.Tick()`（主机攒批广播）、
-  `GhostItemCleaner.Tick()`（备用，默认关）；逐帧计时后每 60 秒汇总一条 `[巡检]`（平均 ≥0.5ms 或峰值 ≥2ms 才写），
-  状态页常驻显示 `巡检开销`。
+- **现在的周期节拍**：`WearGhostFix.Tick()`、`GhostItemRelay.Tick()`（主机攒批广播）、`PerfRescue.Tick()`
+  （帧率监控，卡了才动作）；`[巡检]` 每 60 秒汇总一次（平均 ≥0.5ms 或峰值 ≥2ms 才写），状态页常驻显示 `巡检开销`。
 - **“一生二”重复物品（重要）**：合成 / 购买 / 生成在客机上**也会跑一遍本地预测**。
   只要客机的 `Utils.Create` 成功造出模组物品，它自己那份 + 主机同步来的那份就是两份。
   所以 `Utils_Create_ModItemPatch` 的第一道闸是 `if (Mp.IsRunning && !Mp.IsServer) return true;`

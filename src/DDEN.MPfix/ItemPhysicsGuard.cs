@@ -57,6 +57,8 @@ namespace DDEN.MPfix
                 if (item == null) return;
                 if (!MPfixPlugin.CfgPhysicsGuard.Value) return;
                 if (!IsFree(item)) return;
+                if (PerfRescue.IsFrozen(item)) return;      // 卡顿应急冻住的对象：别再给它恢复碰撞
+                if (!NearPlayer(item)) return;              // 只看身边的，远处不恢复碰撞
 
                 Collider2D[] cols = item.GetComponentsInChildren<Collider2D>(true);
                 for (int i = 0; i < cols.Length; i++)
@@ -117,6 +119,28 @@ namespace DDEN.MPfix
             }
         }
 
+        /// <summary>
+        /// 只看玩家身边的东西（用户口径 2026-11）：远处物品的碰撞恢复对玩家毫无意义，
+        /// 却要给它们做 GetComponentsInChildren + 物理查询，纯属额外开销。没有本地身体时一律不处理。
+        /// </summary>
+        private static bool NearPlayer(Item item)
+        {
+            try
+            {
+                Body local = Game.LocalBody;
+                if (local == null || item == null || item.transform == null) return false;
+                float r = Mathf.Max(1f, MPfixPlugin.CfgGuardRadius.Value);
+                Vector2 a = local.transform.position;
+                Vector2 b = item.transform.position;
+                float dx = a.x - b.x, dy = a.y - b.y;
+                return dx * dx + dy * dy <= r * r;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         internal static void Guard(Item item, string why)
         {
             if (item == null) return;
@@ -124,6 +148,8 @@ namespace DDEN.MPfix
             {
                 if (!MPfixPlugin.CfgPhysicsGuard.Value) return;
                 if (!IsFree(item)) return;      // ★ 关键：绝不给手持/穿戴/在包里的物品打开物理
+                // 玩家亲手丢出来的东西**一律恢复碰撞**（不看距离）——这是"丢下去要正常落地"的保证，
+                // 距离限制只用在被动的 HeldQuiet.Restore 那条路上（见 AfterHeldQuietRestore）。
 
                 Rigidbody2D rb = item.rb;
                 if (rb != null)
