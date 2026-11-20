@@ -45,6 +45,9 @@ namespace DDEN.MPfix
         internal static ConfigEntry<float> CfgWearGrace;
         internal static ConfigEntry<int> CfgWearFixMax;
 
+        // ===== 物品物理保险 =====
+        internal static ConfigEntry<bool> CfgPhysicsGuard;
+
         // ===== 其它 =====
         internal static ConfigEntry<KeyboardShortcut> CfgStandaloneKey;
         internal static ConfigEntry<bool> CfgVerbose;
@@ -124,6 +127,9 @@ namespace DDEN.MPfix
             CfgWearFixMax = Config.Bind("穿戴兜底", "MaxPerSession", 20,
                 new ConfigDescription("每局最多兜底几次；超过就停手（防止异常情况下反复生成物品）。",
                     new AcceptableValueRange<int>(1, 200)));
+            CfgPhysicsGuard = Config.Bind("物品物理", "GuardDropPhysics", true,
+                "丢出/生成物品时：打开它自己与子物品的碰撞体、rigidbody 设为 Continuous，\n" +
+                "若正压在墙块里就向上挪到不重叠。用于修联机里“丢东西穿墙往下掉”。");
             CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出调试日志。");
 
             Log = DDEN.Shared.Log.For(LogSource, "MPfix", CfgVerbose.Value);
@@ -132,6 +138,11 @@ namespace DDEN.MPfix
             TryPatch(harmony, typeof(WorldGeneration_SetUnchipped_Patch), "无芯片变更广播");
             TryPatch(harmony, typeof(Utils_Create_ModItemPatch), "联机合成/物品生成兜底");
             TryPatch(harmony, typeof(WearGhostFix.Body_WearWearable_RecordPatch), "穿戴兜底（幽灵装备）");
+            TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropItem_GuardPatch), "物品掉落物理保险（丢出）");
+            TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropWearable_GuardPatch), "物品掉落物理保险（卸下）");
+            TryPatch(harmony, typeof(ItemPhysicsGuard.Container_UnloadItem_GuardPatch), "物品掉落物理保险（容器）");
+            TryPatch(harmony, typeof(ItemPhysicsGuard.Utils_Create_GuardPatch), "物品掉落物理保险（生成）");
+            ItemPhysicsGuard.InstallHeldQuietRepair(harmony);
 
             MigrateOldWatchdog();
 

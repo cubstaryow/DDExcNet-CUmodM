@@ -230,14 +230,15 @@ namespace DDEN.MPfix
                 {
                     if (r2 == null || r2.Value<bool?>("ok") != true) return;   // 失败就保持掉在地上，不删本地物品
 
-                    // 3) 主机已重建 → 销毁本地幽灵，避免出现两件
-                    if (item != null) UnityEngine.Object.Destroy(item.gameObject);
+                    // 3) 主机已重建 → 先保住内容物，再销毁空壳幽灵
+                    bool removed = TryRetireGhost(item, p.Pos, p.Id);
                     _recovered++;
 
                     if (Time.unscaledTime - _lastLogAt > 1f)
                     {
                         _lastLogAt = Time.unscaledTime;
-                        MPfixPlugin.Log.Info($"[穿戴兜底] 主机不认识 '{p.Id}'：已取消穿戴并请求主机重建（第 {_recovered} 次，最多闪一次）");
+                        MPfixPlugin.Log.Info($"[穿戴兜底] 主机不认识 '{p.Id}'：已取消穿戴并请求主机重建" +
+                                             $"（第 {_recovered} 次，最多闪一次；幽灵{(removed ? "已清理" : "保留")}）");
                     }
                 }
                 catch (Exception ex)
@@ -245,6 +246,73 @@ namespace DDEN.MPfix
                     Disable("重建回调失败", ex);
                 }
             });
+        }
+
+        /// <summary>
+        /// 清理本地幽灵前先把“内容物”全拿出来：
+        ///  - 子物品（背包里装的东西）逐个脱离并落在附近，绝不跟着一起销毁；
+        ///  - 含液体的容器（WaterContainerItem.stack 有内容）**不销毁**，宁可留一个本地幽灵也不丢液体；
+        ///  - 只有确认空壳了才 Destroy，且销毁前再点一遍子物体。
+        /// 返回是否真的清理掉了。
+        /// </summary>
+        private static bool TryRetireGhost(Item ghost, Vector2 pos, string id)
+        {
+            if (ghost == null) return true;
+
+            try
+            {
+                // 1) 子物品先脱离（Container 里的东西）
+                var children = new List<Transform>();
+                foreach (Transform child in ghost.transform)
+                {
+                    if (child != null && child.GetComponent<Item>() != null) children.Add(child);
+                }
+
+                for (int i = 0; i < children.Count; i++)
+                {
+                    Transform child = children[i];
+                    if (child == null) continue;
+                    child.SetParent(null, true);
+                    child.position = new Vector3(
+                        pos.x + UnityEngine.Random.Range(-0.5f, 0.5f),
+                        pos.y + 0.6f + i * 0.15f,
+                        0f);
+                    var childItem = child.GetComponent<Item>();
+                    if (childItem != null) ItemPhysicsGuard.Guard(childItem, "ghost-detach");
+                }
+                if (children.Count > 0)
+                {
+                    MPfixPlugin.Log.Info($"[穿戴兜底] 幽灵 '{id}' 里有 {children.Count} 件子物品，已全部取出落地，未随幽灵删除。");
+                }
+
+                // 2) 液体内容无法搬运 → 保留幽灵，宁可不清理
+                if (ghost.TryGetComponent<WaterContainerItem>(out var water) && water != null
+                    && water.stack != null && water.stack.Count > 0)
+                {
+                    MPfixPlugin.Log.Warn($"[穿戴兜底] 幽灵 '{id}' 含液体内容，已保留不删除（避免丢失液体）。");
+                    return false;
+                }
+
+                // 3) 再确认一次没有残留 Item 子物体
+                int remaining = 0;
+                foreach (Transform child in ghost.transform)
+                {
+                    if (child != null && child.GetComponent<Item>() != null) remaining++;
+                }
+                if (remaining > 0)
+                {
+                    MPfixPlugin.Log.Warn($"[穿戴兜底] 幽灵 '{id}' 仍有 {remaining} 件子物品未能取出，保留不删除。");
+                    return false;
+                }
+
+                UnityEngine.Object.Destroy(ghost.gameObject);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MPfixPlugin.Log.Warn($"[穿戴兜底] 清理幽灵 '{id}' 失败，已保留（不影响游戏）：{ex.Message}");
+                return false;
+            }
         }
 
         private static void Disable(string why, Exception ex)

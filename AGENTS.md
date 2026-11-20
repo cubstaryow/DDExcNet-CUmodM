@@ -91,6 +91,15 @@ dotnet build CUmod.slnx -v m    # 只编译
   “这个位置有这件 id 的物品吗”；主机答没有 → `Body.DropWearable` 让它掉地 → 请求主机 `Utils.Create` 重建并登记 →
   销毁本地幽灵，最多闪一次。**保守原则**：任何异常/通道失败就本会话禁用并 Warn；每局有次数上限；
   查询失败时一律当成“主机认识”，绝不误删玩家物品。无芯片 watchdog 默认 **30s**（旧配置 0.5 会自动迁移）。
+- **物品穿墙掉落（联机）**：真凶是 Together 的 `HeldQuiet`（`Internal/HeldQuiet`）——
+  `Awake` 里把物品所有 `Collider2D` 关掉并记下当时状态，`Restore()` 再写回；
+  若挂上那一刻碰撞体本来就是关的（物品在背包里 / 模组物品后加的碰撞体不在名单里），写回后仍然是关的，
+  而 `HeldSeat` 已经把 `rb.simulated = true` → **无碰撞 + 有物理 = 穿过墙块往下掉**。
+  修复在 `DDEN.MPfix.ItemPhysicsGuard`：① Harmony postfix 到 `HeldQuiet.Restore`（反射按名字找类型）恢复后真正打开碰撞体；
+  ② `Body.DropItem/DropWearable`、`Container.UnloadItem`、`Utils.Create` 后统一做保险
+  （开碰撞体、`Continuous` 防隧穿、压在 Ground 层里就上移脱困）。开关 `物品物理/GuardDropPhysics`。
+- **删幽灵物品必须先保内容物**：`WearGhostFix.TryRetireGhost` 先把子物品逐个脱离落地，
+  含液体（`WaterContainerItem.stack`）或取不干净就**保留不删**，只有空壳才 Destroy。
 - **配置界面必须是两行一条**：上行「键 + 控件」，下行说明（`DdenUI.ConfigRow`，行高 44）。
   “全部配置”页必须把**所有模块的配置**都列出来（按模块分块、按 Section 分组），不能要求先选模块才看得到。
   说明放不下时用 `DdenUI.Hover` 让鼠标悬停看全文。
