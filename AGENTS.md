@@ -98,6 +98,9 @@ dotnet build CUmod.slnx -v m                  # 只编译
   模组物品不在 Resources 里 → `CraftReason.SpawnFailed`（客户端文案 `craft_deny_spawnfailed`）。
   修复在 `DDEN.MPfix.Utils_Create_ModItemPatch`：给 `Utils.Create` 加前缀，Resources 找不到时只走 CUCoreLib 两条正路：
   ① `ResolvePrefab`（先确认带 `Item` 组件）再 `Instantiate` → ② `CustomInstantiate.InstantiateReturn`；
+  **客机一律不本地生成**（`Mp.IsRunning && !Mp.IsServer` 时直接返回 true）：商人购买 / 合成 / 水晶掉落
+  在客机上也会跑一遍“本地预测”，让客机成功造出模组物品就会和主机同步来的那份重复
+  （典型症状：**客机买商人东西买两份**）。客机保持原版行为，生成物一律由主机权威下发。
   生成后在主机侧补 `NetObjectRegistry.Server_EnsureItemIsNetworkRegistered`
   （开关 `联机合成/FixModItemCraftSpawn`、`联机合成/RegisterSpawnedItemsOnHost`）。
   **两条都不行就放弃兜底**（交回原版，该配方该失败就失败）——**绝不克隆现存物品、绝不做任何 Destroy**：

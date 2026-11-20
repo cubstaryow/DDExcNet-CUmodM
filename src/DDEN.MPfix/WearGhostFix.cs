@@ -223,17 +223,13 @@ namespace DDEN.MPfix
                     if (item == null || item.id != id) continue;
                     if (!item.Stats.wearable) continue;
 
-                    // 已经穿在别人身上 → 不抢
+                    // 只认“自由物品”（在地上、不在任何人身上/包里），避免把别人的装备抢过来
                     Transform parent = item.transform.parent;
-                    if (parent != null)
-                    {
-                        Body other = parent.GetComponentInParent<Body>();
-                        if (other != null && other != owner) continue;
-                        if (other == owner) continue;
-                    }
+                    if (parent != null) continue;
+                    if (item.TryGetParentContainer(out var container) && container != null) continue;
 
                     float d = Vector2.Distance(item.transform.position, pos);
-                    if (d > 12f) continue;
+                    if (d > 4f) continue;      // 4m 内才算“刚买到/刚掉在脚边的那件”
                     if (d < bestDist) { bestDist = d; best = item; }
                 }
                 return best;

@@ -46,6 +46,15 @@ namespace DDEN.MPfix
                 if (string.IsNullOrEmpty(id)) return true;
                 if (VanillaIds.Contains(id)) return true;
 
+                // ★ 客机不本地生成：物品生成一律以主机为权威。
+                //   商人购买 / 合成 / 水晶掉落这些流程在客机上也会跑一遍“本地预测”，
+                //   一旦我们让客机的 Utils.Create 成功造出模组物品，客机自己那份 + 主机同步来的那份
+                //   就变成两份（“客机买商人东西买两份”）。客机保持原版行为（造不出来 → 交给主机同步）。
+                if (Mp.IsRunning && !Mp.IsServer)
+                {
+                    return true;
+                }
+
                 // 与原版一致：用非泛型 Resources.Load（泛型 GameObject 可能漏掉非 GameObject 资源）
                 UnityEngine.Object raw = Resources.Load(id);
                 if (raw != null)
