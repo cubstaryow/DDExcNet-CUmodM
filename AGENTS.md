@@ -108,11 +108,16 @@ dotnet build CUmod.slnx -v m                  # 只编译
   若挂上那一刻碰撞体本来就是关的（物品在背包里 / 模组物品后加的碰撞体不在名单里），写回后仍然是关的，
   而 `HeldSeat` 已经把 `rb.simulated = true` → **无碰撞 + 有物理 = 穿过墙块往下掉**。
   修复在 `DDEN.MPfix.ItemPhysicsGuard`：① Harmony postfix 到 `HeldQuiet.Restore`（反射按名字找类型）恢复后**只补碰撞体**；
-  ② 只在 `Body.DropItem` / `Body.DropWearable`（真正的丢出动作）后做保险。
-  **三条铁律**（2026-11 因“主机物品一直掉落”收紧）：只处理 `IsFree` 的自由物品（无父级、不在 Container 里）；
-  只“打开”不“改写”（collider 关着才开、rb 没模拟才开）；脱困必须先判定“脚下 0.12m 没有地板”
-  且同一物品 1s 冷却、最多 3 次、整局 200 次后自动停用。
+  ② 只在 `Body.DropItem` / `Body.DropWearable`（真正的丢出动作）后**补开碰撞体 / 打开物理**，**绝不移动物品**。
+  **三条铁律**（2026-11 因“主机物品一直掉落/浮空”两次收紧）：只处理 `IsFree` 的自由物品（无父级、不在 Container 里）；
+  只“打开”不“改写”；任何位移副作用一律删除（早期版本会上移 0.5~3m，位移会残留在局部坐标 →
+  表现为“还穿在身上却浮在角色上方”）。
   **不要**把保险挂到 `Container.UnloadItem` / `Utils.Create` 上——那两个时机一局跑上千次，会把手/包里的物品物理打开。
+- **物品贴合修正**：`DDEN.MPfix.WornItemSnap` —— `Body.WearWearable` 后立即校验，且每 2 秒扫一遍附近 Body 的
+  穿戴/手持物品；`localPosition` 超过 0.6 单位（正常恒为 0）就归零，并把
+  `parent / localPos / localScale / worldPos` 打进日志（用来定位究竟是谁改了局部坐标）。
+  只改 localPosition，**不动 rotation（slotRotation）与 scale（HeldSeat 的肢体补偿）**；
+  每局最多 `物品物理/SnapMaxPerSession`（默认 100）次后自动停手。
 - **删幽灵物品必须先保内容物**：`WearGhostFix.TryRetireGhost` 先把子物品逐个脱离落地，
   含液体（`WaterContainerItem.stack`）或取不干净就**保留不删**，只有空壳才 Destroy。
 - **配置界面必须是两行一条**：上行「键 + 控件」，下行说明（`DdenUI.ConfigRow`，行高 44）。

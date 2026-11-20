@@ -26,11 +26,6 @@ namespace DDEN.MPfix
     internal static class ItemPhysicsGuard
     {
         private static float _lastLogAt = -99f;
-        private static readonly Dictionary<int, float> NudgeAt = new Dictionary<int, float>();
-        private static readonly Dictionary<int, int> NudgeCount = new Dictionary<int, int>();
-        private static readonly HashSet<int> GiveUp = new HashSet<int>();
-        private static int _nudgesThisSession;
-        private static bool _disabledByNoise;
 
         // ===== 丢出物品 =====
 
@@ -163,73 +158,27 @@ namespace DDEN.MPfix
         /// </summary>
         private static void Unstick(Item item, string why, bool hadDisabledCollider)
         {
-            int mask = LayerMask.GetMask("Ground");
-            if (mask == 0) return;
-
-            Vector2 pos = item.transform.position;
-
-            // ① 脚下有地板 → 正常躺着/正落下中，不干预
-            if (Physics2D.Raycast(pos, Vector2.down, 0.12f, mask).collider != null) return;
-
-            // ② 没有地板支撑，且当前位置压在实体里 → 判定为插进墙/地板
-            if (Physics2D.OverlapCircle(pos, 0.12f, mask) == null) return;
-
-            int key = item.GetInstanceID();
-            if (GiveUp.Contains(key)) return;                     // 这件物品已经放弃处理
-
-            float now = Time.unscaledTime;
-            float last;
-            if (NudgeAt.TryGetValue(key, out last) && now - last < 1f) return;   // 冷却，避免来回跳
-            if (NudgeAt.Count > 2048) { NudgeAt.Clear(); NudgeCount.Clear(); }
-            NudgeAt[key] = now;
-
-            int count;
-            NudgeCount.TryGetValue(key, out count);
-            count++;
-            NudgeCount[key] = count;
-            if (count >= 3)
+            // 说明：这里**只做诊断**，不移动物品。
+            // 早期版本会把卡住的物品往上挪 0.5~3m；一旦它随后被重新挂回手里/身上，
+            // 位移会残留在局部坐标里 → “还穿在身上，但浮在角色上方”。
+            // 现在的策略：穿墙只靠“补开碰撞体 + 恢复 HeldQuiet 状态”，位置交给物理引擎自己收敛。
+            try
             {
-                GiveUp.Add(key);
-                MPfixPlugin.Log.Warn($"[物品物理] {item.id} 连续被挪动 {count} 次，判定位置异常，已放弃干预（保持原样）");
-                return;
-            }
+                int mask = LayerMask.GetMask("Ground");
+                if (mask == 0) return;
 
-            _nudgesThisSession++;
-            if (_nudgesThisSession > 200 && !_disabledByNoise)
-            {
-                _disabledByNoise = true;
-                MPfixPlugin.Log.Warn("[物品物理] 本次会话挪动次数过多（>200），已整体停用物理保险，避免影响游戏。");
-                return;
-            }
-            if (_disabledByNoise) return;
+                Vector2 pos = item.transform.position;
+                if (Physics2D.Raycast(pos, Vector2.down, 0.12f, mask).collider != null) return;   // 正常落地
+                if (Physics2D.OverlapCircle(pos, 0.12f, mask) == null) return;                     // 在空中，正常
 
-            float startY = pos.y;
-            bool escaped = false;
-            for (int i = 0; i < 6; i++)
-            {
-                pos += Vector2.up * 0.5f;
-                item.transform.position = pos;
-
-                if (Physics2D.Raycast(pos, Vector2.down, 0.12f, mask).collider != null) { escaped = true; break; }  // 已经踩到地板
-                if (Physics2D.OverlapCircle(pos, 0.12f, mask) == null) { escaped = true; break; }                   // 已经脱出实体
-            }
-
-            if (!escaped)
-            {
-                // 6 步还出不来：多半整块区域都是实体，**退回原位**并长时间不再尝试，
-                // 否则会变成“每秒往上跳一下”——那才是“物品一直掉落/乱飞”的来源。
-                item.transform.position = new Vector2(pos.x, startY);
-                NudgeAt[key] = now + 60f;
-                MPfixPlugin.Log.Warn($"[物品物理] {item.id} 在 {why} 处陷得比较深，已保留原位不再挪动（避免反复位移）");
-                return;
-            }
-
-            float moved = pos.y - startY;
-            if (moved > 0.01f && Time.unscaledTime - _lastLogAt > 2f)
-            {
+                if (Time.unscaledTime - _lastLogAt < 3f) return;
                 _lastLogAt = Time.unscaledTime;
-                MPfixPlugin.Log.Info($"[物品物理] {item.id} 在 {why} 时卡在实体里，已上移 {moved:0.0}m 脱困" +
-                                     (hadDisabledCollider ? "（同时补开了碰撞体）" : ""));
+                MPfixPlugin.Log.Warn($"[物品物理] {item.id} 在 {why} 后压在实体里（不自动挪动，交给物理收敛）" +
+                                     (hadDisabledCollider ? "；碰撞体已补开" : ""));
+            }
+            catch (Exception ex)
+            {
+                Log.Debug("Unstick 诊断失败：" + ex.Message);
             }
         }
     }

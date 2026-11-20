@@ -48,6 +48,8 @@ namespace DDEN.MPfix
 
         // ===== 物品物理保险 =====
         internal static ConfigEntry<bool> CfgPhysicsGuard;
+        internal static ConfigEntry<bool> CfgSnapWornItems;
+        internal static ConfigEntry<int> CfgSnapWornMax;
 
         // ===== 其它 =====
         internal static ConfigEntry<KeyboardShortcut> CfgStandaloneKey;
@@ -130,10 +132,16 @@ namespace DDEN.MPfix
             CfgWearRebuild = Config.Bind("穿戴兜底", "RebuildIfHostLacksItem", false,
                 "仅在主机确实找不到这件物品时才用：取消穿戴 → 掉地 → 请求主机重建。\n" +
                 "默认关闭（只做“认出并穿上”）；开着会有复制风险，仅作最后手段。");
+            CfgSnapWornItems = Config.Bind("物品物理", "SnapWornItems", true,
+                "物品还穿在身上/握在手里，却浮在角色上方（局部坐标错位）时，把它贴合回原位。\n" +
+                "每 2 秒扫一次附近角色，只改 localPosition/localRotation，不动缩放。");
+            CfgSnapWornMax = Config.Bind("物品物理", "SnapMaxPerSession", 100,
+                new ConfigDescription("每局最多修正几次；超过就停手。",
+                    new AcceptableValueRange<int>(1, 1000)));
             CfgPhysicsGuard = Config.Bind("物品物理", "GuardDropPhysics", true,
                 "只在“丢出/卸下”这些真正的动作后做保险：只处理自由物品（不在手/身/包里），\n" +
-                "脚下没有地板且卡在实体里才上移脱困；同一件最多挪 3 次、整局最多 200 次，超了自动停用。\n" +
-                "用于修联机里“丢东西穿墙往下掉”，同时避免把正常物品的物理打开。" );
+                "只补开被关掉的碰撞体与没打开的物理，**不再自动移动物品**（避免位移残留导致错位）。\n" +
+                "用于修联机里“丢东西穿墙往下掉”。");
             CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出调试日志。");
 
             Log = DDEN.Shared.Log.For(LogSource, "MPfix", CfgVerbose.Value);
@@ -145,6 +153,7 @@ namespace DDEN.MPfix
             TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropItem_GuardPatch), "物品掉落物理保险（丢出）");
             TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropWearable_GuardPatch), "物品掉落物理保险（卸下）");
             ItemPhysicsGuard.InstallHeldQuietRepair(harmony);
+            TryPatch(harmony, typeof(WornItemSnap.Body_WearWearable_SnapPatch), "穿戴贴合修正（防浮空错位）");
 
             MigrateOldWatchdog();
 
@@ -492,6 +501,7 @@ namespace DDEN.MPfix
                 }
 
                 WearGhostFix.Tick();
+                WornItemSnap.Tick();
 
                 if (!CfgChipEnabled.Value) return;
                 if (!Mp.CoreAvailable) return;
