@@ -122,7 +122,39 @@ namespace DDEN.MPfix
             _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
 
             Log.Info("已加载：无芯片同步 + 联机物品/合成修复。");
+            LogMpCompatReport();
             if (UnchippedSelfTest.Requested) StartCoroutine(SelfTestDelayed());
+        }
+
+        /// <summary>
+        /// 启动时打印“本插件到底还需不需要”的校对结论。
+        /// 依据：对 Together 5.5.3 / 5.5.4 两份反编译做的逐点核对（见 docs/README.md「与 Together 版本校对」）。
+        /// </summary>
+        private static void LogMpCompatReport()
+        {
+            string ver = "未知";
+            try
+            {
+                Version v = CUCoreLib.Networking.MultiplayerApi.KrokMpVersion;
+                if (v != null) ver = v.ToString();
+            }
+            catch { /* ignored */ }
+
+            Log.Info($"[MPCOMPAT] Together/CasualtiesMP = {ver}");
+
+            bool verified = ver == "5.5.3" || ver == "5.5.4" || ver.StartsWith("5.5.");
+            if (!verified)
+            {
+                Log.Warn("[MPCOMPAT] 未校对过这个 Together 版本：三项修复仍然生效，但请留意日志里是否出现 declines/craft spawn 警告。");
+                return;
+            }
+
+            Log.Info("[MPCOMPAT] ① 无芯片：ApplyRunSettings 仍只写 runSettings，不写 world.unchippedMode；" +
+                     "RunUnchippedLock 结构未变 → 同步仍需启用");
+            Log.Info("[MPCOMPAT] ② 联机合成：RecipeResult_SpawnResult 仍用 Utils.Create → Resources.Load；" +
+                     "只有 glassshards/水晶生成的跳过补丁 → 模组物品仍需要兜底");
+            Log.Info("[MPCOMPAT] ③ 穿戴同步：ServerReceiver__ItemWearing 仍以 TryGetItem(登记表) 为门控；" +
+                     "未登记的物品仍会被 decline → 网络登记仍需启用");
         }
 
         private void TryPatch(Harmony harmony, Type patchType, string what)

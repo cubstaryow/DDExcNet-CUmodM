@@ -72,6 +72,21 @@ IEnumerable<ConfigEntryBase> ConfigEntries { get; }
 | 联机合成 | `FixModItemCraftSpawn`：给 `Utils.Create` 加前缀，模组物品不在 Resources 时用 `CustomInstantiate` 生成，修 “无法生成物品” |
 | 物品网络身份 | `RegisterSpawnedItemsOnHost`：兜底生成的物品立刻 `NetObjectRegistry.Server_EnsureItemIsNetworkRegistered`，修“主机看到装备掉下去又回来” |
 
+### 与 Together 版本校对（5.5.3 → 5.5.4，逐点反编译核对）
+
+| 我们的功能 | 5.5.4 现状 | 结论 |
+| --- | --- | --- |
+| 无芯片同步 | `WorldMP.RunUnchippedLock` / `Util.IsUnchipped` / `BlocksLocalChange` 一字未改；`ApplyRunSettings` 依旧只写 `runSettings`，**不写** `world.unchippedMode` | **仍需要** |
+| 联机合成模组物品 | `PlayerCamera_TryCraft_MultiplayerPatch.RecipeResult_SpawnResult` 仍 `Utils.Create(rres.id,…)` → `Resources.Load`；新增的 `Utils.Create` 补丁只有「客户端不生成 glassshards」和「生成期跳过水晶」两条，没有自定义物品兜底 | **仍需要** |
+| 物品网络身份 | `ServerReceiver__ItemWearing` 仍以 `TryGetItem(登记表)` 为门控，找不到就 `Server declines itemwearing`；登记只发生在读档 / 小游戏 / 手持等路径，水晶掉落的物品不会自动登记 | **仍需要** |
+
+5.5.4 新增但**不能替代**我们修复的东西：
+- `CustomItemBehaviour` 状态同步（`ItemSync`）：只同步模组物品“状态”，不负责“生成”；
+- `EvidenceCache` 会给 `Resources.Load` / `CustomInstantiate.ResolvePrefab` 挂诊断补丁：说明它已经知道 CUCoreLib 自定义物品的存在，但生成仍走原版路径；
+- `Utils_Create_SkipClientCrystalDuringGen`：只处理「客户端生成期不要造水晶」，与掉落物品登记无关。
+
+插件启动时会打一段 `[MPCOMPAT]` 自检日志，直接把上面结论和被检测到的 Together 版本写进 `LogOutput.log`。
+
 游戏里“有没有芯片”只有 `WorldGeneration.unchippedMode` 一个开关，所有判定（深度表/视野/伤口/心搏骤停/辐照/枪膛）
 都读它，而它**没有网络同步**；Together 的主机裁决分支默认关闭（`UnchippedIsIndividual = true`），
 且只在生成世界那一刻写一次 → 中途改动客机看不到 = 你看到的“主机无芯片、客机还有芯片”。
