@@ -16,6 +16,7 @@ src/DDEN.Shared/          公共层（被三个插件引用）
   Game.cs       InWorld / LocalBody / Alert / Console + LiveFields 运行时写回
 src/DDExcNet.CUmodM/     管理器（唯一画窗口的地方）
 src/DDEN.MPfix/          多人修复合集（无芯片同步 + 联机合成/物品生成兜底 + 网络登记）
+src/DDEN.Perf/           性能分析器（调试用：零补丁，管理器里画帧数/CPU/物理/对象曲线 + 写 perf 日志）
 src/DDEN.SaveEditor/     存档编辑器（零 patch：文件 + 反射 + 图标）
 ```
 

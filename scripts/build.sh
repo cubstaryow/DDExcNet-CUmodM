@@ -36,7 +36,7 @@ mkdir -p "$DDEN_DIR"
 
 # 我们的产物清单：**只有这些文件由本脚本负责写/删**。
 # DDEN/ 目录里可能还有别人做的修复 mod，绝不能碰。
-OWNED=("DDEN.Shared.dll" "DDExcNet-CUmodM.dll" "DDEN.MPfix.dll" "DDEN.SaveEditor.dll")
+OWNED=("DDEN.Shared.dll" "DDExcNet-CUmodM.dll" "DDEN.MPfix.dll" "DDEN.Perf.dll" "DDEN.SaveEditor.dll")
 LEGACY_IN_DDEN=("DDEN.MPUnchippedSyncFix.dll")
 
 is_owned() {
@@ -48,6 +48,8 @@ is_owned() {
 cp -v "$ROOT/src/DDEN.Shared/bin/$CONFIG/DDEN.Shared.dll"         "$DDEN_DIR/"
 cp -v "$ROOT/src/DDExcNet.CUmodM/bin/$CONFIG/DDExcNet-CUmodM.dll" "$DDEN_DIR/"
 cp -v "$ROOT/src/DDEN.MPfix/bin/$CONFIG/DDEN.MPfix.dll"           "$DDEN_DIR/"
+# 性能分析器：调试用子 mod（不进发布包，但开发时默认部署，方便抓现场）
+cp -v "$ROOT/src/DDEN.Perf/bin/$CONFIG/DDEN.Perf.dll"             "$DDEN_DIR/"
 
 if [ "$WITH_SAVEEDITOR" = "1" ]; then
   cp -v "$ROOT/src/DDEN.SaveEditor/bin/$CONFIG/DDEN.SaveEditor.dll" "$DDEN_DIR/"

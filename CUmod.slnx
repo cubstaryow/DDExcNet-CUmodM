@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/DDEN.MPfix/DDEN.MPfix.csproj" />
+    <Project Path="src/DDEN.Perf/DDEN.Perf.csproj" />
     <Project Path="src/DDEN.SaveEditor/DDEN.SaveEditor.csproj" />
     <Project Path="src/DDEN.Shared/DDEN.Shared.csproj" />
     <Project Path="src/DDExcNet.CUmodM/DDExcNet.CUmodM.csproj" />

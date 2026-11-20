@@ -8,13 +8,14 @@
 
 ## 0. 这是什么
 
-《Casualties Unknown》(Steam appid 4576490) 的 BepInEx 5 模组工作区。**三个 dll + 一个共享库**，统一由管理器承载界面：
+《Casualties Unknown》(Steam appid 4576490) 的 BepInEx 5 模组工作区。**四个 dll + 一个共享库**，统一由管理器承载界面：
 
 | 产物 | 源码 | 作用 |
 | --- | --- | --- |
 | `DDExcNet-CUmodM.dll` | `src/DDExcNet.CUmodM/` | **管理器**：统一功能界面 + 全部配置界面 + **兼容性总控** |
 | `DDEN.MPfix.dll` | `src/DDEN.MPfix/` | 多人修复合集：无芯片同步 + 联机合成/物品生成兜底 + 物品网络登记 + 穿戴兜底 + 物品物理保险 + 挖块收敛 + 商人快照 + 孤儿物品/贴图清理 + 娱乐（道生一 一生二） |
 | `DDEN.SaveEditor.dll` | `src/DDEN.SaveEditor/` | 可视化存档编辑器（图标/血条点选，QoL 多存档位） |
+| `DDEN.Perf.dll` | `src/DDEN.Perf/` | **性能分析器**（调试用子 mod）：管理器里单独一页，帧数/CPU/物理压力曲线 + 世界对象与网络状态的文字读数；同时写 `BepInEx/config/DDEN/perf-*.log`。**不打任何补丁**，不进发布包 |
 | `DDEN.Shared.dll` | `src/DDEN.Shared/` | 公共层：反射、日志、联机桥、存档编解码、**IDdenModule / DdenHub / Compat / DdenUI** |
 
 部署目录：**`<游戏>/BepInEx/plugins/DDEN/`**（已实测 BepInEx 会递归扫描子目录）。
@@ -43,11 +44,11 @@ cd L:/github/game/CUmod
 dotnet build CUmod.slnx -v m                  # 只编译
 ```
 
-- **默认不部署存档编辑器**：正常游戏只带共享层 + 管理器 + MPfix；如果之前部署过，脚本会主动把
-  `plugins/DDEN/DDEN.SaveEditor.dll` 撤下来（游戏在跑导致文件被锁时会提示关游戏重跑）。
+- **默认不部署存档编辑器**：正常游戏带共享层 + 管理器 + MPfix + **性能分析器**（调试工具）；
+  如果之前部署过 `plugins/DDEN/DDEN.SaveEditor.dll`，脚本会主动把它撤下来（游戏在跑导致文件被锁时会提示关游戏重跑）。
 - **`DDEN/` 目录不是我们的私有目录**：里面可能还有别人做的修复 mod
   （实例：`ET-NoBatteryFix.dll`、`QoL-EMI-RecipeRowFix.dll`）。`scripts/build.sh` 用**白名单**
-  （`OWNED=(DDEN.Shared / DDExcNet-CUmodM / DDEN.MPfix / DDEN.SaveEditor)`）决定写谁、删谁，
+  （`OWNED=(DDEN.Shared / DDExcNet-CUmodM / DDEN.MPfix / DDEN.Perf / DDEN.SaveEditor)`）决定写谁、删谁，
   并在结尾打印 `== 保持不动（其它模组 / 非本脚本产物）: …`。
   **任何情况下都不要对 `DDEN/` 做通配删除**（`rm -rf`、`rm *.dll`）；新增产物必须同时加进 OWNED。
 - **不做插件备份**（2026-11 按用户要求移除）：`scripts/build.sh` 里原来那套
@@ -101,6 +102,18 @@ dotnet build CUmod.slnx -v m                  # 只编译
   用 `MPfixPlugin.ReasonText` 这类映射翻成人话（例：`push` → 「主机主动同步」）。
   技术细节统一写进 [docs/features.md](docs/features.md)（现象 / 诱发原因 / 修复路线 + 日志表），
   README 只讲“用起来是什么样”。**新增界面文字前先问自己：玩家看得懂吗、有没有暴露内部结构。**
+- **性能分析器（`DDEN.Perf`）**：调试用的子 mod，管理器侧边栏单独一页「性能分析」。
+  **零补丁**（一个 MonoBehaviour，不装 Harmony，最坏情况只是自己不采样），所以线上排查可以放心让它跑着。
+  - 采样两档：轻采样（帧数/最差帧/CPU%/物理步每帧数，默认 1 秒）与重采样（数 `Item`/`Body`/`Rigidbody2D`/`Collider2D`、
+    反射读 `NetObjectRegistry.SyncRegistry` 与 `ScavPlayer.ClientIdToPlayerDict`，默认 5 秒）；
+    **重采样耗时超过 8ms 自动关掉碰撞体计数**（观察者不许成为元凶），每次耗时都写进日志的 `costMs`。
+  - 页面：4 张曲线（帧数 / CPU / 物理压力 / 世界对象）+ 文字读数（物品·无主·无主且物理开着、刚体、碰撞体、
+    网络对象·已销毁条目、玩家数、targetFrameRate、vSync、timeScale、fixedDt）+ 暂停/清空/写日志/打开目录。
+    曲线按像素列降采样，攒几千个点也不会把这一页画卡。
+  - 日志：`BepInEx/config/DDEN/perf-<时间戳>.log`，一行一个快照 `key=value`（不走 BepInEx 主日志，那边会被新实例截断）。
+  - 用途：抓「一台客机掉线 → 另一台客机巨卡」这类现场 —— 看 `sim`（无主且物理开着）、`deadsync`、`players` 的台阶。
+  - 它**不进发布包**：`release.ps1` 只打三个 dll；`build.sh` 的 OWNED 白名单里有它，所以开发时会被部署。
+  - ⚠️ `[BepInPlugin(..., "1.2.0")]` 里的版本号读不了 MSBuild 属性：**改 `<DdenVersion>` 时顺手改各插件的 `[BepInPlugin]`**。
 - **窗口必须用无皮肤模式**：`GUI.Window(id, rect, Draw, GUIContent.none, GUIStyle.none)` + 自己画标题栏。
   用默认窗框时它会把 y<20 的第一行内容盖住（表现为“文字上下被切掉”）。
 - **输入隔离（关键：这游戏的菜单按钮不走 uGUI）**：
@@ -321,8 +334,8 @@ ilspycmd -o decomp/qol  --nested-directories "<plugins>/QoL Unknown 1.1.5 - 实�
   但**不要** force push、不要改 remote、不要删别人的分支。
 - **发布**：`pwsh scripts/release.ps1` 打包到 `dist/`（已 git-ignore）；`-Upload` 走 gh CLI 或 `GITHUB_TOKEN`
   自动建 Release；用户用的是 **GitHub 桌面版**，它**不能发 Release 也不能建 tag** —— 所以手动发版走
-  `-OpenPage`（复制发布说明 + 打开网页）再拖 zip 上传。版本号只有一处：`Directory.Build.props` 的
-  `<DdenVersion>`（三个 dll 共用）。
+  `-OpenPage`（复制发布说明 + 打开网页）再拖 zip 上传。版本号**两处**要一起改：`Directory.Build.props` 的
+  `<DdenVersion>`（csproj 的 `<Version>` 用它）与各插件的 `[BepInPlugin(..., "x.y.z")]`（特性里读不了 MSBuild 属性）。
 - **CI 构建不了**，别尝试加 Actions：编译需要游戏本体的 `Assembly-CSharp.dll` / `UnityEngine.*` 与
   `0Harmony.dll`，这些是商业游戏安装文件，不能进仓库也不能传 CI —— 只能本地构建再上传产物。
 - 不提交 `decomp/`、`bin/`、`obj/`、`dist/`、`backup/`、`artifacts/`。
