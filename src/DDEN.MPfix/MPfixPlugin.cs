@@ -51,9 +51,10 @@ namespace DDEN.MPfix
         internal static ConfigEntry<bool> CfgSnapWornItems;
         internal static ConfigEntry<int> CfgSnapWornMax;
 
-        // ===== 联机修正（商人商品表 / 工具耐久） =====
+        // ===== 联机修正（商人商品表 / 工具耐久 / 挖块） =====
         internal static ConfigEntry<bool> CfgTraderSnapshot;
         internal static ConfigEntry<bool> CfgToolDurability;
+        internal static ConfigEntry<bool> CfgBlockBreakSync;
 
         // ===== 其它 =====
         internal static ConfigEntry<KeyboardShortcut> CfgStandaloneKey;
@@ -149,9 +150,12 @@ namespace DDEN.MPfix
             CfgTraderSnapshot = Config.Bind("联机修正", "TraderSnapshotOnOpen", true,
                 "客机每次打开商人界面时，向主机索要一次完整商品表（走 Together 自己的 TraderSync.SendTraderState）。\n" +
                 "用于修“看到的商品和主机不一致 → 付了钱却拿不到东西”。");
-            CfgToolDurability = Config.Bind("联机修正", "SyncToolDurability", true,
-                "客机使用工具（镐/铲等）后，把本地扣掉的耐久报给主机，让主机那份一起扣。\n" +
-                "用于修“挖东西时耐久闪烁（掉下去又跳回来）”。");
+            CfgToolDurability = Config.Bind("联机修正", "SyncToolDurability", false,
+                "（实验）客机使用工具后，把本地扣掉的耐久报给主机，让主机那份一起扣。\n" +
+                "默认关闭：只有确认存在“耐久不同步”问题时才需要打开。");
+            CfgBlockBreakSync = Config.Bind("联机修正", "SyncBlockBreak", true,
+                "客机本地挖碎方块时，额外通知主机把同一格按剩余血量打碎。\n" +
+                "用于修“客机挖掉方块后又重新长出来”（主机没认这次破坏 → chunk 同步把原来那块推回来）。");
             CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出调试日志。");
 
             Log = DDEN.Shared.Log.For(LogSource, "MPfix", CfgVerbose.Value);
@@ -168,6 +172,7 @@ namespace DDEN.MPfix
             TryPatch(harmony, typeof(DurabilityFix.UseItemInHand_Patch), "工具耐久同步（手持使用）");
             TryPatch(harmony, typeof(DurabilityFix.UseItem_Patch), "工具耐久同步（UseItem）");
             DurabilityFix.InstallHostWatcher(harmony);
+            TryPatch(harmony, typeof(BlockBreakFix.DamageBlock_Postfix), "客机挖块后通知主机打碎");
 
             MigrateOldWatchdog();
 
@@ -175,6 +180,7 @@ namespace DDEN.MPfix
             WearGhostFix.RegisterHostHandlers();
             TraderSnapshotFix.RegisterHost();
             DurabilityFix.RegisterHost();
+            BlockBreakFix.RegisterHost();
             DdenHub.Register(this);
             _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
 
