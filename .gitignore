@@ -17,3 +17,6 @@ desktop.ini
 *.cumod.bak
 *.cumod-tmp
 artifacts/
+
+# 误生成的部署副本（DdenPluginsDir 解析异常时产生）
+DDEN/

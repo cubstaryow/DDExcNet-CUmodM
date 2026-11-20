@@ -2,6 +2,8 @@
 
 工作区：`L:\github\game\CUmod`　游戏：`L:\SteamLibrary\steamapps\common\Casualties Unknown`
 
+> 别的模组怎么接入（交出配置 / 注册模块 / 用公共能力）：见 [cumodm-integration.md](cumodm-integration.md)。
+
 ---
 
 ## 0. 一套四件（部署在 `BepInEx/plugins/DDEN/`）

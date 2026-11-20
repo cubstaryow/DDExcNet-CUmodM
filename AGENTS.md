@@ -2,6 +2,7 @@
 
 > 给**下一个接手的人/AI** 看的第一份文件。读完就能独立构建、部署、验证，不用重新考古。
 > 设计文档：[docs/README.md](docs/README.md)　社区前置签名：[docs/cucorelib-api.md](docs/cucorelib-api.md)
+> **对外接入文档（给别人模组用）**：[docs/cumodm-integration.md](docs/cumodm-integration.md)
 
 ## 0. 这是什么
 
@@ -107,6 +108,10 @@ dotnet build CUmod.slnx -v m    # 只编译
 - **配置界面必须是两行一条**：上行「键 + 控件」，下行说明（`DdenUI.ConfigRow`，行高 44）。
   “全部配置”页必须把**所有模块的配置**都列出来（按模块分块、按 Section 分组），不能要求先选模块才看得到。
   说明放不下时用 `DdenUI.Hover` 让鼠标悬停看全文。
+- **外部模组接入（给别人用）**：`DDEN.Shared.DdenExternal` 在管理器 `Start()` 扫描所有已加载插件程序集，
+  认出约定成员（`DdenConfig` / `DdenTitle` / `DdenSummary` / `DdenDraw(Rect)`）后把它们的配置渲染进「全部配置」页。
+  **对方不需要引用 `DDEN.Shared.dll`**。文档：[docs/cumodm-integration.md](docs/cumodm-integration.md)；
+  端到端验证用 `tools/TestExternalConfig/`（编译后丢进 plugins 看一眼再删，别常驻）。
 - **不要在模块里重复造兼容判断**，也别各自写自己的弹窗系统。
 - **存档编辑红线**：只改用户点过的字段；`cheatedSave`（禁用成就）**绝不自动写入**，仅由“进度/成就”页手动切换；
   写盘只走 `SaveCodec.Write` + `SyncMeta`（原子 + `.cumod.bak`），写前查 `Compat.IsQolAutosaveBusy()`。

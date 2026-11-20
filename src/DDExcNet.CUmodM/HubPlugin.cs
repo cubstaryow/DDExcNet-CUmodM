@@ -93,6 +93,9 @@ namespace DDExcNet.CUmodM
         private void Start()
         {
             // 等所有插件 Awake 完再补扫一次：此时别的模组的配置/补丁都已就位
+            try { DdenExternal.Scan(); }
+            catch (Exception ex) { Log.Exception(ex, "扫描外部配置接入"); }
+            // 等所有插件 Awake 完再补扫一次：此时别的模组的配置/补丁都已就位
             if (CfgScanOnStart.Value)
             {
                 try { Compat.Rescan(); }
@@ -370,6 +373,11 @@ namespace DDExcNet.CUmodM
                 case "compat": DrawCompat(inner); break;
                 case "config": DrawAllConfig(inner); break;
                 default:
+                    if (_page != null && _page.StartsWith("ext:", StringComparison.Ordinal))
+                    {
+                        DrawExternalPage(inner, _page.Substring(4));
+                        break;
+                    }
                     IDdenModule module = DdenHub.Find(_page);
                     if (module == null) DrawOverview(inner);
                     else DrawModule(inner, module);
@@ -439,6 +447,36 @@ namespace DDExcNet.CUmodM
             GUI.EndScrollView();
         }
 
+        /// <summary>外部模组交出的自定义页面（DdenDraw）。</summary>
+        private void DrawExternalPage(Rect area, string indexText)
+        {
+            int index;
+            if (!int.TryParse(indexText, out index) || index < 0 || index >= DdenExternal.Blocks.Count)
+            {
+                DrawOverview(area);
+                return;
+            }
+
+            DdenExternal.Block block = DdenExternal.Blocks[index];
+            GUI.Label(new Rect(area.x, area.y, area.width - 130f, 20f), block.Title, DdenUI.Title);
+            if (DdenUI.Button(new Rect(area.xMax - 120f, area.y, 120f, 22f), "← 看全部配置"))
+            {
+                _page = "config";
+                return;
+            }
+
+            Rect body = new Rect(area.x, area.y + 26f, area.width, area.height - 26f);
+            try
+            {
+                block.Draw(body);
+            }
+            catch (Exception ex)
+            {
+                Log.Exception(ex, "外部页面绘制失败：" + block.Title);
+                DdenUI.Label(body, "该外部页面绘制失败：" + ex.Message, DdenUI.Wrap);
+            }
+        }
+
         private void DrawAllConfig(Rect area)
         {
             string moduleId = _page.StartsWith("config:") ? _page.Substring(7) : null;
@@ -475,6 +513,7 @@ namespace DDExcNet.CUmodM
             float total = 40f;
             foreach (IDdenModule m in DdenHub.Modules) total += 28f + DdenUI.ConfigListHeight(m.ConfigEntries);
             total += 28f + DdenUI.ConfigListHeight(Config.Entries());
+            foreach (DdenExternal.Block b in DdenExternal.Blocks) total += 28f + DdenUI.ConfigListHeight(b.Entries);
 
             float w = body.width - 18f;
             _configScroll = GUI.BeginScrollView(body, _configScroll,
@@ -500,7 +539,27 @@ namespace DDExcNet.CUmodM
             DdenUI.Fill(new Rect(0, y, w, 22f), DdenUI.AccentDim);
             GUI.Label(new Rect(6f, y + 2f, w - 12f, 18f), "管理器自身", DdenUI.Row);
             y += 26f;
-            DdenUI.DrawConfigGrouped(new Rect(0, y, w, 4000f), Config.Entries());
+            y += DdenUI.DrawConfigGrouped(new Rect(0, y, w, 4000f), Config.Entries());
+            y += 10f;
+
+            // 外部模组交出来的配置（DdenExternal 约定接入，无需引用 DDEN.Shared）
+            for (int i = 0; i < DdenExternal.Blocks.Count; i++)
+            {
+                DdenExternal.Block b = DdenExternal.Blocks[i];
+                DdenUI.Fill(new Rect(0, y, w, 22f), DdenUI.AccentDim);
+                GUI.Label(new Rect(6f, y + 2f, w - 90f, 18f),
+                    $"{b.Title}  <size=10><color=#89a>{b.Owner}</color></size>" +
+                    (string.IsNullOrEmpty(b.Summary) ? "" : $"  ·  {b.Summary}"), DdenUI.Row);
+                if (b.Draw != null && DdenUI.Button(new Rect(w - 78f, y + 2f, 70f, 18f), "单独看"))
+                {
+                    _page = "ext:" + i;
+                    GUI.EndScrollView();
+                    return;
+                }
+                y += 26f;
+                y += DdenUI.DrawConfigGrouped(new Rect(0, y, w, 4000f), b.Entries);
+                y += 10f;
+            }
 
             GUI.EndScrollView();
         }
