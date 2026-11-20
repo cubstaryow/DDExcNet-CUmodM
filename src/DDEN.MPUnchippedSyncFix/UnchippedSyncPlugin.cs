@@ -376,6 +376,11 @@ namespace DDEN.MPUnchippedSyncFix
                     _standaloneVisible = !_standaloneVisible;
                 }
 
+                if (!DdenHub.ManagerLoaded)
+                {
+                    DdenUI.BlockGameInput(_standaloneVisible && DdenUI.PointerOver(_standaloneRect));
+                }
+
                 if (!CfgEnabled.Value) return;
                 if (!Mp.CoreAvailable) return;
 
@@ -452,11 +457,12 @@ namespace DDEN.MPUnchippedSyncFix
             try
             {
                 var rect = new Rect(120f, 120f, 460f, 380f);
-                DdenUI.Fill(new Rect(0, 0, rect.width, rect.height), DdenUI.Bg);
+                _standaloneRect = rect;
                 GUI.Window(0x4D5055, rect, _ =>
                 {
                     DdenUI.DrawStandalone(new Rect(0, 0, rect.width, rect.height), this, ref _standaloneScroll, false);
-                }, " DDEN · " + DisplayNameText + " ");
+                    GUI.DragWindow(new Rect(0, 0, rect.width, 30f));
+                }, GUIContent.none, GUIStyle.none);
             }
             catch (Exception ex)
             {
@@ -465,6 +471,7 @@ namespace DDEN.MPUnchippedSyncFix
         }
 
         private Vector2 _standaloneScroll;
+        private Rect _standaloneRect;
 
         private void OnDestroy()
         {

@@ -22,7 +22,7 @@ namespace DDEN.SaveEditor
         private string _search = string.Empty;
         private string _conditionBuffer;
         private int _conditionBufferFor = -1;
-        private Vector2 _targetScroll, _gridScroll, _rowsScroll, _inspectScroll;
+        private Vector2 _targetScroll, _gridScroll, _rowsScroll, _inspectScroll, _limbScroll;
         private string _flash = string.Empty;
 
         private static readonly string[] Tabs = { "items", "limbs", "body", "run", "progress" };
@@ -56,7 +56,7 @@ namespace DDEN.SaveEditor
         public void Draw(Rect area)
         {
             if (_targets.Count == 0) RefreshTargets();
-            if (_smoke) _tab = Tabs[Time.frameCount % Tabs.Length];
+            if (_smoke) _tab = Tabs[(Time.frameCount / 45) % Tabs.Length];
 
             DrawToolbar(new Rect(area.x, area.y, area.width, 30f));
             Rect body = new Rect(area.x, area.y + 34f, area.width, area.height - 34f);
@@ -70,6 +70,7 @@ namespace DDEN.SaveEditor
             DrawTargets(left);
             DrawTabs(mid);
             DrawInspector(right);
+            DdenUI.DrawTooltip();
         }
 
         // ===== 工具条 =====
@@ -150,7 +151,7 @@ namespace DDEN.SaveEditor
                 if (selected) DdenUI.Frame(cell, DdenUI.Accent);
 
                 DdenUI.Label(new Rect(cell.x + 6f, cell.y + 3f, cell.width - 12f, 16f),
-                    t.Label + (t.IsCurrent ? "  <color=#8cd97c>← 当前</color>" : string.Empty), DdenUI.Row);
+                    DdenUI.ElideToWidth(t.Label, cell.width - 16f, DdenUI.Row) + (t.IsCurrent ? "  <color=#8cd97c>← 当前</color>" : string.Empty), DdenUI.Row);
                 DdenUI.Label(new Rect(cell.x + 6f, cell.y + 19f, cell.width - 12f, 14f), t.Kind, DdenUI.Sub);
 
                 if (GUI.Button(cell, GUIContent.none, GUIStyle.none))
@@ -211,45 +212,91 @@ namespace DDEN.SaveEditor
         private void DrawItems(Rect r)
         {
             DdenUI.Section(new Rect(r.x + 8f, r.y + 2f, r.width - 16f, 16f),
-                $"物品 {_doc.VisibleItems.Count} / {_doc.Items.Count}（点图标选中，蓝框=选中，条=耐久）");
+                $"物品 {_doc.Items.Count} 件 / {_doc.VisibleGroups.Count} 组（按容器归组：背包里的东西挂在背包下面）");
 
             Rect grid = new Rect(r.x + 6f, r.y + 22f, r.width - 12f, r.height - 26f);
+            const float headH = 30f;
             const float cellW = 62f;
             const float cellH = 70f;
-            int cols = Mathf.Max(1, Mathf.FloorToInt((grid.width - 8f) / cellW));
-            int rows = Mathf.CeilToInt(_doc.VisibleItems.Count / (float)cols);
-            float totalH = rows * cellH + 8f;
+            int cols = Mathf.Max(1, Mathf.FloorToInt((grid.width - 20f) / cellW));
 
-            _gridScroll = GUI.BeginScrollView(grid, _gridScroll, new Rect(0, 0, grid.width - 18f, Mathf.Max(totalH, grid.height)));
-
-            for (int i = 0; i < _doc.VisibleItems.Count; i++)
+            float total = 0f;
+            foreach (ItemGroup g in _doc.VisibleGroups)
             {
-                ItemView item = _doc.VisibleItems[i];
-                int cx = i % cols;
-                int cy = i / cols;
-                var cell = new Rect(cx * cellW + 2f, cy * cellH + 2f, cellW - 6f, cellH - 8f);
+                int children = g.IsContainer ? g.Count - 1 : 0;
+                total += headH + Mathf.CeilToInt(children / (float)cols) * cellH + 6f;
+            }
 
-                float cond = item.ConditionValue;
-                Color border = HealthColor(cond);
-                bool selected = _doc.SelectedItem == item.Index;
+            _gridScroll = GUI.BeginScrollView(grid, _gridScroll, new Rect(0, 0, grid.width - 18f, Mathf.Max(total, grid.height)));
 
-                var iconRect = new Rect(cell.x + 3f, cell.y + 2f, cell.width - 6f, 46f);
-                if (DdenUI.IconCell(iconRect, item.Id, border, selected, out _))
+            float y = 0f;
+            foreach (ItemGroup group in _doc.VisibleGroups)
+            {
+                bool headSelected = _doc.SelectedItem == group.Head.Index;
+                var head = new Rect(0, y, grid.width - 18f, headH - 4f);
+                DdenUI.Fill(head, headSelected ? DdenUI.AccentDim : DdenUI.PanelAlt);
+                DdenUI.Frame(head, headSelected ? DdenUI.Accent : DdenUI.AccentDim);
+
+                DdenUI.DrawSprite(new Rect(head.x + 3f, head.y + 2f, 22f, 22f), DdenUI.ItemIcon(group.Head.Id));
+                string count = group.IsContainer ? $"  <color=#8fa>×{group.Count}</color>" : string.Empty;
+                float labelW = head.width - 252f;
+                GUI.Label(new Rect(head.x + 30f, head.y + 5f, labelW, 18f),
+                    DdenUI.ElideToWidth(group.Label, labelW, DdenUI.Row) + count, DdenUI.Row);
+                DdenUI.Bar(new Rect(head.xMax - 172f, head.y + 9f, 96f, 8f), group.Head.ConditionValue,
+                    DdenUI.HealthColor(group.Head.ConditionValue));
+                GUI.Label(new Rect(head.xMax - 72f, head.y + 5f, 68f, 16f), group.Head.SlotText, DdenUI.IconStyle);
+
+                if (GUI.Button(head, GUIContent.none, GUIStyle.none))
                 {
-                    _doc.SelectedItem = item.Index;
+                    _doc.SelectedItem = group.Head.Index;
                     _conditionBuffer = null;
-                    _flash = $"{item.Id}（{item.SlotText}）";
+                    _flash = $"{group.Head.Id}（{group.Head.SlotText}）";
                 }
+                y += headH;
 
-                DdenUI.Bar(new Rect(cell.x + 3f, cell.y + 49f, cell.width - 6f, 6f), cond, border, $"{cond * 100f:0}%");
-                GUI.Label(new Rect(cell.x, cell.y + 56f, cell.width, 12f),
-                    item.Id.Length > 9 ? item.Id.Substring(0, 8) + "…" : item.Id, DdenUI.IconStyle);
+                if (!group.IsContainer) continue;
+
+                for (int i = 1; i < group.Count; i++)
+                {
+                    ItemView child = group.Items[i];
+                    int slotIndex = i - 1;
+                    int cx = slotIndex % cols;
+                    int cy = slotIndex / cols;
+                    DrawItemCell(new Rect(14f + cx * cellW + 2f, y + cy * cellH + 2f, cellW - 6f, cellH - 8f), child);
+                }
+                int rows = Mathf.CeilToInt((group.Count - 1) / (float)cols);
+                y += rows * cellH + 6f;
             }
 
             GUI.EndScrollView();
         }
 
-        private static Color HealthColor(float t) => DdenUI.HealthColor(t);
+        private void DrawItemCell(Rect cell, ItemView item)
+        {
+            float cond = item.ConditionValue;
+            Color border = DdenUI.HealthColor(cond);
+            bool selected = _doc.SelectedItem == item.Index;
+
+            var iconRect = new Rect(cell.x + 3f, cell.y + 2f, cell.width - 6f, 46f);
+            if (DdenUI.IconCell(iconRect, item.Id, border, selected, out _, item.Id + "  ·  " + item.SlotText))
+            {
+                _doc.SelectedItem = item.Index;
+                _conditionBuffer = null;
+                _flash = $"{item.Id}（{item.SlotText}）";
+            }
+
+            DdenUI.Bar(new Rect(cell.x + 3f, cell.y + 49f, cell.width - 6f, 6f), cond, border, $"{cond * 100f:0}%");
+            GUI.Label(new Rect(cell.x, cell.y + 56f, cell.width, 14f),
+                DdenUI.ElideToWidth(item.Id, cell.width - 2f, DdenUI.IconStyle), DdenUI.IconStyle);
+        }
+
+        /// <summary>长名字中间截断（保留尾部便于区分），宽度由调用方给出。</summary>
+        private static string Elide(string s, int max)
+        {
+            if (string.IsNullOrEmpty(s) || s.Length <= max) return s ?? string.Empty;
+            int head = Mathf.Max(3, max - 4);
+            return s.Substring(0, head) + "…" + s.Substring(s.Length - 3);
+        }
 
         // ===== 肢体（血条网格）=====
 
@@ -257,16 +304,20 @@ namespace DDEN.SaveEditor
         {
             DdenUI.Section(new Rect(r.x + 8f, r.y + 2f, r.width - 16f, 16f), "肢体（外=皮肤 内=肌肉；点格子选中）");
 
-            Rect grid = new Rect(r.x + 6f, r.y + 22f, r.width - 12f, Mathf.Min(230f, r.height * 0.5f));
+            Rect grid = new Rect(r.x + 6f, r.y + 22f, r.width - 12f, Mathf.Min(240f, r.height * 0.55f));
             const float cw = 92f;
             const float ch = 52f;
             int cols = Mathf.Max(1, Mathf.FloorToInt(grid.width / cw));
+            int rows = Mathf.CeilToInt(_doc.Limbs.Count / (float)cols);
+
+            _limbScroll = GUI.BeginScrollView(grid, _limbScroll,
+                new Rect(0, 0, grid.width - 18f, Mathf.Max(rows * ch + 4f, grid.height)));
 
             for (int i = 0; i < _doc.Limbs.Count; i++)
             {
                 SaveDocument.LimbView limb = _doc.Limbs[i];
                 int cx = i % cols, cy = i / cols;
-                var cell = new Rect(grid.x + cx * cw, grid.y + cy * ch, cw - 4f, ch - 4f);
+                var cell = new Rect(cx * cw + 2f, cy * ch + 2f, cw - 6f, ch - 6f);
                 bool selected = _doc.SelectedLimb == limb.Index;
 
                 DdenUI.Fill(cell, selected ? DdenUI.AccentDim : DdenUI.PanelAlt);
@@ -284,8 +335,10 @@ namespace DDEN.SaveEditor
                 if (GUI.Button(cell, GUIContent.none, GUIStyle.none)) _doc.SelectedLimb = limb.Index;
             }
 
-            Rect hint = new Rect(r.x + 6f, grid.yMax + 4f, r.width - 12f, r.height - (grid.yMax - r.y) - 10f);
-            DdenUI.Label(hint, "右侧可精修选中部位的数值与状态（骨折/脱臼/感染/截断…）。", DdenUI.Sub);
+            GUI.EndScrollView();
+
+            Rect hint = new Rect(r.x + 6f, grid.yMax + 4f, r.width - 12f, Mathf.Max(30f, r.yMax - grid.yMax - 8f));
+            DdenUI.Label(hint, "右侧可精修选中部位的数值与状态（骨折/脱臼/感染/截断…）。\n未进入世界时部位用序号显示，进世界后会换成游戏内部位名。", DdenUI.Wrap);
         }
 
         // ===== 通用数值列表 =====
@@ -305,7 +358,7 @@ namespace DDEN.SaveEditor
                 var line = new Rect(0, y, list.width - 18f, rowH - 3f);
                 if (((int)(y / rowH)) % 2 == 0) DdenUI.Fill(line, DdenUI.PanelAlt);
 
-                GUI.Label(new Rect(line.x + 4f, line.y + 2f, line.width * 0.56f, 18f), row.Label, DdenUI.Row);
+                GUI.Label(new Rect(line.x + 4f, line.y + 2f, line.width * 0.56f, 18f), DdenUI.ElideToWidth(row.Label, line.width * 0.56f - 8f, DdenUI.Row), DdenUI.Row);
 
                 switch (row.Kind)
                 {
@@ -341,18 +394,16 @@ namespace DDEN.SaveEditor
             float y = r.y + 4f;
 
             // 成就卡片
-            var card = new Rect(r.x + 6f, y, r.width - 12f, 62f);
+            var card = new Rect(r.x + 6f, y, r.width - 12f, 82f);
             DdenUI.Fill(card, DdenUI.PanelAlt);
             DdenUI.Frame(card, DdenUI.Warn);
 
-            GUI.Label(new Rect(card.x + 8f, card.y + 4f, card.width - 16f, 18f), "是否禁用成就（cheatedSave）", DdenUI.Row);
-            GUI.Label(new Rect(card.x + 8f, card.y + 22f, card.width - 140f, 32f),
-                "本编辑器不会自动改它。想保住成就就别勾；勾上＝这份存档被判定为作弊档。", DdenUI.Wrap);
+            GUI.Label(new Rect(card.x + 8f, card.y + 6f, card.width - 168f, 20f), "是否禁用成就（cheatedSave）", DdenUI.Row);
 
             if (_doc.CheatFlag != null)
             {
                 bool v = _doc.CheatFlag.BoolValue;
-                bool nv = GUI.Toggle(new Rect(card.xMax - 128f, card.y + 10f, 120f, 22f), v,
+                bool nv = GUI.Toggle(new Rect(card.xMax - 152f, card.y + 5f, 144f, 20f), v,
                     v ? " 已禁用成就" : " 成就可用", GUI.skin.toggle);
                 if (nv != v && _doc.CheatFlag.ApplyBool(nv))
                 {
@@ -362,10 +413,13 @@ namespace DDEN.SaveEditor
             }
             else
             {
-                GUI.Label(new Rect(card.xMax - 128f, card.y + 10f, 120f, 20f), "该档无此字段", DdenUI.Sub);
+                GUI.Label(new Rect(card.xMax - 152f, card.y + 5f, 144f, 20f), "该档无此字段", DdenUI.Sub);
             }
 
-            y += 68f;
+            GUI.Label(new Rect(card.x + 8f, card.y + 28f, card.width - 16f, 46f),
+                "本编辑器不会自动改它：想保住成就就别勾；勾上＝这份存档被判定为作弊档。\n改动只在你点保存后生效。", DdenUI.Wrap);
+
+            y += 88f;
 
             if (DdenUI.Button(new Rect(r.x + 6f, y, 120f, 24f), "刷新到界面", false))
             {
@@ -384,7 +438,7 @@ namespace DDEN.SaveEditor
             {
                 var line = new Rect(0, ry, list.width - 18f, rowH - 3f);
                 if (((int)(ry / rowH)) % 2 == 0) DdenUI.Fill(line, DdenUI.PanelAlt);
-                GUI.Label(new Rect(line.x + 4f, line.y + 2f, line.width * 0.56f, 18f), row.Label, DdenUI.Row);
+                GUI.Label(new Rect(line.x + 4f, line.y + 2f, line.width * 0.56f, 18f), DdenUI.ElideToWidth(row.Label, line.width * 0.56f - 8f, DdenUI.Row), DdenUI.Row);
                 if (row.Kind == RowKind.Bool)
                 {
                     bool nv = GUI.Toggle(new Rect(line.x + line.width * 0.58f, line.y + 1f, 90f, 18f), row.BoolValue,
@@ -441,7 +495,7 @@ namespace DDEN.SaveEditor
             }
 
             float y = r.y;
-            DdenUI.Label(new Rect(r.x, y, r.width, 20f), item.Id, DdenUI.Title);
+            DdenUI.Label(new Rect(r.x, y, r.width, 20f), DdenUI.ElideToWidth(item.Id, r.width - 8f, DdenUI.Title), DdenUI.Title);
             y += 24f;
 
             var iconBox = new Rect(r.x, y, 84f, 84f);
@@ -527,7 +581,7 @@ namespace DDEN.SaveEditor
             float y = 0f;
             foreach (FieldRow row in limb.Rows)
             {
-                GUI.Label(new Rect(0, y + 2f, list.width * 0.5f, 18f), row.Label, DdenUI.Row);
+                GUI.Label(new Rect(0, y + 2f, list.width * 0.5f, 18f), DdenUI.ElideToWidth(row.Label, list.width * 0.5f - 6f, DdenUI.Row), DdenUI.Row);
                 if (row.Kind == RowKind.Bool)
                 {
                     bool nv = GUI.Toggle(new Rect(list.width * 0.52f, y + 1f, 80f, 18f), row.BoolValue,

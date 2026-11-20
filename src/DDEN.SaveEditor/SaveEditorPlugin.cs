@@ -28,6 +28,7 @@ namespace DDEN.SaveEditor
         private readonly EditorView _view = new EditorView();
         private Vector2 _standaloneScroll;
         private bool _standaloneVisible;
+        private Rect _standaloneRect;
         private KeyCode _standaloneKey = KeyCode.F9;
 
         // ===== IDdenModule =====
@@ -120,6 +121,9 @@ namespace DDEN.SaveEditor
             {
                 if (DdenHub.ManagerLoaded) return;
                 if (_standaloneKey != KeyCode.None && Input.GetKeyDown(_standaloneKey)) _standaloneVisible = !_standaloneVisible;
+
+                // 兜底小窗也要挡住穿透：鼠标在窗口内就关掉 EventSystem
+                DdenUI.BlockGameInput(_standaloneVisible && DdenUI.PointerOver(_standaloneRect));
             }
             catch (Exception ex)
             {
@@ -137,12 +141,17 @@ namespace DDEN.SaveEditor
                 GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1f));
 
                 var rect = new Rect(40f, 40f, Screen.width / scale - 80f, Screen.height / scale - 80f);
+                _standaloneRect = new Rect(rect.x * scale, rect.y * scale, rect.width * scale, rect.height * scale);
                 GUI.Window(0x53415645, rect, _ =>
                 {
                     DdenUI.Fill(new Rect(0, 0, rect.width, rect.height), DdenUI.Bg);
-                    DdenUI.Label(new Rect(10, 4, rect.width - 20, 22), "DDEN · 存档编辑器", DdenUI.Title);
-                    _view.Draw(new Rect(8, 28, rect.width - 16, rect.height - 34));
-                }, " DDEN · " + Title + " ");
+                    DdenUI.Fill(new Rect(0, 0, rect.width, 30f), DdenUI.Panel);
+                    DdenUI.Fill(new Rect(0, 29f, rect.width, 1f), DdenUI.AccentDim);
+                    DdenUI.Label(new Rect(10, 5, rect.width - 70f, 22), "DDEN · 存档编辑器", DdenUI.Title);
+                    if (DdenUI.Button(new Rect(rect.width - 28f, 6f, 20f, 18f), "×")) _standaloneVisible = false;
+                    _view.Draw(new Rect(8, 34, rect.width - 16, rect.height - 42));
+                    GUI.DragWindow(new Rect(0, 0, rect.width, 30f));
+                }, GUIContent.none, GUIStyle.none);
 
                 GUI.matrix = old;
             }

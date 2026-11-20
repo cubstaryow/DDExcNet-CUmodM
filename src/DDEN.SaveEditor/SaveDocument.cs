@@ -113,6 +113,7 @@ namespace DDEN.SaveEditor
         public int Index;
         public string Id;
         public string SlotText;
+        public string GroupKey;
         public JObject Raw;
         public FieldRow Condition;
         public FieldRow Favourited;
@@ -120,6 +121,18 @@ namespace DDEN.SaveEditor
         public Sprite Icon;
 
         public float ConditionValue => Condition != null ? (float)Condition.Number : 1f;
+    }
+
+    /// <summary>一组物品：存档里子物品与容器共享 slot/wearSlot，所以按这个键归组就能还原“谁装在谁里面”。</summary>
+    internal sealed class ItemGroup
+    {
+        public string Key;
+        public string Label;
+        public ItemView Head;
+        public readonly List<ItemView> Items = new List<ItemView>();
+
+        public bool IsContainer => Items.Count > 1;
+        public int Count => Items.Count;
     }
 
     internal sealed class TargetRow
@@ -143,7 +156,8 @@ namespace DDEN.SaveEditor
         public readonly List<FieldRow> Rows = new List<FieldRow>();
         public readonly List<string> Groups = new List<string>();
         public readonly List<ItemView> Items = new List<ItemView>();
-        public readonly List<ItemView> VisibleItems = new List<ItemView>();
+        public readonly List<ItemGroup> ItemGroups = new List<ItemGroup>();
+        public readonly List<ItemGroup> VisibleGroups = new List<ItemGroup>();
         public readonly List<LimbView> Limbs = new List<LimbView>();
         public List<FieldRow> RunSettings = new List<FieldRow>();
         public List<FieldRow> Progress = new List<FieldRow>();
@@ -191,14 +205,14 @@ namespace DDEN.SaveEditor
 
                 foreach (string playerSave in SaveCodec.ListMpPlayerSaves(full))
                 {
-                    string rel = playerSave.Substring(folder.Length).TrimStart('\\', '/');
-                    bool isWorld = string.Equals(System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(playerSave)),
-                        System.IO.Path.GetFileNameWithoutExtension(full) + ".mp",
-                        StringComparison.OrdinalIgnoreCase);
+                    string slotName = System.IO.Path.GetFileNameWithoutExtension(full);
+                    string playerDir = System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(playerSave));
+                    bool isWorld = string.Equals(playerDir, slotName + ".mp", StringComparison.OrdinalIgnoreCase);
+
                     targets.Add(new TargetRow
                     {
                         Path = playerSave,
-                        Label = rel,
+                        Label = isWorld ? slotName + ".mp · 世界存档" : slotName + ".mp · " + ShortenPlayer(playerDir),
                         IsMain = false,
                         IsCurrent = false,
                         Kind = isWorld ? "多人世界" : "多人玩家快照"
@@ -207,6 +221,14 @@ namespace DDEN.SaveEditor
             }
 
             return targets;
+        }
+
+        /// <summary>STEAM_76561198832992872 → …92872，列表里放得下又能区分。</summary>
+        private static string ShortenPlayer(string dir)
+        {
+            if (string.IsNullOrEmpty(dir)) return "?";
+            string name = dir.Replace("STEAM_", string.Empty);
+            return name.Length <= 5 ? name : "…" + name.Substring(name.Length - 5);
         }
 
         public bool Load(string path)
@@ -234,7 +256,7 @@ namespace DDEN.SaveEditor
 
         private void Clear()
         {
-            Rows.Clear(); Groups.Clear(); Items.Clear(); VisibleItems.Clear();
+            Rows.Clear(); Groups.Clear(); Items.Clear(); ItemGroups.Clear(); VisibleGroups.Clear();
             Limbs.Clear(); RunSettings.Clear(); Progress.Clear(); BodyRows.Clear(); SkillRows.Clear();
             CheatFlag = null;
         }
@@ -328,29 +350,58 @@ namespace DDEN.SaveEditor
 
         private void BuildItems(JArray array)
         {
-            string filter = (ItemFilter ?? string.Empty).Trim();
-            int shown = 0;
-            for (int i = 0; i < array.Count && shown < MaxItems; i++)
+            for (int i = 0; i < array.Count && Items.Count < MaxItems; i++)
             {
                 if (!(array[i] is JObject item)) continue;
-                string id = item["id"]?.ToString() ?? string.Empty;
-                if (filter.Length > 0 && id.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0) continue;
 
                 var view = new ItemView
                 {
                     Index = i,
-                    Id = id,
+                    Id = item["id"]?.ToString() ?? string.Empty,
                     Raw = item,
                     SlotText = DescribeSlot(item),
+                    GroupKey = GroupKeyOf(item),
                     Condition = MakeRow("item", "condition", item["condition"]),
                     Favourited = MakeRow("item", "favourited", item["favourited"]),
                     Label = MakeRow("item", "label", item["label"])
                 };
                 Items.Add(view);
-                visibleCacheDirty = true;
-                shown++;
             }
-            RefreshVisibleItems();
+            BuildGroups();
+        }
+
+        /// <summary>同 slot + 同 wearSlot = 同一容器（原版存档把父物品写在子物品前面）。</summary>
+        private static string GroupKeyOf(JObject item)
+        {
+            string slot = item["slot"]?.ToString() ?? "-1";
+            string wear = item["wearSlot"]?.ToString() ?? string.Empty;
+            return slot + "|" + wear;
+        }
+
+        /// <summary>把扁平物品列表还原成“容器 → 内容物”分组。</summary>
+        public void BuildGroups()
+        {
+            ItemGroups.Clear();
+            VisibleGroups.Clear();
+
+            ItemGroup current = null;
+            foreach (ItemView item in Items)
+            {
+                if (current == null || current.Key != item.GroupKey)
+                {
+                    current = new ItemGroup { Key = item.GroupKey, Head = item, Label = item.Id };
+                    ItemGroups.Add(current);
+                }
+                current.Items.Add(item);
+            }
+
+            string filter = (ItemFilter ?? string.Empty).Trim();
+            foreach (ItemGroup group in ItemGroups)
+            {
+                bool match = filter.Length == 0 || group.Items.Any(i => i.Id.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0);
+                if (!match) continue;
+                VisibleGroups.Add(group);
+            }
         }
 
         private static string DescribeSlot(JObject item)
@@ -360,20 +411,11 @@ namespace DDEN.SaveEditor
             return string.IsNullOrEmpty(wear) ? "槽 " + slot : wear;
         }
 
-        private bool visibleCacheDirty = true;
-
+        /// <summary>筛选变化后重算可见分组（保留整组上下文，方便看出“这条属于哪个背包”）。</summary>
         public void RefreshVisibleItems()
         {
-            VisibleItems.Clear();
-            string filter = (ItemFilter ?? string.Empty).Trim();
-            foreach (ItemView v in Items)
-            {
-                if (filter.Length == 0 || v.Id.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0) VisibleItems.Add(v);
-            }
-            visibleCacheDirty = false;
+            BuildGroups();
         }
-
-        public bool VisibleDirty => visibleCacheDirty;
 
         internal static FieldRow MakeRow(string group, string label, JToken token)
         {

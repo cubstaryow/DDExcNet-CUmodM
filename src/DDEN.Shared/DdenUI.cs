@@ -39,10 +39,42 @@ namespace DDEN.Shared
                 alignment = anchor,
                 wordWrap = wrap,
                 richText = true,
-                clipping = TextClipping.Clip
+                // 中文有上下伸展，用 Clip 会把字切掉一截；Overflow 不裁剪，允许略微溢出到行距里
+                clipping = TextClipping.Overflow
             };
+            s.padding = new RectOffset(0, 0, 1, 1);
             s.normal.textColor = color ?? Text;
             return s;
+        }
+
+        // ===== 输入隔离：别让点击穿透到游戏菜单按钮 =====
+
+        /// <summary>鼠标是否落在给定屏幕矩形内（IMGUI 坐标是左上原点，Input.mousePosition 是左下原点）。</summary>
+        public static bool PointerOver(Rect screenRect)
+        {
+            try
+            {
+                Vector2 mp = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+                return screenRect.Contains(mp);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>临时关掉 EventSystem，阻止 uGUI（主菜单的开始游戏/退出等）接到鼠标事件。</summary>
+        public static void BlockGameInput(bool block)
+        {
+            try
+            {
+                UnityEngine.EventSystems.EventSystem es = UnityEngine.EventSystems.EventSystem.current;
+                if (es != null && es.enabled == block) es.enabled = !block;
+            }
+            catch (Exception ex)
+            {
+                Log.Debug("BlockGameInput 失败：" + ex.Message);
+            }
         }
 
         public static void Fill(Rect r, Color c)
@@ -64,6 +96,42 @@ namespace DDEN.Shared
         public static void Label(Rect r, string text, GUIStyle style = null)
         {
             GUI.Label(r, text ?? string.Empty, style ?? Row);
+        }
+
+        // ===== 按宽度截断（Overflow 不裁字，必须自己算宽度，否则长名字会压到旁边的控件上）=====
+
+        private static readonly Dictionary<string, string> ElideCache = new Dictionary<string, string>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, string> ElideCacheRow = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        public static string ElideToWidth(string text, float width, GUIStyle style = null)
+        {
+            if (string.IsNullOrEmpty(text) || width <= 6f) return string.Empty;
+            style = style ?? Row;
+            string key = ((int)width) + "|" + text;
+            Dictionary<string, string> cache = style == Row ? ElideCacheRow : ElideCache;
+            if (cache.TryGetValue(key, out string cached)) return cached;
+
+            string result;
+            if (style.CalcSize(new GUIContent(text)).x <= width)
+            {
+                result = text;
+            }
+            else
+            {
+                int lo = 0, hi = text.Length;
+                while (lo < hi)
+                {
+                    int mid = (lo + hi + 1) / 2;
+                    string probe = text.Substring(0, mid) + "…";
+                    if (style.CalcSize(new GUIContent(probe)).x <= width) lo = mid;
+                    else hi = mid - 1;
+                }
+                result = lo <= 0 ? "…" : text.Substring(0, lo) + "…";
+            }
+
+            if (cache.Count > 4096) cache.Clear();
+            cache[key] = result;
+            return result;
         }
 
         public static void Section(Rect r, string text)
@@ -118,8 +186,8 @@ namespace DDEN.Shared
             return true;
         }
 
-        /// <summary>带边框的图标格；返回是否被点击。</summary>
-        public static bool IconCell(Rect r, string id, Color border, bool selected, out Sprite sprite)
+        /// <summary>带边框的图标格；返回是否被点击。tooltip 会写进 GUI.tooltip，由调用方决定怎么显示。</summary>
+        public static bool IconCell(Rect r, string id, Color border, bool selected, out Sprite sprite, string tooltip = null)
         {
             Fill(r, selected ? PanelAlt : Panel);
             Frame(r, border, selected ? 2f : 1f);
@@ -129,7 +197,20 @@ namespace DDEN.Shared
             {
                 GUI.Label(inner, "?", TabStyle);
             }
-            return GUI.Button(r, GUIContent.none, GUIStyle.none);
+            return GUI.Button(r, string.IsNullOrEmpty(tooltip) ? GUIContent.none : new GUIContent(string.Empty, tooltip), GUIStyle.none);
+        }
+
+        /// <summary>鼠标悬停提示（在内容绘制完后调用）。</summary>
+        public static void DrawTooltip()
+        {
+            string tip = GUI.tooltip;
+            if (string.IsNullOrEmpty(tip)) return;
+            Vector2 mp = Event.current != null ? Event.current.mousePosition : Vector2.zero;
+            var size = Row.CalcSize(new GUIContent(tip));
+            var rect = new Rect(mp.x + 16f, mp.y + 18f, Mathf.Min(size.x + 10f, 420f), 20f);
+            Fill(rect, new Color(0f, 0f, 0f, 0.85f));
+            Frame(rect, AccentDim);
+            GUI.Label(new Rect(rect.x + 5f, rect.y + 2f, rect.width - 10f, 18f), tip, Row);
         }
 
         // ===== 常用控件 =====

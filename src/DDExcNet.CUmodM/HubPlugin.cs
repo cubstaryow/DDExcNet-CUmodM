@@ -40,6 +40,7 @@ namespace DDExcNet.CUmodM
         private Vector2 _configScroll;
         private string _page = "overview";
         private bool _visible;
+        private bool _inputBlocked;
         private KeyCode _effectiveKey = KeyCode.F8;
 
         private const int WindowId = 0x4444454E; // 'DDEN'
@@ -121,7 +122,7 @@ namespace DDExcNet.CUmodM
                 }
 
                 Log.Info("[UITEST] 绘制页面：" + page);
-                yield return new WaitForSecondsRealtime(0.6f);
+                yield return new WaitForSecondsRealtime(page.EndsWith("saveeditor", StringComparison.Ordinal) ? 4f : 0.8f);
 
                 if (!_visible)
                 {
@@ -129,6 +130,12 @@ namespace DDExcNet.CUmodM
                     yield break;
                 }
             }
+
+            // 最后一站停在存档编辑器页，留时间给人/截图检查（标签页会自动轮播）
+            _page = "saveeditor";
+            InvokeModuleMethod("saveeditor", "SmokeLoad");
+            Log.Info("[UITEST] 停留在存档编辑页 16 秒（标签页自动轮播），供人工/截图核对。");
+            yield return new WaitForSecondsRealtime(16f);
 
             _visible = false;
             InvokeModuleMethod("saveeditor", "SmokeStop");
@@ -196,11 +203,26 @@ namespace DDExcNet.CUmodM
             {
                 KeyCapture.Tick();
                 if (_effectiveKey != KeyCode.None && Input.GetKeyDown(_effectiveKey)) Toggle();
+                UpdateInputBlock();
             }
             catch (Exception ex)
             {
                 Log.Exception(ex, "Update");
             }
+        }
+
+        /// <summary>鼠标在本窗口内时关掉 EventSystem，避免点击穿透到主菜单的开始/退出按钮。</summary>
+        private void UpdateInputBlock()
+        {
+            float s = Mathf.Clamp(CfgScale.Value, 0.75f, 2f);
+            var screen = new Rect(_rect.x * s, _rect.y * s, _rect.width * s, _rect.height * s);
+            bool block = _visible && DdenUI.PointerOver(screen);
+            if (block != _inputBlocked)
+            {
+                _inputBlocked = block;
+                Log.Debug(block ? "开始拦截游戏 UI 点击（鼠标在管理器窗口内）" : "放开游戏 UI 点击");
+            }
+            DdenUI.BlockGameInput(block);
         }
 
         private void OnGUI()
@@ -220,7 +242,8 @@ namespace DDExcNet.CUmodM
                 _rect.x = Mathf.Clamp(_rect.x, 0f, Mathf.Max(0f, w - _rect.width));
                 _rect.y = Mathf.Clamp(_rect.y, 0f, Mathf.Max(0f, h - _rect.height));
 
-                _rect = GUI.Window(WindowId, _rect, DrawWindow, " DDExcNet · CUmodM ");
+                // 用无皮肤窗口：标题栏/边框全部自己画，避免 Unity 默认窗框压住第一行文字
+                _rect = GUI.Window(WindowId, _rect, DrawWindow, GUIContent.none, GUIStyle.none);
                 GUI.matrix = old;
             }
             catch (Exception ex)
@@ -235,18 +258,20 @@ namespace DDExcNet.CUmodM
             DdenUI.Fill(new Rect(0, 0, _rect.width, _rect.height), DdenUI.Bg);
 
             // 顶部标题条
-            Rect header = new Rect(0, 0, _rect.width, 34f);
+            Rect header = new Rect(0, 0, _rect.width, 36f);
             DdenUI.Fill(header, DdenUI.Panel);
-            GUI.Label(new Rect(12, 4, 320, 26), "DDEN 模组管理器", DdenUI.Title);
-            GUI.Label(new Rect(300, 8, _rect.width - 320, 20), Compat.Headline(), DdenUI.Sub);
+            DdenUI.Fill(new Rect(0, header.yMax - 1f, header.width, 1f), DdenUI.AccentDim);
+            GUI.Label(new Rect(12, 6, 320, 24), "DDEN 模组管理器", DdenUI.Title);
+            GUI.Label(new Rect(340, 9, _rect.width - 360, 20), Compat.Headline(), DdenUI.Sub);
+            if (DdenUI.Button(new Rect(_rect.width - 30f, 8f, 22f, 20f), "×", false)) _visible = false;
 
             // 侧边栏
-            Rect side = new Rect(0, 34f, SidebarWidth, _rect.height - 34f - 24f);
+            Rect side = new Rect(0, 36f, SidebarWidth, _rect.height - 36f - 24f);
             DdenUI.Fill(side, DdenUI.Panel);
             DrawSidebar(new Rect(side.x + 8f, side.y + 8f, side.width - 16f, side.height - 16f));
 
             // 内容区
-            Rect content = new Rect(SidebarWidth + 10f, 40f, _rect.width - SidebarWidth - 20f, _rect.height - 40f - 28f);
+            Rect content = new Rect(SidebarWidth + 10f, 44f, _rect.width - SidebarWidth - 20f, _rect.height - 44f - 28f);
             DrawContent(content);
 
             // 底栏
@@ -254,7 +279,7 @@ namespace DDExcNet.CUmodM
             GUI.Label(new Rect(12, _rect.height - 23f, _rect.width - 24f, 20),
                 $"快捷键 {_effectiveKey} 开关 · 缩放 {CfgScale.Value:0.00} · 模块 {DdenHub.Modules.Count} 个 · 拖动标题栏移动", DdenUI.Sub);
 
-            GUI.DragWindow(new Rect(0, 0, _rect.width, 34f));
+            GUI.DragWindow(new Rect(0, 0, _rect.width, 36f));
         }
 
         private void DrawSidebar(Rect area)
@@ -473,6 +498,7 @@ namespace DDExcNet.CUmodM
         {
             try
             {
+                DdenUI.BlockGameInput(false);
                 PlayerPrefs.SetFloat("DDEN.Hub.X", _rect.x);
                 PlayerPrefs.SetFloat("DDEN.Hub.Y", _rect.y);
                 PlayerPrefs.SetFloat("DDEN.Hub.W", _rect.width);
