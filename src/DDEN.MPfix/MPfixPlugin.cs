@@ -55,6 +55,7 @@ namespace DDEN.MPfix
         internal static ConfigEntry<bool> CfgTraderSnapshot;
         internal static ConfigEntry<bool> CfgToolDurability;
         internal static ConfigEntry<bool> CfgBlockBreakSync;
+        internal static ConfigEntry<bool> CfgCleanWearableVisuals;
 
         // ===== 娱乐 =====
         internal static ConfigEntry<bool> CfgDoublePurchase;
@@ -159,6 +160,9 @@ namespace DDEN.MPfix
             CfgBlockBreakSync = Config.Bind("联机修正", "SyncBlockBreak", true,
                 "客机本地挖碎方块时，额外通知主机把同一格按剩余血量打碎。\n" +
                 "用于修“客机挖掉方块后又重新长出来”（主机没认这次破坏 → chunk 同步把原来那块推回来）。");
+            CfgCleanWearableVisuals = Config.Bind("联机修正", "CleanStaleWearableVisuals", true,
+                "清理“人身上还挂着一件装备贴图、其实没穿戴”的残留视觉层（WearableExtension）。\n" +
+                "只删纯视觉子物体，不碰任何真实物品。");
             CfgDoublePurchase = Config.Bind("娱乐", "道生一 一生二", false,
                 "道生一，一生二：主机在商人购买时额外奉送一份（同样的物品，直接进买家背包）。\n" +
                 "纯娱乐开关，默认关闭。只在主机生效，客机购买也会多一件。");
@@ -179,6 +183,7 @@ namespace DDEN.MPfix
             TryPatch(harmony, typeof(DurabilityFix.UseItem_Patch), "工具耐久同步（UseItem）");
             DurabilityFix.InstallHostWatcher(harmony);
             TryPatch(harmony, typeof(BlockBreakFix.DamageBlock_Postfix), "客机挖块后通知主机打碎");
+            TryPatch(harmony, typeof(WearableVisualFix.Body_DropWearable_ClearPatch), "卸下时清理穿戴贴图");
 
             MigrateOldWatchdog();
 
@@ -531,6 +536,7 @@ namespace DDEN.MPfix
 
                 WearGhostFix.Tick();
                 WornItemSnap.Tick();
+                WearableVisualFix.Tick();
 
                 if (!CfgChipEnabled.Value) return;
                 if (!Mp.CoreAvailable) return;

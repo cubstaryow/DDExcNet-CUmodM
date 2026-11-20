@@ -159,6 +159,14 @@ dotnet build CUmod.slnx -v m                  # 只编译
   只有确认存在耐久不同步时才开。
 - **删幽灵物品必须先保内容物**：`WearGhostFix.TryRetireGhost` 先把子物品逐个脱离落地，
   含液体（`WaterContainerItem.stack`）或取不干净就**保留不删**，只有空壳才 Destroy。
+- **身上挂着装备贴图但其实没穿**：`DDEN.MPfix.WearableVisualFix` —— 穿戴时 `Wearable.CreateSprites`
+  会在肢体下生成纯视觉子物体（`WearableExtension`，`reference` 指向 Item），正常卸下由
+  `Body.DropWearable → ClearSprites()` 清理；但联机里物品常被 Together 用 `SetParent(null)` / `HeldSeat` /
+  同步搬走，这条路不清理 → 贴图残留。
+  修法：① `Body.DropWearable` postfix 再补一次 `ClearSprites()`（幂等）；
+  ② 每 2 秒巡检附近身体的 `WearableExtension`：`reference` 为空、或它挂的 Item 已不属于该身体 →
+  **连续两次巡检（≥1.5s）都成立**才销毁这层视觉（只删视觉子物体，绝不碰真实物品）。
+  开关 `联机修正/CleanStaleWearableVisuals`。
 - **配置界面必须是两行一条**：上行「键 + 控件」，下行说明（`DdenUI.ConfigRow`，行高 44）。
   “全部配置”页必须把**所有模块的配置**都列出来（按模块分块、按 Section 分组），不能要求先选模块才看得到。
   说明放不下时用 `DdenUI.Hover` 让鼠标悬停看全文。
