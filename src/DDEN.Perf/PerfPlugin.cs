@@ -596,24 +596,23 @@ namespace DDEN.Perf
             float chartW = area.width;
 
             Chart(new Rect(area.x, y, chartW, chartH), "帧数（绿=平均　橙=本窗口最差帧）", tStart, tEnd,
-                new[] { _cT, null }, new[] { _cFps, _cWorst },
+                new[] { _cFps, _cWorst },
                 new[] { DdenUI.Good, DdenUI.Warn }, new[] { "平均", "最差" }, 0f, -1f, CfgSlowFps.Value);
             y += chartH + 5f;
 
             Chart(new Rect(area.x, y, chartW, chartH), "CPU（整个游戏进程 / 全部核心）", tStart, tEnd,
-                new[] { _cT }, new[] { _cCpu },
+                new[] { _cCpu },
                 new[] { DdenUI.Warn }, new[] { "CPU%" }, 0f, 100f, -1f);
             y += chartH + 5f;
 
-            Chart(new Rect(area.x, y, chartW, chartH), "物理压力（蓝=活跃刚体　橙=物理步/帧 ×20，正常≈50/帧数，>1 表示物理在追帧）",
+            Chart(new Rect(area.x, y, chartW, chartH), "物理压力（蓝=活跃刚体　橙=物理步/帧×100，正常≈83，>100 说明物理在追帧）",
                 tStart, tEnd,
-                new[] { _cT, null }, new[] { _cRigid, _cSteps },
-                new[] { DdenUI.Accent, DdenUI.Warn }, new[] { "刚体", "步/帧" }, 0f, -1f, -1f);
+                new[] { _cRigid, _cSteps },
+                new[] { DdenUI.Accent, DdenUI.Warn }, new[] { "刚体", "步/帧×100" }, 0f, -1f, -1f);
             y += chartH + 5f;
 
             Chart(new Rect(area.x, y, chartW, chartH), "世界对象（绿=物品　橙=无主物品　蓝=无主且物理开　灰=角色）",
                 tStart, tEnd,
-                new[] { _cT, null, null, null },
                 new[] { _cItems, _cFree, _cSim, _cBodies },
                 new[] { DdenUI.Good, DdenUI.Warn, DdenUI.Accent, DdenUI.TextDim },
                 new[] { "物品", "无主", "无主+物理", "角色" }, 0f, -1f, -1f);
@@ -660,7 +659,7 @@ namespace DDEN.Perf
         /// 只按像素列聚合，所以几千个点也不会把这一页画卡。
         /// </summary>
         private void Chart(Rect r, string title, float tStart, float tEnd,
-                           float[][] xs, float[][] ys, Color[] colors, string[] labels,
+                           float[][] series, Color[] colors, string[] labels,
                            float min, float max, float warnBelow)
         {
             DdenUI.Fill(r, new Color(0f, 0f, 0f, 0.28f));
@@ -676,9 +675,9 @@ namespace DDEN.Perf
             if (vmax <= 0f)
             {
                 vmax = 1f;
-                for (int si = 1; si < ys.Length; si++)
+                for (int si = 0; si < series.Length; si++)
                 {
-                    float[] arr = ys[si];
+                    float[] arr = series[si];
                     if (arr == null) continue;
                     for (int i = 0; i < arr.Length; i++)
                     {
@@ -705,11 +704,11 @@ namespace DDEN.Perf
             int startIdx = 0;
             while (startIdx < count - 1 && _buf[startIdx].T < tStart) startIdx++;
 
-            for (int si = 1; si < ys.Length; si++)
+            for (int si = 0; si < series.Length; si++)
             {
-                float[] arr = ys[si];
+                float[] arr = series[si];
                 if (arr == null) continue;
-                Color c = colors != null && si - 1 < colors.Length ? colors[si - 1] : DdenUI.Accent;
+                Color c = colors != null && si < colors.Length ? colors[si] : DdenUI.Accent;
                 float prevX = -1f, prevY = -1f;
                 for (int col = 0; col < cols; col++)
                 {
@@ -790,7 +789,7 @@ namespace DDEN.Perf
                 _cFps[i] = s.Fps;
                 _cWorst[i] = s.Worst;
                 _cCpu[i] = s.Cpu;
-                _cSteps[i] = s.Steps;
+                _cSteps[i] = s.Steps * 100f;      // ×100 让它和"刚体数"同量级，否则永远贴在 0 线上看不见
                 _cRigid[i] = s.Rigid;
                 _cItems[i] = s.Items;
                 _cFree[i] = s.Free;

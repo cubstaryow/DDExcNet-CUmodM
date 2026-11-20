@@ -234,6 +234,7 @@ namespace DDEN.MPfix
             WornItemSnap.PrimeScan(0.4f);
             WearableVisualFix.PrimeScan(1.0f);
             OrphanItemFix.PrimeScan(1.6f);
+            _warmupUntil = Time.realtimeSinceStartup + 6f;      // 巡检耗时统计跳过冷启动
             DdenHub.Register(this);
             _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
 
@@ -346,10 +347,11 @@ namespace DDEN.MPfix
             GUI.enabled = true;
 
             y += 32f;
-            GUI.Label(new Rect(area.x, y, area.width, 60f),
+            GUI.Label(new Rect(area.x, y, area.width, 76f),
                 "无芯片：联机时以主机的设置为准，本机自动跟着改（默认每 30 秒核对一次）。\n" +
                 "合成 / 物品：模组加的东西在联机里也能正常做出来、捡起来、穿上去。\n" +
-                $"挖块：两边的方块血量与破坏结果保持一致（信任上限 {CfgBlockDamageRatio.Value:0.#} 倍、判定门槛 {CfgBlockBreakMinFraction.Value:P0}）。",
+                $"挖块：两边的方块血量与破坏结果保持一致（信任上限 {CfgBlockDamageRatio.Value:0.#} 倍、判定门槛 {CfgBlockBreakMinFraction.Value:P0}）。\n" +
+                $"巡检开销：{TickCostText}（每帧合计；数值大时日志里会有 [巡检] 明细）",
                 DdenUI.Wrap);
         }
 
@@ -590,11 +592,23 @@ namespace DDEN.MPfix
                     DdenHub.SetPanelVisible("mpfix", _standaloneVisible);
                 }
 
+                // 五个周期巡检：各自内部有节拍（错峰），这里只量"本模块每帧到底吃了多少"，
+                // 每 60 秒汇总一条日志 —— 让"巡检是不是卡顿源"有数据，而不是靠感觉。
+                float t0 = Time.realtimeSinceStartup;
                 WearGhostFix.Tick();
+                float t1 = Time.realtimeSinceStartup;
                 WornItemSnap.Tick();
+                float t2 = Time.realtimeSinceStartup;
                 WearableVisualFix.Tick();
+                float t3 = Time.realtimeSinceStartup;
                 OrphanItemFix.Tick();
+                float t4 = Time.realtimeSinceStartup;
                 StaleItemFreezer.Tick();
+                float t5 = Time.realtimeSinceStartup;
+
+                ReportTickCost((t5 - t0) * 1000f,
+                               (t1 - t0) * 1000f, (t2 - t1) * 1000f,
+                               (t3 - t2) * 1000f, (t4 - t3) * 1000f, (t5 - t4) * 1000f);
 
                 if (!CfgChipEnabled.Value) return;
                 if (!Mp.CoreAvailable) return;
@@ -610,6 +624,50 @@ namespace DDEN.MPfix
             {
                 Log.Exception(ex, "Update 异常");
             }
+        }
+
+        private float _tickSum;
+        private float _tickMax;
+        private int _tickCount;
+        private float _tickLogAt = -99f;
+        private float _warmupUntil;
+
+        /// <summary>本模块 Tick 的平均/峰值耗时（毫秒，只统计热身之后的稳态）。状态页与日志都用它。</summary>
+        internal static string TickCostText
+        {
+            get
+            {
+                MPfixPlugin p = Instance;
+                if (p == null || p._tickCount <= 0) return "热身中…";
+                return $"{p._tickSum / p._tickCount:0.000}ms / 峰值 {p._tickMax:0.000}ms";
+            }
+        }
+
+        private void ReportTickCost(float total, float wear, float snap, float visual, float orphan, float freezer)
+        {
+            // 开局 6 秒是冷启动（JIT、资源加载），这段时间的数字没有参考价值，别记进来
+            if (Time.realtimeSinceStartup < _warmupUntil) return;
+
+            _tickSum += total;
+            _tickCount++;
+            if (total > _tickMax) _tickMax = total;
+
+            // 至少攒 180 帧（约 3 秒）再看平均，避免"拿一次冷启动当结论"
+            if (_tickCount < 180) return;
+            if (Time.unscaledTime - _tickLogAt < 60f) return;
+            _tickLogAt = Time.unscaledTime;
+
+            float avg = _tickSum / _tickCount;
+            float peak = _tickMax;
+            _tickSum = 0f;
+            _tickMax = 0f;
+            _tickCount = 0;
+
+            // 平均 <0.5ms 且峰值 <2ms 就是噪声级，不刷日志（状态页随时能看）
+            if (avg < 0.5f && peak < 2f) return;
+
+            MPfixPlugin.Log.Info($"[巡检] 本模块每帧合计 平均 {avg:0.000}ms / 峰值 {peak:0.000}ms " +
+                                 $"（最近一次：穿戴兜底 {wear:0.000} / 贴合 {snap:0.000} / 贴图 {visual:0.000} / 孤儿 {orphan:0.000} / 遗留冻结 {freezer:0.000}）");
         }
 
         private void TickHost()

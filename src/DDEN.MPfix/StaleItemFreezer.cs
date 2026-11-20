@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using DDEN.Shared;
@@ -45,6 +46,17 @@ namespace DDEN.MPfix
         private static MethodInfo _isRegistered;
         private static bool _lookedUp;
 
+        // 「有人掉线」窗口：只在玩家数变少的 20 秒内密集扫描，其余时间每 30 秒兜一次底，
+        // 避免我们自己每 3 秒就 FindObjectsOfType<Item>(true)（物品一多，这个扫描本身就贵）。
+        private static float _startAt;
+        private static float _pollNext;
+        private static int _lastPlayers = -1;
+        private static float _watchUntil;
+        private static float _nextSafety;
+
+        private static IDictionary _playerDict;
+        private static bool _playerLookedUp;
+
         internal static void Tick()
         {
             if (_disabled) return;
@@ -52,9 +64,34 @@ namespace DDEN.MPfix
             if (!Mp.IsRunning || !Mp.IsClient) return;
             if (!Game.InWorld) return;
 
+            if (_startAt <= 0f) _startAt = Time.realtimeSinceStartup;
+            if (Time.realtimeSinceStartup - _startAt < 3f) return;      // 跳过开局那几秒（冷启动/JIT 最贵）
+
             float now = Time.unscaledTime;
+
+            // 便宜地盯玩家数（反射读一个字典的 Count，几乎零成本）
+            if (now >= _pollNext)
+            {
+                _pollNext = now + 0.5f;
+                int pc = PlayersCount();
+                if (pc >= 0)
+                {
+                    if (_lastPlayers >= 0 && pc < _lastPlayers)
+                    {
+                        _watchUntil = now + 20f;
+                        MPfixPlugin.Log.Info($"[遗留物品] 有玩家离开（{_lastPlayers}→{pc}），接下来 20 秒重点排查遗留物品。");
+                    }
+                    _lastPlayers = pc;
+                }
+            }
+
             if (now < _next) return;
             _next = now + Interval;
+
+            bool inWatch = now < _watchUntil;
+            bool safety = now >= _nextSafety;
+            if (!inWatch && !safety) return;          // 平时不动，不做全场景扫描
+            if (safety) _nextSafety = now + 30f;
 
             int cap = Mathf.Max(0, MPfixPlugin.CfgFreezeGhostMax.Value);
             if (_session >= cap)
@@ -162,6 +199,25 @@ namespace DDEN.MPfix
             {
                 return true;      // 查不了就当"已登记"，宁可不冻
             }
+        }
+
+        /// <summary>当前联机里的玩家数（拿不到返回 -1）。用来判断"刚刚是不是有人掉了"。</summary>
+        private static int PlayersCount()
+        {
+            if (!_playerLookedUp)
+            {
+                _playerLookedUp = true;
+                try
+                {
+                    Type t = AccessTools.TypeByName("Together.ScavPlayer");
+                    FieldInfo f = t == null ? null : t.GetField("ClientIdToPlayerDict",
+                        BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                    _playerDict = f == null ? null : f.GetValue(null) as IDictionary;
+                    
+                }
+                catch {  }
+            }
+            return _playerDict == null ? -1 : _playerDict.Count;
         }
     }
 }
