@@ -69,8 +69,9 @@ dotnet build CUmod.slnx -v m    # 只编译
   游戏按钮收不到点击；面板关掉就 `Hide()`。IMGUI 不受影响（两套输入）。
 - **图形化肢体**：世界内读原版 `WoundView.limbImages / origPositions / localScale.x`，并把每块贴图
   **Blit+ReadPixels 抓成 PNG** 存到 `BepInEx/config/dden.limbs/`（布局存 `dden.limbs.json`），
-  这样主菜单也能用原版美术；左右翻转用**预翻好的贴图副本**（IMGUI 负宽度缩放不可靠），
-  面板上有「左翻 / 右翻」按钮实时切换并写回缓存。
+  这样主菜单也能用原版美术。
+  **默认只按原版 `localScale.x` 镜像，不做额外翻转**（实测这是正确的）；「左翻 / 右翻」只是换体型/角色时的微调开关。
+  翻转用**预翻好的贴图副本**实现（IMGUI 的 UV 翻转对整张贴图是恒等、负宽度缩放也不可靠）。
 - **标签统一 `clipping = Overflow` 并按宽度截断**：`DdenUI.ElideToWidth(text, width)`；
   Overflow 是为了中文行高不被切，但会横向溢出到邻居控件，凡是定宽列一律先截断。
 - **悬停提示别用 `GUI.tooltip`**：那个值会残留，表现为“鼠标后面一直跟着一个黑框”。

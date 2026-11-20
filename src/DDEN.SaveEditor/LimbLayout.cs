@@ -43,10 +43,11 @@ namespace DDEN.SaveEditor
 
         /// <summary>
         /// 额外翻转开关：叠加在原版 localScale 镜像之上。
-        /// 原版美术有时候是“同一个朝向”，需要按视角再翻一侧；面板上可实时切换并记住。
+        /// 默认都关 —— 实测原版 limbImages 的 localScale 镜像已经足够正确，
+        /// 只有换了体型/角色发现某侧反了，才在面板上点「左翻 / 右翻」微调（会记住）。
         /// </summary>
         public static bool FlipLeftSide;
-        public static bool FlipRightSide = true;
+        public static bool FlipRightSide;
 
         /// <summary>某个部位最终是否水平翻转。</summary>
         public static bool MirrorFor(LimbPart part)
@@ -317,7 +318,7 @@ namespace DDEN.SaveEditor
                 }
                 var root = new JObject
                 {
-                    ["version"] = 3,
+                    ["version"] = 4,
                     ["aspect"] = Aspect,
                     ["flipLeft"] = FlipLeftSide,
                     ["flipRight"] = FlipRightSide,
@@ -366,8 +367,10 @@ namespace DDEN.SaveEditor
                 }
 
                 Aspect = root.Value<float?>("aspect") ?? 0.42f;
-                FlipLeftSide = root.Value<bool?>("flipLeft") ?? false;
-                FlipRightSide = root.Value<bool?>("flipRight") ?? true;
+                int ver = root.Value<int?>("version") ?? 0;
+                // v4 起：默认不额外翻转（v3 之前误把右侧默认翻转过，忽略其存档值）
+                FlipLeftSide = ver >= 4 ? (root.Value<bool?>("flipLeft") ?? false) : false;
+                FlipRightSide = ver >= 4 ? (root.Value<bool?>("flipRight") ?? false) : false;
                 FromLive = false;
                 HasArt = art > 0;
                 Source = HasArt ? "缓存美术" : "缓存布局";
