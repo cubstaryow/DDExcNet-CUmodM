@@ -32,6 +32,11 @@ namespace DDEN.MPfix
         private static string _lastId;
         private static float _lastAt = -99f;
 
+        internal static bool InPurchaseWindow => Time.unscaledTime <= _windowUntil;
+
+        /// <summary>赠送那件自己创建时置真：避免被「20% 合成复制」再复制一次（否则偶尔出 3 件）。</summary>
+        internal static bool SuppressCraftDuplicate;
+
         internal static void NoteId(string id)
         {
             if (Time.unscaledTime > _windowUntil) return;
@@ -87,7 +92,10 @@ namespace DDEN.MPfix
                 _lastId = null;
 
                 // 和原版同一个落点（TryPurchase_rewritten:144179 用的是商人位置；这里给买家脚下，观感更合理）
-                GameObject extra = Utils.Create(id, actor.transform.position, 0f);
+                SuppressCraftDuplicate = true;
+                GameObject extra;
+                try { extra = Utils.Create(id, actor.transform.position, 0f); }
+                finally { SuppressCraftDuplicate = false; }
                 if (extra == null)
                 {
                     MPfixPlugin.Log.Debug($"[道生一] 额外那一件 '{id}' 生成失败（不影响正常购买；" +

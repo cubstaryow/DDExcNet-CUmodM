@@ -150,30 +150,46 @@ namespace DDEN.MPfix
                 // 玩家亲手丢出来的东西**一律恢复碰撞**（不看距离）——这是"丢下去要正常落地"的保证，
                 // 距离限制只用在被动的 HeldQuiet.Restore 那条路上（见 AfterHeldQuietRestore）。
 
-                Rigidbody2D rb = item.rb;
-                if (rb != null)
-                {
-                    if (!rb.simulated) rb.simulated = true;                       // 只打开
-                    if (rb.collisionDetectionMode != CollisionDetectionMode2D.Continuous)
-                        rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
-                }
+                // 2026-11 收紧（用户报“物品抽搐/飞天”）：这三件事全部去掉 ——
+                //   ① `rb.simulated = true`：若物品正压在实体里，重新开启物理会被解算器猛地弹飞；
+                //   ② `CollisionDetectionMode.Continuous`：只加开销，且会放大弹出速度；
+                //   ③ 只要物品当前与实体重叠，就**不打开碰撞体**（否则同样被弹出）。
+                // 现在只做一件事：如果它没有碰撞体重叠（正常落地场景），把被关掉的碰撞体打开。
+                if (OverlappingSolid(item)) return;
 
-                bool turnedOn = false;
                 Collider2D[] cols = item.GetComponentsInChildren<Collider2D>(true);
                 for (int i = 0; i < cols.Length; i++)
                 {
-                    if (cols[i] != null && !cols[i].enabled)
-                    {
-                        cols[i].enabled = true;
-                        turnedOn = true;
-                    }
+                    if (cols[i] != null && !cols[i].enabled) cols[i].enabled = true;
                 }
 
-                Unstick(item, why, turnedOn);
+                Unstick(item, why, false);
             }
             catch (Exception ex)
             {
                 Log.Debug($"物品物理保险失败（{why}）：{ex.Message}");
+            }
+        }
+
+        /// <summary>物品当前是否和实体（非地面、非自身）重叠 —— 重叠时打开碰撞体必然被弹飞，所以跳过。</summary>
+        private static bool OverlappingSolid(Item item)
+        {
+            try
+            {
+                Vector2 pos = item.transform.position;
+                Collider2D hit = Physics2D.OverlapCircle(pos, 0.12f);
+                if (hit == null) return false;
+                if (hit.transform == null) return false;
+                // 自己身上的碰撞体（关着的那些不会命中，开着的手里/身上部件会命中，视为安全）
+                if (hit.transform.IsChildOf(item.transform) || hit.transform == item.transform) return false;
+                // 地面/墙块不算"压在里面"
+                int ground = LayerMask.GetMask("Ground");
+                if (ground != 0 && hit.gameObject.layer == LayerMask.NameToLayer("Ground")) return false;
+                return true;
+            }
+            catch
+            {
+                return true;    // 判不了就不动，宁可不处理
             }
         }
 

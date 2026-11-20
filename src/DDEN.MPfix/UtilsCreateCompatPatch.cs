@@ -89,7 +89,7 @@ namespace DDEN.MPfix
                 }
 
                 __result = made;
-                RegisterOnHost(made);
+                RegisterOnHost(made);   // 强制登记（没有开关：不登记联机就不认这件物品）
 
                 if (Time.unscaledTime - _lastLogAt > 0.5f)
                 {
@@ -102,6 +102,49 @@ namespace DDEN.MPfix
             {
                 MPfixPlugin.Log.Debug("Utils.Create 前缀异常：" + ex.Message);
                 return true;
+            }
+        }
+
+        private static bool _duplicating;
+
+        /// <summary>
+        /// 「道生一 一生二」的第二条（用户口径 2026-11）：**合成等其它“造东西”的行为有 20% 概率多出一件**。
+        /// 商人购买不走这里（购买那条由 <see cref="DoublePurchase"/> 保证“必定两个”，用时间窗区分）。
+        /// 只在主机做，且带递归保护（多出来的那件自己不会再触发一次）。
+        /// </summary>
+        private static void Postfix(string id, Vector2 pos, float rot, GameObject __result)
+        {
+            try
+            {
+                if (__result == null) return;
+                if (!MPfixPlugin.CfgDoublePurchase.Value) return;
+                if (!Mp.IsRunning || !Mp.IsServer) return;
+                if (_duplicating) return;                       // 防递归：复制出来的那件不再复制
+                if (DoublePurchase.SuppressCraftDuplicate) return;   // 「一生二」赠送那件不再触发 20%
+                if (DoublePurchase.InPurchaseWindow) return;    // 购买流程由 DoublePurchase 负责“必定两个”
+                if (UnityEngine.Random.value >= 0.2f) return;   // 20%
+                if (string.IsNullOrEmpty(id)) return;
+
+                _duplicating = true;
+                try
+                {
+                    GameObject extra = Utils.Create(id, pos, rot);
+                    if (extra == null) return;
+                    if (extra.GetComponent<Item>() == null) return;
+
+                    RegisterOnHost(extra);      // 走幂等登记，联机才认这件多出来的
+                    SyncNow(extra);
+                    MPfixPlugin.Log.Info($"[道生一 一生二] 额外生成一件 '{id}'（20% 概率触发，已登记并推送给客机）。");
+                }
+                finally
+                {
+                    _duplicating = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                _duplicating = false;
+                MPfixPlugin.Log.Debug("「一生二」复制失败：" + ex.Message);
             }
         }
 

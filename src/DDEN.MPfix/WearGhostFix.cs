@@ -30,13 +30,14 @@ namespace DDEN.MPfix
     internal static class WearGhostFix
     {
         private const string FixChannel = "ddn.mp.wearfix";
-        private const string RespawnChannel = "ddn.mp.wearrespawn";
 
         /// <summary>搜索半径与 Together 的穿戴距离门对齐（14m）。</summary>
         private const float SearchRadius = 14f;
 
         private const int MaxAttempts = 3;
         private const float RetrySpacing = 1.5f;
+        /// <summary>穿好之后等多久再去问主机（秒）。用户口径 2026-11：内置 1.5，不做成配置。</summary>
+        private const float InitialDelay = 1.5f;
 
         /// <summary>报过 wearfix 之后，同 id 的物品在这段时间里不许被别的修复（孤儿物品）动。</summary>
         private const float ClaimSeconds = 12f;
@@ -103,7 +104,7 @@ namespace DDEN.MPfix
                         Body = __instance,
                         Id = item.id,
                         Pos = item.transform.position,
-                        Due = Time.unscaledTime + Mathf.Max(0.3f, MPfixPlugin.CfgWearGrace.Value),
+                        Due = Time.unscaledTime + InitialDelay,   // 固定 1.5 秒（用户口径：不再做成配置）
                         Attempts = 0
                     });
                 }
@@ -126,30 +127,7 @@ namespace DDEN.MPfix
                                      "本会话不做穿戴兜底 —— 宁可不修，也不去猜是谁在穿。");
             }
 
-            // 可选旧策略（默认关闭）：主机按 id 重建一件物品
-            Mp.RegisterServerHandler(RespawnChannel, token =>
-            {
-                try
-                {
-                    if (!Mp.IsServer || token == null) return new JObject { ["ok"] = false };
-                    if (!MPfixPlugin.CfgWearRebuild.Value) return new JObject { ["ok"] = false, ["why"] = "disabled" };
-
-                    string id = token["id"]?.ToString() ?? string.Empty;
-                    float x = token["x"]?.Value<float>() ?? 0f;
-                    float y = token["y"]?.Value<float>() ?? 0f;
-
-                    GameObject go = Utils.Create(id, new Vector2(x, y), 0f);
-                    if (go == null) return new JObject { ["ok"] = false };
-                    Utils_Create_ModItemPatch.RegisterOnHost(go);
-                    Utils_Create_ModItemPatch.SyncNow(go);
-                    return new JObject { ["ok"] = true };
-                }
-                catch (Exception ex)
-                {
-                    Log.Debug("wearrespawn 失败：" + ex.Message);
-                    return new JObject { ["ok"] = false };
-                }
-            });
+            // （旧策略已删除：不再有“主机按 id 重建一件物品”这条通道 —— 它会多出一件，风险大于收益）
         }
 
         private static JToken HandleFix(uint senderClientId, JToken token)
@@ -362,12 +340,6 @@ namespace DDEN.MPfix
 
                     string why = resp?["why"]?.ToString() ?? "no-response";
 
-                    if (MPfixPlugin.CfgWearRebuild.Value)
-                    {
-                        Rebuild(p, payload);
-                        return;
-                    }
-
                     if (p.Attempts + 1 < MaxAttempts)
                     {
                         p.Attempts++;
@@ -378,7 +350,7 @@ namespace DDEN.MPfix
                     }
 
                     MPfixPlugin.Log.Warn($"[穿戴兜底] '{p.Id}' 试了 {MaxAttempts} 次主机都没接受（{why}）。" +
-                                         "按配置不重建（保持现状，物体会跟着你跑）；想让它掉地重置请开 RebuildIfHostLacksItem。");
+                                         "保持现状（不做重建/掉落，避免多出一件）。");
                 }
                 catch (Exception ex)
                 {
@@ -387,32 +359,6 @@ namespace DDEN.MPfix
             });
         }
 
-        /// <summary>可选旧策略（默认关闭）：主机确实没有这件物品时才用，掉地 + 请求重建。</summary>
-        private static void Rebuild(Pending p, JObject payload)
-        {
-            Item item = p.Item;
-            Body body = p.Body;
-            if (item == null || body == null) return;
-            if (body.GetWearable(p.Id) != item) return;
-
-            try { body.DropWearable(item); }
-            catch (Exception ex) { Log.Debug("DropWearable 失败：" + ex.Message); }
-
-            Mp.RequestServer(RespawnChannel, payload, r2 =>
-            {
-                try
-                {
-                    if (r2 == null || r2.Value<bool?>("ok") != true) return;
-                    TryRetireGhost(item, p.Pos, p.Id);
-                    _adopted++;
-                    MPfixPlugin.Log.Info($"[穿戴兜底] 主机没有 '{p.Id}'，已按配置重建（第 {_adopted} 次）");
-                }
-                catch (Exception ex)
-                {
-                    Log.Debug("重建回调失败：" + ex.Message);
-                }
-            });
-        }
 
         /// <summary>重建时才会用到：先把内容物取出来，空壳才销毁。</summary>
         private static bool TryRetireGhost(Item ghost, Vector2 pos, string id)

@@ -42,13 +42,10 @@ namespace DDEN.MPfix
 
         // ===== 联机物品/合成 =====
         internal static ConfigEntry<bool> CfgFixModItemCraftSpawn;
-        internal static ConfigEntry<bool> CfgRegisterSpawnedItems;
 
         // ===== 穿戴兜底 =====
         internal static ConfigEntry<bool> CfgWearFix;
-        internal static ConfigEntry<float> CfgWearGrace;
         internal static ConfigEntry<int> CfgWearFixMax;
-        internal static ConfigEntry<bool> CfgWearRebuild;
 
         // ===== 物品物理保险 =====
         internal static ConfigEntry<bool> CfgPhysicsGuard;
@@ -110,80 +107,76 @@ namespace DDEN.MPfix
             Instance = this;
             LogSource = base.Logger;
 
-            CfgChipEnabled = Config.Bind("无芯片同步", "Enabled", true,
+            CfgChipEnabled = Config.Bind("无芯片同步", "启用（Enabled）", true,
                 "总开关。关掉后这个模块不再管“有没有芯片”这件事。");
-            CfgForceHost = Config.Bind("无芯片同步", "ForceHostUnchipped", true,
+            CfgForceHost = Config.Bind("无芯片同步", "强制跟随主机（ForceHostUnchipped）", true,
                 "跟随主机：主机开了无芯片你就自动无芯片，主机关了你也恢复有芯片。\n" +
                 "关掉后只在进局时跟一次，之后可以自己改。");
-            CfgOverrideIndividualRule = Config.Bind("无芯片同步", "OverrideIndividualRule", true,
+            CfgOverrideIndividualRule = Config.Bind("无芯片同步", "全员显示一致（OverrideIndividualRule）", true,
                 "全员一致：名牌、附近语音、状态栏这些显示也跟着主机的设置走。\n" +
                 "关掉可能出现“世界里是无芯片，但名牌还按有芯片显示”。");
-            CfgWatchdogSeconds = Config.Bind("无芯片同步", "WatchdogSeconds", 30f,
+            CfgWatchdogSeconds = Config.Bind("无芯片同步", "核对间隔秒（WatchdogSeconds）", 30f,
                 new ConfigDescription("自动核对的间隔（秒）。平时同步一次就够，默认 30 秒；0 = 不自动核对。",
                     new AcceptableValueRange<float>(0f, 600f)));
-            CfgAnnounce = Config.Bind("无芯片同步", "AnnounceToOtherPlayers", false,
+            CfgAnnounce = Config.Bind("无芯片同步", "纠正时提示（AnnounceToOtherPlayers）", false,
                 "被自动纠正时在控制台提示一行（排查问题时用）。");
 
-            CfgFixModItemCraftSpawn = Config.Bind("联机合成", "FixModItemCraftSpawn", true,
+            CfgFixModItemCraftSpawn = Config.Bind("联机合成", "修“无法生成物品”（FixModItemCraftSpawn）", true,
                 "修“联机时合成模组加的物品，提示无法生成物品”。\n" +
-                "开启后，模组加的东西在主机上也能正常做出来；地上的掉落物、世界生成也一起受益。");
-            CfgRegisterSpawnedItems = Config.Bind("联机合成", "RegisterSpawnedItemsOnHost", true,
-                "做出来的物品立刻在主机登记，联机才认它是“一件存在的物品”。\n" +
-                "不登记的话，你穿上之后主机不认，装备会表现为“掉下去又回到身上”。");
+                "开启后，模组加的东西在主机上也能正常做出来；地上的掉落物、世界生成也一起受益。\n" +
+                "做出来的物品会自动在主机登记（这一步没有开关，否则联机不认它是“一件存在的物品”）。");
 
-            CfgStandaloneKey = Config.Bind("UI", "StandaloneKey", new KeyboardShortcut(KeyCode.F10),
-                "没有管理器时，用这个键打开修复模块自己的小面板。");
-            CfgWearFix = Config.Bind("穿戴兜底", "Enabled", true,
+            CfgWearFix = Config.Bind("穿戴兜底", "启用穿戴兜底（Enabled）", false,
                 "你在客机上穿好了，主机那边却没认（它眼里装备还在地上或正在掉）时，\n" +
-                "自动请主机把装备正确穿到这名玩家身上。不会复制、不会掉落、不会重建物品。");
-            CfgWearGrace = Config.Bind("穿戴兜底", "GraceSeconds", 1.5f,
-                new ConfigDescription("穿好之后等多久再去问主机（秒）。太快可能还没同步完。",
-                    new AcceptableValueRange<float>(0.3f, 10f)));
-            CfgWearFixMax = Config.Bind("穿戴兜底", "MaxPerSession", 20,
+                "自动请主机把装备正确穿到这名玩家身上。不会复制、不会掉落、不会重建物品。\n" +
+                "默认关闭：这条会主动改主机侧状态，出问题不好排查；需要时再开。");
+            CfgWearFixMax = Config.Bind("穿戴兜底", "一局最多处理几次（MaxPerSession）", 20,
                 new ConfigDescription("一局最多自动处理几次，超过就停手。",
                     new AcceptableValueRange<int>(1, 200)));
-            CfgWearRebuild = Config.Bind("穿戴兜底", "RebuildIfHostLacksItem", false,
-                "只有主机真的找不到这件装备时才用：先脱下来放地上，再请主机造一件新的。\n" +
-                "默认关闭（会有多出一件的风险），只当最后手段。");
-            CfgGuardRadius = Config.Bind("物品物理", "GuardRadius", 12f,
+            CfgPhysicsGuard = Config.Bind("物品物理", "丢弃物解除穿墙（GuardDropPhysics）", true,
+                "丢东西后补一道保险：把被关掉的碰撞体打开，别穿墙掉到地图外面。\n" +
+                "只处理真正丢在地上的物品：不移动它们、不强制打开物理、不改成连续碰撞，\n" +
+                "贴着实体时不处理（否则会被物理弹飞）。");
+            CfgGuardRadius = Config.Bind("物品物理", "被动恢复碰撞范围（GuardRadius）", 12f,
                 new ConfigDescription("被动恢复碰撞只管这么近的物品（米）：更远的物品恢复碰撞对玩家没意义，白白多开销。\n" +
                                       "玩家自己丢出来的东西不受这个限制，一定会恢复。",
                     new AcceptableValueRange<float>(1f, 60f)));
-            CfgPhysicsGuard = Config.Bind("物品物理", "GuardDropPhysics", true,
-                "丢东西后补一道保险：让落地物品恢复正常碰撞，别穿墙掉到地图外面。\n" +
-                "只处理真正丢在地上的物品，不会挪动它们。");
-            CfgTraderSnapshot = Config.Bind("联机修正", "TraderSnapshotOnOpen", true,
+            CfgTraderSnapshot = Config.Bind("联机修正", "打开商人时对齐商品表（TraderSnapshotOnOpen）", true,
                 "每次打开商人界面，向主机要一份最新的商品表。\n" +
                 "修“看到的商品和主机不一样，结果付了钱却拿不到东西”。");
-            CfgBlockBreakSync = Config.Bind("联机修正", "SyncBlockBreak", true,
+            CfgBlockBreakSync = Config.Bind("联机修正", "修“挖方块”（SyncBlockBreak）", true,
                 "修“客机把方块挖掉了，过一会儿它又长回来”，以及挖的时候方块血量忽上忽下。\n" +
                 "会把你这一镐的伤害和主机对齐，两边看到的结果一致。");
-            CfgBlockDamageRatio = Config.Bind("联机修正", "BlockDamageRatio", 6f,
+            CfgSyncBuildingDamage = Config.Bind("联机修正", "修“打箱子/植物/动物”（SyncBuildingDamage）", true,
+                "修“打储物箱、植物、动物时，血量掉一下又弹回去”。\n" +
+                "和挖块是同一个原因：主机替客机结算伤害时少了世界伤害倍率，\n" +
+                "补上之后客机打出的伤害和主机结算的一致，血量不再回弹。");
+            CfgBlockDamageRatio = Config.Bind("联机修正", "挖块伤害信任上限（BlockDamageRatio）", 6f,
                 new ConfigDescription("主机愿意接受你报的挖块伤害，最多是它自己算的几倍（原版是 3 倍）。\n" +
                                       "用了模组工具、或把世界设置的伤害倍率调高时，3 倍经常不够，表现为“怎么挖都挖不动”；\n" +
                                       "填 3 就是完全按原版。",
                     new AcceptableValueRange<float>(1f, 20f)));
-            CfgBlockBreakMinFraction = Config.Bind("联机修正", "BlockBreakMinFraction", 0.5f,
+            CfgBlockBreakMinFraction = Config.Bind("联机修正", "挖块判定门槛（BlockBreakMinFraction）", 0.5f,
                 new ConfigDescription("判定门槛：主机记录里这块方块至少已经掉了这个比例的血，才会接受“已经挖穿”的结论。\n" +
                                       "调低更灵敏（更容易修好），调高更保守（更难靠一句上报敲穿硬墙）。",
                     new AcceptableValueRange<float>(0f, 0.95f)));
-            CfgSyncBuildingDamage = Config.Bind("联机修正", "SyncBuildingDamage", true,
-                "修“打储物箱、植物、动物时，血量掉一下又弹回去”。\n" +
-                "和挖块是同一个原因：主机替客机结算伤害时少了世界伤害倍率，\n" +
-                "补上之后客机打出的伤害和主机结算的一致，血量不再回弹。");
-            CfgQuietTraderUIModItems = Config.Bind("联机修正", "QuietTraderUIModItems", true,
-                "联机时商人界面每次刷新都会自检货架，模组物品不在游戏资源里，\n" +
-                "于是每次刷一条「prefab=null」的错误日志（控制台会一直刷）。\n" +
-                "开启后只对这种“模组物品”的情况静音；真出问题（货架和主机不同步）照常报警。");
-            CfgRelayGhostItems = Config.Bind("联机修正", "RelayGhostItems", true,
+            CfgRelayGhostItems = Config.Bind("联机修正", "离场物品广播清理（RelayGhostItems）", true,
                 "修“一台客机掉线后，另一台客机帧数暴跌、地上的东西还在原地闪”。\n" +
                 "原理：主机把退场玩家的物品收进存档时，会把这份清单广播给所有客机，\n" +
                 "客机据此删掉本地那份「没人管、一直下坠」的副本。这是照着联机框架自己的退场流程做的，不靠猜。\n" +
                 "主机没开这个开关就不会有这类残留，客机也就不会删任何东西。");
-            CfgDoublePurchase = Config.Bind("娱乐", "道生一 一生二", false,
-                "道生一，一生二：在商人那里买东西时额外多送一份，直接放进背包。\n" +
-                "纯娱乐开关，默认关闭。只需要主机打开，客机买东西同样会多一件。");
-            CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出更详细的日志（排查问题用）。");
+            CfgQuietTraderUIModItems = Config.Bind("联机修正", "商人界面不再刷“prefab 为空”（QuietTraderUIModItems）", true,
+                "联机时商人界面每次刷新都会自检货架，模组物品不在游戏资源里，\n" +
+                "于是每次刷一条「prefab=null」的错误日志（控制台会一直刷）。\n" +
+                "开启后只对这种“模组物品”的情况静音；真出问题（货架和主机不同步）照常报警。");
+            CfgDoublePurchase = Config.Bind("娱乐", "道生一 一生二（DoublePurchase）", false,
+                "开启后：\n" +
+                "① 商人那里**必定给两个**（买一次拿到两件，都放进背包；背包满就落在脚下）；\n" +
+                "② 合成等其它“造东西”的行为有 **20%** 概率多出一件。\n" +
+                "纯娱乐开关，默认关闭；只需要主机打开，客机同样生效。");
+            CfgStandaloneKey = Config.Bind("界面", "独立面板热键（StandaloneKey）", new KeyboardShortcut(KeyCode.F10),
+                "没有管理器时，用这个键打开修复模块自己的小面板。");
+            CfgVerbose = Config.Bind("调试", "详细日志（Verbose）", false, "输出更详细的日志（排查问题用）。");
 
             Log = DDEN.Shared.Log.For(LogSource, "MPfix", CfgVerbose.Value);
 
@@ -319,7 +312,7 @@ namespace DDEN.MPfix
             y += 20f;
             GUI.Label(new Rect(area.x, y, area.width, 18f),
                 $"合成修复：{(CfgFixModItemCraftSpawn.Value ? "开" : "关")}     " +
-                $"物品登记：{(CfgRegisterSpawnedItems.Value ? "开" : "关")}", DdenUI.Row);
+                $"打箱子/植物：{(CfgSyncBuildingDamage.Value ? "开" : "关")}", DdenUI.Row);
             y += 22f;
 
             if (DdenUI.Button(new Rect(area.x, y, 150f, 24f), "立即按主机同步", true)) ForceApply();
