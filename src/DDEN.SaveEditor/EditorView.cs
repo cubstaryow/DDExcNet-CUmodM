@@ -341,19 +341,6 @@ namespace DDEN.SaveEditor
             DdenUI.Fill(canvas, new Color(0f, 0f, 0f, 0.28f));
             DdenUI.Frame(canvas, DdenUI.AccentDim);
 
-            // 合成布局没有头：补一个装饰头（游戏里 head 不属于 limbs）
-            if (LimbLayout.DrawHead)
-            {
-                var head = new Rect(
-                    canvas.x + 0.35f * canvas.width,
-                    canvas.y + 0.004f * canvas.height,
-                    Mathf.Max(14f, 0.30f * canvas.width),
-                    Mathf.Max(16f, 0.105f * canvas.height));
-                DdenUI.Fill(head, new Color(0.32f, 0.36f, 0.43f, 0.70f));
-                DdenUI.Frame(head, DdenUI.AccentDim);
-                GUI.Label(new Rect(head.x, head.y + head.height * 0.5f - 8f, head.width, 16f), "头", DdenUI.IconStyle);
-            }
-
             foreach (LimbPart part in LimbLayout.Parts)
             {
                 SaveDocument.LimbView limb = _doc.Limbs.FirstOrDefault(l => l.Index == part.Index);
