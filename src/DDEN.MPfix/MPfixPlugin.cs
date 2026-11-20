@@ -137,9 +137,9 @@ namespace DDEN.MPfix
                 "丢东西后补一道保险：把被关掉的碰撞体打开，别穿墙掉到地图外面。\n" +
                 "只处理真正丢在地上的物品：不移动它们、不强制打开物理、不改成连续碰撞，\n" +
                 "贴着实体时不处理（否则会被物理弹飞）。");
-            CfgGuardRadius = Config.Bind("物品物理", "被动恢复碰撞范围（GuardRadius）", 12f,
-                new ConfigDescription("被动恢复碰撞只管这么近的物品（米）：更远的物品恢复碰撞对玩家没意义，白白多开销。\n" +
-                                      "玩家自己丢出来的东西不受这个限制，一定会恢复。",
+            CfgGuardRadius = Config.Bind("物品物理", "被动恢复碰撞范围（GuardRadius）", 5f,
+                new ConfigDescription("被动恢复碰撞只看这么近的物品（米）——大约就是“刚丢出去能落到”的距离。\n" +
+                                      "更远的物品恢复碰撞对玩家没意义，白白多开销；玩家自己丢出来的东西不受这个限制。",
                     new AcceptableValueRange<float>(1f, 60f)));
             CfgTraderSnapshot = Config.Bind("联机修正", "打开商人时对齐商品表（TraderSnapshotOnOpen）", true,
                 "每次打开商人界面，向主机要一份最新的商品表。\n" +
