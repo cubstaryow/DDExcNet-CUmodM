@@ -51,6 +51,10 @@ namespace DDEN.MPfix
         internal static ConfigEntry<bool> CfgSnapWornItems;
         internal static ConfigEntry<int> CfgSnapWornMax;
 
+        // ===== 联机修正（商人商品表 / 工具耐久） =====
+        internal static ConfigEntry<bool> CfgTraderSnapshot;
+        internal static ConfigEntry<bool> CfgToolDurability;
+
         // ===== 其它 =====
         internal static ConfigEntry<KeyboardShortcut> CfgStandaloneKey;
         internal static ConfigEntry<bool> CfgVerbose;
@@ -142,6 +146,12 @@ namespace DDEN.MPfix
                 "只在“丢出/卸下”这些真正的动作后做保险：只处理自由物品（不在手/身/包里），\n" +
                 "只补开被关掉的碰撞体与没打开的物理，**不再自动移动物品**（避免位移残留导致错位）。\n" +
                 "用于修联机里“丢东西穿墙往下掉”。");
+            CfgTraderSnapshot = Config.Bind("联机修正", "TraderSnapshotOnOpen", true,
+                "客机每次打开商人界面时，向主机索要一次完整商品表（走 Together 自己的 TraderSync.SendTraderState）。\n" +
+                "用于修“看到的商品和主机不一致 → 付了钱却拿不到东西”。");
+            CfgToolDurability = Config.Bind("联机修正", "SyncToolDurability", true,
+                "客机使用工具（镐/铲等）后，把本地扣掉的耐久报给主机，让主机那份一起扣。\n" +
+                "用于修“挖东西时耐久闪烁（掉下去又跳回来）”。");
             CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出调试日志。");
 
             Log = DDEN.Shared.Log.For(LogSource, "MPfix", CfgVerbose.Value);
@@ -154,11 +164,17 @@ namespace DDEN.MPfix
             TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropWearable_GuardPatch), "物品掉落物理保险（卸下）");
             ItemPhysicsGuard.InstallHeldQuietRepair(harmony);
             TryPatch(harmony, typeof(WornItemSnap.Body_WearWearable_SnapPatch), "穿戴贴合修正（防浮空错位）");
+            TryPatch(harmony, typeof(TraderSnapshotFix.ToggleTradeMenu_Postfix), "打开商人时索要商品表");
+            TryPatch(harmony, typeof(DurabilityFix.UseItemInHand_Patch), "工具耐久同步（手持使用）");
+            TryPatch(harmony, typeof(DurabilityFix.UseItem_Patch), "工具耐久同步（UseItem）");
+            DurabilityFix.InstallHostWatcher(harmony);
 
             MigrateOldWatchdog();
 
             RegisterChannels();
             WearGhostFix.RegisterHostHandlers();
+            TraderSnapshotFix.RegisterHost();
+            DurabilityFix.RegisterHost();
             DdenHub.Register(this);
             _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
 
