@@ -338,7 +338,8 @@ ilspycmd -o decomp/qol  --nested-directories "<plugins>/QoL Unknown 1.1.5 - 实�
 **已 `git init` 并有远端：`origin = https://github.com/cubstaryow/DDExcNet-CUmodM.git`，默认分支 `master`。**
 
 - **分支模型（2026-11 定）**：`master` = 发布分支（只放验收过的），`dev` = 日常工作分支。
-  **agent 每次会话的改动先提交并 push 到 `dev`**；用户验收通过后再由用户合并到 `master`。
+  **agent 每次会话的改动在 `dev` 上做本地提交即可，不要 push** —— 用户校园网很差，`git push` 会长时间卡死
+  （实测 20s~300s 超时 / Connection reset）。推送由用户自己用 GitHub Desktop 完成，或他明确说“推一下”再推。
   详见 [docs/workflow.md](docs/workflow.md)。
 - **不要直接往 master 提交功能改动**，也不要替用户做合并/打 tag；`git push origin dev` 是例行动作，
   但**不要** force push、不要改 remote、不要删别人的分支。
