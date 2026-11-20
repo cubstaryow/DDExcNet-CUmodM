@@ -69,7 +69,7 @@ IEnumerable<ConfigEntryBase> ConfigEntries { get; }
 | 分组 | 内容 |
 | --- | --- |
 | 无芯片同步 | 主机裁决经 快照 / 推送 / 请求 三路下发，客机 watchdog 纠偏（默认 **30s**，芯片状态通常一次同步就够；`ForceHostUnchipped`、`OverrideIndividualRule`、`WatchdogSeconds`） |
-| 穿戴兜底 | 客机穿上“主机不认识的幽灵装备”时：取消穿戴 → 掉在地上 → 请主机按 id 重建并登记 → 销毁本地幽灵（最多闪一次；`GraceSeconds`、`MaxPerSession`，异常自动回退） |
+| 穿戴兜底 | 客机穿上后主机没认下来时：主机按 id 找到那件物品、补登记并 `Body_ForceWearWearable` 穿上（**不重建/不复制**；`GraceSeconds`、`MaxPerSession`；`RebuildIfHostLacksItem` 默认关） |
 | 联机合成 | `FixModItemCraftSpawn`：给 `Utils.Create` 加前缀，模组物品不在 Resources 时用 `CustomInstantiate` 生成，修 “无法生成物品” |
 | 物品网络身份 | `RegisterSpawnedItemsOnHost`：兜底生成的物品立刻 `NetObjectRegistry.Server_EnsureItemIsNetworkRegistered`，修“主机看到装备掉下去又回来” |
 

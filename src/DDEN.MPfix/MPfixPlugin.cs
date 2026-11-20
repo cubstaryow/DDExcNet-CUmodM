@@ -44,6 +44,7 @@ namespace DDEN.MPfix
         internal static ConfigEntry<bool> CfgWearFix;
         internal static ConfigEntry<float> CfgWearGrace;
         internal static ConfigEntry<int> CfgWearFixMax;
+        internal static ConfigEntry<bool> CfgWearRebuild;
 
         // ===== 物品物理保险 =====
         internal static ConfigEntry<bool> CfgPhysicsGuard;
@@ -118,15 +119,17 @@ namespace DDEN.MPfix
             CfgStandaloneKey = Config.Bind("UI", "StandaloneKey", new KeyboardShortcut(KeyCode.F10),
                 "管理器缺席时的兜底面板快捷键（管理器在跑时请用管理器）。");
             CfgWearFix = Config.Bind("穿戴兜底", "Enabled", true,
-                "客机穿上“主机不认识”的物品（水晶层本地生成的幽灵装备）时，主机会静默拒绝穿戴同步，\n" +
-                "表现为主机看到装备反复掉落又回到身上。开启后：取消穿戴让它掉在地上 → 请求主机按 id 重建并登记 →\n" +
-                "销毁本地幽灵，最多只闪一次。");
+                "客机穿上物品但主机没认下来时（主机眼里它还在地上/掉落），\n" +
+                "1.5s 后请主机按 id 找到那件物品并正确穿到该玩家身上 —— 不重建、不复制、不掉落。");
             CfgWearGrace = Config.Bind("穿戴兜底", "GraceSeconds", 1.5f,
                 new ConfigDescription("穿上后等多久再去问主机（秒）。太快可能撞上还没同步完。",
                     new AcceptableValueRange<float>(0.3f, 10f)));
             CfgWearFixMax = Config.Bind("穿戴兜底", "MaxPerSession", 20,
-                new ConfigDescription("每局最多兜底几次；超过就停手（防止异常情况下反复生成物品）。",
+                new ConfigDescription("每局最多兜底几次；超过就停手。",
                     new AcceptableValueRange<int>(1, 200)));
+            CfgWearRebuild = Config.Bind("穿戴兜底", "RebuildIfHostLacksItem", false,
+                "仅在主机确实找不到这件物品时才用：取消穿戴 → 掉地 → 请求主机重建。\n" +
+                "默认关闭（只做“认出并穿上”）；开着会有复制风险，仅作最后手段。");
             CfgPhysicsGuard = Config.Bind("物品物理", "GuardDropPhysics", true,
                 "丢出/生成物品时：打开它自己与子物品的碰撞体、rigidbody 设为 Continuous，\n" +
                 "若正压在墙块里就向上挪到不重叠。用于修联机里“丢东西穿墙往下掉”。");

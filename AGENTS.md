@@ -87,10 +87,14 @@ dotnet build CUmod.slnx -v m    # 只编译
   `CUCoreLib.Helpers.CustomInstantiate.InstantiateReturn` 生成，并在主机侧补 `NetObjectRegistry.Server_EnsureItemIsNetworkRegistered`
   （开关 `联机合成/FixModItemCraftSpawn`、`联机合成/RegisterSpawnedItemsOnHost`）。
   注意 Together 会按 attempt 缓存失败 receipt，同一会话重试仍失败，换层/重连才会清 —— 这是“过一层又能合成”的来源。
-- **穿戴兜底（幽灵装备）**：`DDEN.MPfix.WearGhostFix` 在客机 `Body.WearWearable` 后 1.5s 经 CUCoreLib 频道问主机
-  “这个位置有这件 id 的物品吗”；主机答没有 → `Body.DropWearable` 让它掉地 → 请求主机 `Utils.Create` 重建并登记 →
-  销毁本地幽灵，最多闪一次。**保守原则**：任何异常/通道失败就本会话禁用并 Warn；每局有次数上限；
-  查询失败时一律当成“主机认识”，绝不误删玩家物品。无芯片 watchdog 默认 **30s**（旧配置 0.5 会自动迁移）。
+- **穿戴兜底（联机）**：`DDEN.MPfix.WearGhostFix` —— 客机穿上物品后 1.5s，经 CUCoreLib 频道
+  `ddn.mp.wearfix` 把 {id, 位置} 发给主机；主机用**带发送者**的处理器拿到 clientId →
+  `ScavPlayer.GetBodyFromClientId` 找到该玩家 body → 按 id + 位置找那件物品（排除别人身上那件）→
+  `Server_EnsureItemIsNetworkRegistered` 补登记 → `Together.ItemSync.Body_ForceWearWearable` 穿上 →
+  `body.GetWearable(id) == item` 校验。**默认不重建、不复制、不掉落**。
+  只有 `RebuildIfHostLacksItem`（默认 false）开启且主机真的找不到时才走“掉地+重建”。
+  保守原则：异常/通道失败即本会话禁用并 Warn；每局次数上限。
+  无芯片 watchdog 默认 **30s**（旧配置 0.5 会自动迁移）。
 - **物品穿墙掉落（联机）**：真凶是 Together 的 `HeldQuiet`（`Internal/HeldQuiet`）——
   `Awake` 里把物品所有 `Collider2D` 关掉并记下当时状态，`Restore()` 再写回；
   若挂上那一刻碰撞体本来就是关的（物品在背包里 / 模组物品后加的碰撞体不在名单里），写回后仍然是关的，

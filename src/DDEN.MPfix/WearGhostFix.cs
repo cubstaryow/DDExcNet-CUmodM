@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.Reflection;
 using DDEN.Shared;
 using HarmonyLib;
 using Newtonsoft.Json.Linq;
@@ -9,22 +9,21 @@ using UnityEngine;
 namespace DDEN.MPfix
 {
     /// <summary>
-    /// 穿戴兜底：客机穿上一件“主机不认识”的物品（水晶层本地生成的幽灵物品最典型）时，
-    /// 主机会在 <c>ServerReceiver__ItemWearing</c> 里静默拒绝，于是客机本地一直穿着、
-    /// 主机那边物品还在地上 → 主机看到装备反复“掉下去又回来”。
+    /// 穿戴兜底（联机）：
+    /// 客机穿上一件物品，主机那边 <c>ServerReceiver__ItemWearing</c> 没认下来（TryGetItem / 距离 / 归属判定失败），
+    /// 结果主机眼里这件物品还在地上甚至掉下去，客机身上却有 —— 就是“装备反复掉下又回来”。
     ///
-    /// 本模块只做一件事，且只做一次：客机穿上物品 1.5s 后问主机“你那边这个位置有这件 id 的物品吗？”
-    ///  - 有 → 主机认识它，什么都不做（正常情况）。
-    ///  - 没有 → 判定为幽灵：**取消穿戴让它掉在地上**，并请求主机按 id 在同样位置重建一个真物品，
-    ///           然后销毁本地幽灵，避免重复。结果是最多闪一下。
+    /// 本模块**不重建物品**：客机穿上 1.5s 后通过 CUCoreLib 频道把 {id, 位置} 发给主机，
+    /// 主机按 id + 位置找到那件物品（自己那边的实体），补登记网络身份，然后
+    /// <c>Together.ItemSync.Body_ForceWearWearable</c> 让它正确穿到该玩家身上。
+    /// 双方看到的都是同一件物品，不掉落、不复制。
     ///
-    /// 安全策略：全程 try/catch；任何异常或通道不可用 → 立刻把本模块在本会话禁用（回退到原版行为），
-    /// 并写 Warn 日志；还有每会话次数上限，超了就停手。
+    /// 只有在主机确实找不到这件物品时，才（默认关闭的）旧策略可选用“掉地 + 重建”。
+    /// 安全策略：全程 try/catch；异常/通道不可用即本会话禁用并 Warn；每局有次数上限。
     /// </summary>
     internal static class WearGhostFix
     {
-        private const string CheckChannel = "ddn.mp.wearcheck";
-        private const string RespawnChannel = "ddn.mp.wearrespawn";
+        private const string FixChannel = "ddn.mp.wearfix";
 
         private struct Pending
         {
@@ -36,7 +35,7 @@ namespace DDEN.MPfix
         }
 
         private static readonly List<Pending> Queue = new List<Pending>();
-        private static int _recovered;
+        private static int _adopted;
         private static bool _disabled;
         private static float _lastLogAt = -99f;
 
@@ -75,28 +74,19 @@ namespace DDEN.MPfix
             }
         }
 
-        // ===== 主机：两个处理器 =====
+        // ===== 主机：认出并穿上（带 sender 的注册，失败则退回无 sender 版本）=====
 
         internal static void RegisterHostHandlers()
         {
-            Mp.RegisterServerHandler(CheckChannel, token =>
+            bool ok = TryRegisterSenderAware();
+            if (!ok)
             {
-                try
-                {
-                    if (!Mp.IsServer || token == null) return new JObject { ["found"] = true };
-                    string id = token["id"]?.ToString() ?? string.Empty;
-                    float x = token["x"]?.Value<float>() ?? 0f;
-                    float y = token["y"]?.Value<float>() ?? 0f;
-                    return new JObject { ["found"] = HostHasItemNear(id, new Vector2(x, y)) };
-                }
-                catch (Exception ex)
-                {
-                    Log.Debug("wearcheck 失败：" + ex.Message);
-                    return new JObject { ["found"] = true };   // 出错就当成“认识”，绝不误删玩家物品
-                }
-            });
+                MPfixPlugin.Log.Warn("[穿戴兜底] 无法注册带发送者的频道处理器，退回无 sender 版本（只能修主机自己的穿戴）。");
+                Mp.RegisterServerHandler(FixChannel, token => HandleFix(0u, token));
+            }
 
-            Mp.RegisterServerHandler(RespawnChannel, token =>
+            // 可选旧策略（默认关闭时才用）：主机按 id 重建一件物品
+            Mp.RegisterServerHandler("ddn.mp.wearrespawn", token =>
             {
                 try
                 {
@@ -106,12 +96,7 @@ namespace DDEN.MPfix
                     float y = token["y"]?.Value<float>() ?? 0f;
 
                     GameObject go = Utils.Create(id, new Vector2(x, y), 0f);
-                    if (go == null)
-                    {
-                        MPfixPlugin.Log.Warn($"[穿戴兜底] 主机重建失败：'{id}' 生成不出来（会保持原样，不删客机物品）");
-                        return new JObject { ["ok"] = false };
-                    }
-
+                    if (go == null) return new JObject { ["ok"] = false };
                     Utils_Create_ModItemPatch.RegisterOnHost(go);
                     return new JObject { ["ok"] = true };
                 }
@@ -123,26 +108,168 @@ namespace DDEN.MPfix
             });
         }
 
-        private static bool HostHasItemNear(string id, Vector2 pos)
+        private static bool TryRegisterSenderAware()
         {
-            if (string.IsNullOrEmpty(id)) return true;
             try
             {
-                foreach (Item item in UnityEngine.Object.FindObjectsOfType<Item>())
+                Type bridge = AccessTools.TypeByName("CUCoreLib.Networking.MultiplayerBridge");
+                if (bridge == null) return false;
+
+                MethodInfo reg = null;
+                foreach (MethodInfo m in bridge.GetMethods(BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic))
                 {
-                    if (item == null || item.id != id) continue;
-                    if (Vector2.Distance(item.transform.position, pos) <= 6f) return true;
+                    if (m.Name != "RegisterServerHandler") continue;
+                    ParameterInfo[] ps = m.GetParameters();
+                    if (ps.Length == 2 && ps[0].ParameterType == typeof(string) && ps[1].ParameterType != typeof(Func<JToken, JToken>))
+                    {
+                        reg = m;
+                        break;
+                    }
                 }
+                if (reg == null) return false;
+
+                ParameterInfo handlerParam = reg.GetParameters()[1];
+                MethodInfo target = typeof(WearGhostFix).GetMethod(nameof(HandleFixEntry),
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                if (target == null) return false;
+
+                Delegate del = Delegate.CreateDelegate(handlerParam.ParameterType, target);
+                reg.Invoke(null, new object[] { FixChannel, del });
+                MPfixPlugin.Log.Info("[穿戴兜底] 已注册带发送者的 wearfix 频道（主机可识别是谁在穿）。");
+                return true;
             }
             catch (Exception ex)
             {
-                Log.Debug("HostHasItemNear 失败：" + ex.Message);
-                return true;   // 不确定就当成有
+                Log.Debug("sender-aware 注册失败：" + ex.Message);
+                return false;
             }
-            return false;
         }
 
-        // ===== 客机：到点检查并兜底 =====
+        /// <summary>必须与 Func&lt;uint, JToken, JToken&gt; 的签名一致。</summary>
+        private static JToken HandleFixEntry(uint senderClientId, JToken token)
+        {
+            return HandleFix(senderClientId, token);
+        }
+
+        private static JToken HandleFix(uint senderClientId, JToken token)
+        {
+            try
+            {
+                if (!Mp.IsServer || token == null) return Fail();
+
+                string id = token["id"]?.ToString() ?? string.Empty;
+                float x = token["x"]?.Value<float>() ?? 0f;
+                float y = token["y"]?.Value<float>() ?? 0f;
+                if (string.IsNullOrEmpty(id)) return Fail();
+
+                Body body = BodyForClient(senderClientId) ?? Game.LocalBody;
+                if (body == null) return Fail();
+
+                // 已经穿上了就别重复折腾
+                Item already = body.GetWearable(id);
+                if (already != null) return new JObject { ["ok"] = true, ["same"] = true };
+
+                Item target = FindCandidate(id, new Vector2(x, y), body);
+                if (target == null) return Fail();
+
+                Utils_Create_ModItemPatch.RegisterOnHost(target.gameObject);
+
+                bool worn = ForceWear(body, target);
+                if (worn && Time.unscaledTime - _lastLogAt > 1f)
+                {
+                    _lastLogAt = Time.unscaledTime;
+                    MPfixPlugin.Log.Info($"[穿戴兜底] 主机已认出并让 '{id}' 正确穿到玩家身上（不重建物品）");
+                }
+                return new JObject { ["ok"] = worn };
+            }
+            catch (Exception ex)
+            {
+                MPfixPlugin.Log.Warn("[穿戴兜底] 主机处理失败，已放过（不影响游戏）：" + ex.Message);
+                return Fail();
+            }
+        }
+
+        private static JObject Fail() => new JObject { ["ok"] = false };
+
+        private static Body BodyForClient(uint clientId)
+        {
+            try
+            {
+                Type scav = AccessTools.TypeByName("Together.ScavPlayer");
+                if (scav == null) return null;
+                MethodInfo get = AccessTools.Method(scav, "GetBodyFromClientId");
+                if (get == null) return null;
+
+                Type idType = get.GetParameters()[0].ParameterType;
+                object knet = Activator.CreateInstance(idType, (ushort)clientId);
+                return get.Invoke(null, new[] { knet }) as Body;
+            }
+            catch (Exception ex)
+            {
+                Log.Debug("解析发送者 Body 失败：" + ex.Message);
+                return null;
+            }
+        }
+
+        private static Item FindCandidate(string id, Vector2 pos, Body owner)
+        {
+            try
+            {
+                Item best = null;
+                float bestDist = float.MaxValue;
+
+                foreach (Item item in UnityEngine.Object.FindObjectsOfType<Item>(true))
+                {
+                    if (item == null || item.id != id) continue;
+                    if (!item.Stats.wearable) continue;
+
+                    // 已经穿在别人身上 → 不抢
+                    Transform parent = item.transform.parent;
+                    if (parent != null)
+                    {
+                        Body other = parent.GetComponentInParent<Body>();
+                        if (other != null && other != owner) continue;
+                        if (other == owner) continue;
+                    }
+
+                    float d = Vector2.Distance(item.transform.position, pos);
+                    if (d > 12f) continue;
+                    if (d < bestDist) { bestDist = d; best = item; }
+                }
+                return best;
+            }
+            catch (Exception ex)
+            {
+                Log.Debug("查找物品失败：" + ex.Message);
+                return null;
+            }
+        }
+
+        private static bool ForceWear(Body body, Item item)
+        {
+            try
+            {
+                Type itemSync = AccessTools.TypeByName("Together.ItemSync");
+                MethodInfo method = itemSync == null ? null : AccessTools.Method(itemSync, "Body_ForceWearWearable");
+                if (method == null)
+                {
+                    MPfixPlugin.Log.Warn("[穿戴兜底] 找不到 ItemSync.Body_ForceWearWearable，跳过（不影响游戏）。");
+                    return false;
+                }
+
+                method.Invoke(null, new object[] { body, item });
+
+                // 用游戏自己的判定验证是否真的穿上了
+                return body.GetWearable(item.id) == item;
+            }
+            catch (Exception ex)
+            {
+                MPfixPlugin.Log.Warn("[穿戴兜底] 强制穿戴失败（不影响游戏）：" + ex.Message);
+                return false;
+            }
+        }
+
+        // ===== 客机：到点请求主机 =====
 
         internal static void Tick()
         {
@@ -161,10 +288,9 @@ namespace DDEN.MPfix
                     Queue.RemoveAt(i);
 
                     if (p.Item == null || p.Body == null) continue;
-                    // 已经不在身上了（玩家自己脱了 / 丢了 / 被换下）→ 不管
-                    if (p.Body.GetWearable(p.Id) != p.Item) continue;
+                    if (p.Body.GetWearable(p.Id) != p.Item) continue;   // 已经不在身上了
 
-                    Check(p);
+                    Request(p);
                 }
             }
             catch (Exception ex)
@@ -173,14 +299,14 @@ namespace DDEN.MPfix
             }
         }
 
-        private static void Check(Pending p)
+        private static void Request(Pending p)
         {
-            if (_recovered >= MPfixPlugin.CfgWearFixMax.Value)
+            if (_adopted >= MPfixPlugin.CfgWearFixMax.Value)
             {
                 if (Time.unscaledTime - _lastLogAt > 5f)
                 {
                     _lastLogAt = Time.unscaledTime;
-                    MPfixPlugin.Log.Warn($"[穿戴兜底] 已达本会话上限（{MPfixPlugin.CfgWearFixMax.Value} 次），暂停兜底。");
+                    MPfixPlugin.Log.Warn($"[穿戴兜底] 已达本会话上限（{MPfixPlugin.CfgWearFixMax.Value} 次），暂停。");
                 }
                 _disabled = true;
                 return;
@@ -193,53 +319,50 @@ namespace DDEN.MPfix
                 ["y"] = p.Pos.y
             };
 
-            Mp.RequestServer(CheckChannel, payload, resp =>
+            Mp.RequestServer(FixChannel, payload, resp =>
             {
                 try
                 {
-                    if (resp == null) return;
-                    if (resp.Value<bool?>("found") != false) return;   // 主机认识 → 正常
-                    Recover(p, payload);
+                    if (resp != null && resp.Value<bool?>("ok") == true)
+                    {
+                        _adopted++;
+                        return;      // 主机已认出并穿上：本地什么都不用做
+                    }
+
+                    if (!MPfixPlugin.CfgWearRebuild.Value)
+                    {
+                        MPfixPlugin.Log.Warn($"[穿戴兜底] 主机找不到 '{p.Id}'，按配置不重建（保持现状）。");
+                        return;
+                    }
+
+                    Rebuild(p, payload);
                 }
                 catch (Exception ex)
                 {
-                    Disable("检查回调失败", ex);
+                    Disable("请求回调失败", ex);
                 }
             });
         }
 
-        private static void Recover(Pending p, JObject payload)
+        /// <summary>可选旧策略（默认关闭）：主机确实没有这件物品时才用，掉地 + 请求重建。</summary>
+        private static void Rebuild(Pending p, JObject payload)
         {
             Item item = p.Item;
             Body body = p.Body;
             if (item == null || body == null) return;
+            if (body.GetWearable(p.Id) != item) return;
 
-            // 1) 取消穿戴 → 掉在地上（游戏自带 API，会恢复物理与贴图）
             try { body.DropWearable(item); }
             catch (Exception ex) { Log.Debug("DropWearable 失败：" + ex.Message); }
-            try
-            {
-                if (item.transform.parent != null) item.transform.SetParent(null, true);
-            }
-            catch { /* ignored */ }
 
-            // 2) 请主机重建同 id 物品（主机侧走 Utils.Create 兜底 + 登记）
-            Mp.RequestServer(RespawnChannel, payload, r2 =>
+            Mp.RequestServer("ddn.mp.wearrespawn", payload, r2 =>
             {
                 try
                 {
-                    if (r2 == null || r2.Value<bool?>("ok") != true) return;   // 失败就保持掉在地上，不删本地物品
-
-                    // 3) 主机已重建 → 先保住内容物，再销毁空壳幽灵
-                    bool removed = TryRetireGhost(item, p.Pos, p.Id);
-                    _recovered++;
-
-                    if (Time.unscaledTime - _lastLogAt > 1f)
-                    {
-                        _lastLogAt = Time.unscaledTime;
-                        MPfixPlugin.Log.Info($"[穿戴兜底] 主机不认识 '{p.Id}'：已取消穿戴并请求主机重建" +
-                                             $"（第 {_recovered} 次，最多闪一次；幽灵{(removed ? "已清理" : "保留")}）");
-                    }
+                    if (r2 == null || r2.Value<bool?>("ok") != true) return;
+                    TryRetireGhost(item, p.Pos, p.Id);
+                    _adopted++;
+                    MPfixPlugin.Log.Info($"[穿戴兜底] 主机没有 '{p.Id}'，已按配置重建（第 {_adopted} 次）");
                 }
                 catch (Exception ex)
                 {
@@ -248,20 +371,12 @@ namespace DDEN.MPfix
             });
         }
 
-        /// <summary>
-        /// 清理本地幽灵前先把“内容物”全拿出来：
-        ///  - 子物品（背包里装的东西）逐个脱离并落在附近，绝不跟着一起销毁；
-        ///  - 含液体的容器（WaterContainerItem.stack 有内容）**不销毁**，宁可留一个本地幽灵也不丢液体；
-        ///  - 只有确认空壳了才 Destroy，且销毁前再点一遍子物体。
-        /// 返回是否真的清理掉了。
-        /// </summary>
+        /// <summary>重建时才会用到：先把内容物取出来，空壳才销毁。</summary>
         private static bool TryRetireGhost(Item ghost, Vector2 pos, string id)
         {
             if (ghost == null) return true;
-
             try
             {
-                // 1) 子物品先脱离（Container 里的东西）
                 var children = new List<Transform>();
                 foreach (Transform child in ghost.transform)
                 {
@@ -282,18 +397,16 @@ namespace DDEN.MPfix
                 }
                 if (children.Count > 0)
                 {
-                    MPfixPlugin.Log.Info($"[穿戴兜底] 幽灵 '{id}' 里有 {children.Count} 件子物品，已全部取出落地，未随幽灵删除。");
+                    MPfixPlugin.Log.Info($"[穿戴兜底] 幽灵 '{id}' 里有 {children.Count} 件子物品，已全部取出落地。");
                 }
 
-                // 2) 液体内容无法搬运 → 保留幽灵，宁可不清理
                 if (ghost.TryGetComponent<WaterContainerItem>(out var water) && water != null
                     && water.stack != null && water.stack.Count > 0)
                 {
-                    MPfixPlugin.Log.Warn($"[穿戴兜底] 幽灵 '{id}' 含液体内容，已保留不删除（避免丢失液体）。");
+                    MPfixPlugin.Log.Warn($"[穿戴兜底] 幽灵 '{id}' 含液体，保留不删除。");
                     return false;
                 }
 
-                // 3) 再确认一次没有残留 Item 子物体
                 int remaining = 0;
                 foreach (Transform child in ghost.transform)
                 {
@@ -301,7 +414,7 @@ namespace DDEN.MPfix
                 }
                 if (remaining > 0)
                 {
-                    MPfixPlugin.Log.Warn($"[穿戴兜底] 幽灵 '{id}' 仍有 {remaining} 件子物品未能取出，保留不删除。");
+                    MPfixPlugin.Log.Warn($"[穿戴兜底] 幽灵 '{id}' 仍有 {remaining} 件子物品未取出，保留不删除。");
                     return false;
                 }
 
@@ -310,7 +423,7 @@ namespace DDEN.MPfix
             }
             catch (Exception ex)
             {
-                MPfixPlugin.Log.Warn($"[穿戴兜底] 清理幽灵 '{id}' 失败，已保留（不影响游戏）：{ex.Message}");
+                MPfixPlugin.Log.Warn($"[穿戴兜底] 清理幽灵 '{id}' 失败，已保留：{ex.Message}");
                 return false;
             }
         }
