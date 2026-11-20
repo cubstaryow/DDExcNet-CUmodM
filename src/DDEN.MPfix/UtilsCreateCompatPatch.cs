@@ -42,6 +42,9 @@ namespace DDEN.MPfix
         {
             try
             {
+                // 商人购买窗口内记一下生成过什么 id，供「道生一 一生二」复制（不影响正常流程）
+                DoublePurchase.NoteId(id);
+
                 if (!MPfixPlugin.CfgFixModItemCraftSpawn.Value) return true;
                 if (string.IsNullOrEmpty(id)) return true;
                 if (VanillaIds.Contains(id)) return true;

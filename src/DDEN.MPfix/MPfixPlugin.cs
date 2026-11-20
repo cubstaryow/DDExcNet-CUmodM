@@ -56,6 +56,9 @@ namespace DDEN.MPfix
         internal static ConfigEntry<bool> CfgToolDurability;
         internal static ConfigEntry<bool> CfgBlockBreakSync;
 
+        // ===== 娱乐 =====
+        internal static ConfigEntry<bool> CfgDoublePurchase;
+
         // ===== 其它 =====
         internal static ConfigEntry<KeyboardShortcut> CfgStandaloneKey;
         internal static ConfigEntry<bool> CfgVerbose;
@@ -156,6 +159,9 @@ namespace DDEN.MPfix
             CfgBlockBreakSync = Config.Bind("联机修正", "SyncBlockBreak", true,
                 "客机本地挖碎方块时，额外通知主机把同一格按剩余血量打碎。\n" +
                 "用于修“客机挖掉方块后又重新长出来”（主机没认这次破坏 → chunk 同步把原来那块推回来）。");
+            CfgDoublePurchase = Config.Bind("娱乐", "道生一 一生二", false,
+                "道生一，一生二：主机在商人购买时额外奉送一份（同样的物品，直接进买家背包）。\n" +
+                "纯娱乐开关，默认关闭。只在主机生效，客机购买也会多一件。");
             CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出调试日志。");
 
             Log = DDEN.Shared.Log.For(LogSource, "MPfix", CfgVerbose.Value);
@@ -181,6 +187,7 @@ namespace DDEN.MPfix
             TraderSnapshotFix.RegisterHost();
             DurabilityFix.RegisterHost();
             BlockBreakFix.RegisterHost();
+            DoublePurchase.Install(harmony);
             DdenHub.Register(this);
             _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
 

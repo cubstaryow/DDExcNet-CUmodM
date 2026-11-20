@@ -131,6 +131,14 @@ dotnet build CUmod.slnx -v m                  # 只编译
   `parent / localPos / localScale / worldPos` 打进日志（用来定位究竟是谁改了局部坐标）。
   只改 localPosition，**不动 rotation（slotRotation）与 scale（HeldSeat 的肢体补偿）**；
   每局最多 `物品物理/SnapMaxPerSession`（默认 100）次后自动停手。
+- **“一生二”重复物品（重要）**：合成 / 购买 / 生成在客机上**也会跑一遍本地预测**。
+  只要客机的 `Utils.Create` 成功造出模组物品，它自己那份 + 主机同步来的那份就是两份。
+  所以 `Utils_Create_ModItemPatch` 的第一道闸是 `if (Mp.IsRunning && !Mp.IsServer) return true;`
+  —— **客机永不本地生成**，物品一律以主机为权威。**新增任何生成逻辑前先看这条，别再绕过它**。
+- **娱乐开关「道生一 一生二」**：`DDEN.MPfix.DoublePurchase` —— 配置键就叫 `娱乐/道生一 一生二`（默认 false）。
+  实现：给 `Together.TraderCommit.RunBuy` 挂前后缀；购买窗口内由 `Utils.Create` 前缀记录 id
+  （`DoublePurchase.NoteId`），后缀在主机侧用同 id 再造一件并 `AutoPickUpItem` 给买家。
+  这是**故意**的多一份，和上面那条防重复的规则是两回事，别把它当 bug 修掉。
 - **商人商品表不一致（客机付钱不发货）**：`DDEN.MPfix.TraderSnapshotFix` —— 客机每次打开交易菜单
   （postfix `PlayerCamera.ToggleTradeMenu`）向主机发 `ddn.mp.tradersnap`；
   主机用**带发送者**的处理器调 `Together.TraderSync.SendTraderState(knetid)`，
