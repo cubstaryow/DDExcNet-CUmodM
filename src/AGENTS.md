@@ -15,7 +15,7 @@ src/DDEN.Shared/          公共层（被三个插件引用）
   SaveCodec.cs  *.sv 编解码 + 原子写 + meta 同步 + QoL 存档位桥
   Game.cs       InWorld / LocalBody / Alert / Console + LiveFields 运行时写回
 src/DDExcNet.CUmodM/     管理器（唯一画窗口的地方）
-src/DDEN.MPUnchippedSyncFix/  芯片同步（Harmony 单点 + 联机桥）
+src/DDEN.MPfix/          多人修复合集（无芯片同步 + 联机合成/物品生成兜底 + 网络登记）
 src/DDEN.SaveEditor/     存档编辑器（零 patch：文件 + 反射 + 图标）
 ```
 

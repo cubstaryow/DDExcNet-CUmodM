@@ -269,15 +269,30 @@ namespace DDEN.Shared
 
         // ===== 通用配置项渲染 =====
 
-        /// <summary>把 BepInEx 的 ConfigEntry 画成一行；返回该行占用的高度。</summary>
+        /// <summary>配置行的固定高度（上行：键 + 控件；下行：说明）。</summary>
+        public const float ConfigRowHeight = 44f;
+
+        /// <summary>
+        /// 把 BepInEx 的 ConfigEntry 画成两行：上排“键 + 控件”，下排说明文字。
+        /// 之前把说明画在同一行底部，会压到控件和下一行上（就是“界面很乱”的主因）。
+        /// </summary>
         public static float ConfigRow(Rect r, ConfigEntryBase entry)
         {
             if (entry == null) return 0f;
 
-            GUI.Label(new Rect(r.x, r.y, r.width * 0.52f, r.height), entry.Definition.Key, Row);
+            const float keyW = 230f;
+            const float ctrlW = 240f;
 
+            // 交替底色，便于区分条目
+            Fill(r, new Color(1f, 1f, 1f, 0.02f));
+
+            string key = entry.Definition?.Key ?? "?";
+            GUI.Label(new Rect(r.x + 6f, r.y + 3f, keyW - 10f, 18f),
+                ElideToWidth(key, keyW - 10f, Row), Row);
+
+            float cx = r.x + keyW + 8f;
             object value = entry.BoxedValue;
-            Rect field = new Rect(r.x + r.width * 0.52f, r.y, r.width * 0.48f - 4f, r.height);
+            Rect field = new Rect(cx, r.y + 2f, Mathf.Min(ctrlW, Mathf.Max(80f, r.width - keyW - 20f)), 20f);
 
             try
             {
@@ -298,7 +313,7 @@ namespace DDEN.Shared
                 }
                 else if (value is KeyboardShortcut ks)
                 {
-                    if (GUI.Button(field, ks.MainKey.ToString()))
+                    if (GUI.Button(field, KeyCapture.Active ? "按下新键…" : ks.MainKey.ToString()))
                     {
                         KeyCapture.Begin(entry);
                     }
@@ -311,15 +326,57 @@ namespace DDEN.Shared
             }
             catch (Exception ex)
             {
-                GUI.Label(field, "<color=#f66>无法编辑：</color>" + ex.Message, Sub);
+                GUI.Label(field, "无法编辑：" + ex.Message, Sub);
             }
 
-            if (!string.IsNullOrEmpty(entry.Description?.Description))
+            string desc = entry.Description?.Description;
+            if (!string.IsNullOrEmpty(desc))
             {
-                GUI.Label(new Rect(r.x, r.y + r.height - 2f, r.width, 14f),
-                    Truncate(entry.Description.Description, 110), Small);
+                desc = desc.Replace("\r", " ").Replace("\n", " ");
+                var descRect = new Rect(r.x + 6f, r.y + 23f, r.width - 12f, 18f);
+                GUI.Label(descRect, ElideToWidth(desc, r.width - 12f, Sub), Sub);
+                Hover(descRect, desc);   // 单行放不下时，悬停看完整说明
             }
-            return r.height;
+
+            Fill(new Rect(r.x, r.yMax - 1f, r.width, 1f), new Color(1f, 1f, 1f, 0.06f));
+            return ConfigRowHeight;
+        }
+
+        /// <summary>按 Section 分组渲染一批配置（从 area 顶部开始，返回占用高度）。</summary>
+        public static float DrawConfigGrouped(Rect area, IEnumerable<ConfigEntryBase> entries)
+        {
+            if (entries == null) return 0f;
+
+            float y = 0f;
+            string section = null;
+
+            foreach (ConfigEntryBase entry in entries)
+            {
+                string sec = entry.Definition?.Section ?? "General";
+                if (sec != section)
+                {
+                    section = sec;
+                    y += 6f;
+                    Section(new Rect(area.x, area.y + y, area.width, 16f), "▸ " + sec);
+                    y += 20f;
+                }
+                ConfigRow(new Rect(area.x, area.y + y, area.width, ConfigRowHeight), entry);
+                y += ConfigRowHeight;
+            }
+            return y;
+        }
+
+        public static float ConfigListHeight(IEnumerable<ConfigEntryBase> entries)
+        {
+            if (entries == null) return 0f;
+            var sections = new HashSet<string>(StringComparer.Ordinal);
+            int n = 0;
+            foreach (ConfigEntryBase e in entries)
+            {
+                n++;
+                sections.Add(e.Definition?.Section ?? "General");
+            }
+            return n * ConfigRowHeight + sections.Count * 26f + 8f;
         }
 
         private static string Truncate(string s, int max)
@@ -359,16 +416,7 @@ namespace DDEN.Shared
 
         public static void DrawConfigList(Rect area, IEnumerable<ConfigEntryBase> entries)
         {
-            float y = area.y;
-            if (entries != null)
-            {
-                foreach (ConfigEntryBase entry in entries)
-                {
-                    if (y + 24f > area.yMax) break;
-                    ConfigRow(new Rect(area.x, y, area.width, 22f), entry);
-                    y += 26f;
-                }
-            }
+            DrawConfigGrouped(area, entries);
         }
     }
 

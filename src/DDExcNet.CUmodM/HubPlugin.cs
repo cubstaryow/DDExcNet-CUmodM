@@ -34,7 +34,6 @@ namespace DDExcNet.CUmodM
         internal static ConfigEntry<bool> CfgScanOnStart;
         internal static ConfigEntry<bool> CfgModalBlocker;
         internal static ConfigEntry<float> CfgBlockerDim;
-        internal static ConfigEntry<bool> CfgFixModItemCraftSpawn;
         internal static ConfigEntry<bool> CfgVerbose;
 
         private Rect _rect = new Rect(80f, 70f, 1180f, 760f);
@@ -69,10 +68,6 @@ namespace DDExcNet.CUmodM
             CfgBlockerDim = Config.Bind("UI", "BlockerDim", 0.15f,
                 new ConfigDescription("遮罩暗化程度（0 = 全透明只吃点击）。",
                     new AcceptableValueRange<float>(0f, 0.8f)));
-            CfgFixModItemCraftSpawn = Config.Bind("Compat", "FixModItemCraftSpawn", true,
-                "修复联机合成模组物品时报“无法合成：无法生成物品”。\n" +
-                "原因：Together 主机侧用 Utils.Create → Resources.Load(id) 生成成品，而模组物品不在 Resources 里。\n" +
-                "开启后用 CUCoreLib 的 CustomInstantiate 兜底（对掉落/世界生成同样有效）。");
             CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出调试日志。");
 
             Log = DDEN.Shared.Log.For(LogSource, "CUmodM", CfgVerbose.Value);
@@ -82,15 +77,6 @@ namespace DDExcNet.CUmodM
             DdenHub.OpenRequested += OnOpenRequested;
             try { new Harmony(Guid).PatchAll(typeof(AdaptiveButton_ClickGuard)); }
             catch (Exception ex) { Log.Exception(ex, "菜单按钮拦截补丁失败"); }
-            try
-            {
-                new Harmony(Guid).PatchAll(typeof(Utils_Create_ModItemPatch));
-                Log.Info("已启用联机合成兜底：模组物品不在 Resources 时用 CustomInstantiate 生成。");
-            }
-            catch (Exception ex)
-            {
-                Log.Exception(ex, "Utils.Create 兼容补丁失败（联机合成模组物品仍可能失败）");
-            }
             _rect = LoadRect();
 
             _effectiveKey = Compat.ResolveHotkey(CfgToggleKey, Guid, CfgAutoFixHotkeys.Value);
@@ -119,6 +105,16 @@ namespace DDExcNet.CUmodM
             }
 
             if (File.Exists(UiTestMarker)) StartCoroutine(UiSmokeTest());
+
+            // 配置页截图/核对用：放 cumod.cfgtest 就直接停在“全部配置”页，不自动关闭
+            string cfgTest = System.IO.Path.Combine(Paths.ConfigPath, "cumod.cfgtest");
+            if (File.Exists(cfgTest))
+            {
+                _page = "config";
+                _visible = true;
+                try { File.Delete(cfgTest); } catch { /* ignored */ }
+                Log.Info("[CFGTEST] 已停在“全部配置”页，供核对。");
+            }
         }
 
         private static string UiTestMarker => System.IO.Path.Combine(Paths.ConfigPath, "cumod.uitest");
@@ -147,7 +143,9 @@ namespace DDExcNet.CUmodM
                 }
 
                 Log.Info("[UITEST] 绘制页面：" + page);
-                yield return new WaitForSecondsRealtime(page.EndsWith("saveeditor", StringComparison.Ordinal) ? 4f : 0.8f);
+                float hold = page.EndsWith("saveeditor", StringComparison.Ordinal) ? 4f
+                    : (page == "config" ? 8f : 0.8f);
+                yield return new WaitForSecondsRealtime(hold);
 
                 if (!_visible)
                 {
@@ -446,35 +444,65 @@ namespace DDExcNet.CUmodM
             string moduleId = _page.StartsWith("config:") ? _page.Substring(7) : null;
             IDdenModule module = DdenHub.Find(moduleId);
 
-            GUI.Label(new Rect(area.x, area.y, area.width, 20f),
-                module == null ? "全部配置" : module.DisplayName + " · 配置", DdenUI.Title);
+            GUI.Label(new Rect(area.x, area.y, area.width - 130f, 20f),
+                module == null ? "全部配置（所有模块 + 管理器）" : module.DisplayName + " · 配置", DdenUI.Title);
 
-            if (module == null)
+            if (module != null && DdenUI.Button(new Rect(area.xMax - 110f, area.y, 110f, 22f), "← 看全部"))
             {
-                float y = area.y + 26f;
-                foreach (IDdenModule m in DdenHub.Modules)
-                {
-                    if (DdenUI.Button(new Rect(area.x, y, 240f, 24f), m.DisplayName)) _page = "config:" + m.Id;
-                    y += 28f;
-                }
-                DdenUI.Label(new Rect(area.x, y + 10f, area.width, 40f),
-                    "选择左上方的模组查看其配置；管理器自身配置在最下方。", DdenUI.Sub);
-                DrawManagerConfig(new Rect(area.x, y + 56f, area.width, area.height - 56f));
+                _page = "config";
                 return;
             }
 
-            Rect settingsArea = new Rect(area.x, area.y + 28f, area.width, area.height - 28f);
-            bool handled = false;
-            try { handled = module.DrawSettings(settingsArea); }
-            catch (Exception ex) { DdenUI.Label(settingsArea, "配置绘制失败：" + ex.Message, DdenUI.Wrap); handled = true; }
-
-            if (!handled)
+            // 单模块配置
+            if (module != null)
             {
-                _configScroll = GUI.BeginScrollView(settingsArea, _configScroll,
-                    new Rect(0, 0, settingsArea.width - 18f, Mathf.Max(settingsArea.height, module.ConfigEntries.Count() * 26f + 10f)));
-                DdenUI.DrawConfigList(new Rect(0, 0, settingsArea.width - 18f, 4000f), module.ConfigEntries);
+                Rect solo = new Rect(area.x, area.y + 26f, area.width, area.height - 26f);
+                bool handled = false;
+                try { handled = module.DrawSettings(solo); }
+                catch (Exception ex) { DdenUI.Label(solo, "配置绘制失败：" + ex.Message, DdenUI.Wrap); handled = true; }
+                if (handled) return;
+
+                float soloH = DdenUI.ConfigListHeight(module.ConfigEntries) + 12f;
+                _configScroll = GUI.BeginScrollView(solo, _configScroll,
+                    new Rect(0, 0, solo.width - 18f, Mathf.Max(solo.height, soloH)));
+                DdenUI.DrawConfigGrouped(new Rect(0, 0, solo.width - 18f, soloH), module.ConfigEntries);
                 GUI.EndScrollView();
+                return;
             }
+
+            // 全部模块 + 管理器自身，一次滚到底
+            Rect body = new Rect(area.x, area.y + 26f, area.width, area.height - 26f);
+            float total = 40f;
+            foreach (IDdenModule m in DdenHub.Modules) total += 28f + DdenUI.ConfigListHeight(m.ConfigEntries);
+            total += 28f + DdenUI.ConfigListHeight(Config.Entries());
+
+            float w = body.width - 18f;
+            _configScroll = GUI.BeginScrollView(body, _configScroll,
+                new Rect(0, 0, w, Mathf.Max(body.height, total)));
+
+            float y = 0f;
+            foreach (IDdenModule m in DdenHub.Modules)
+            {
+                DdenUI.Fill(new Rect(0, y, w, 22f), DdenUI.AccentDim);
+                GUI.Label(new Rect(6f, y + 2f, w - 90f, 18f),
+                    $"{m.DisplayName}  <size=10><color=#89a>{m.Version}</color></size>  ·  {m.Summary}", DdenUI.Row);
+                if (DdenUI.Button(new Rect(w - 78f, y + 2f, 70f, 18f), "单独看"))
+                {
+                    _page = "config:" + m.Id;
+                    GUI.EndScrollView();
+                    return;
+                }
+                y += 26f;
+                y += DdenUI.DrawConfigGrouped(new Rect(0, y, w, 4000f), m.ConfigEntries);
+                y += 10f;
+            }
+
+            DdenUI.Fill(new Rect(0, y, w, 22f), DdenUI.AccentDim);
+            GUI.Label(new Rect(6f, y + 2f, w - 12f, 18f), "管理器自身", DdenUI.Row);
+            y += 26f;
+            DdenUI.DrawConfigGrouped(new Rect(0, y, w, 4000f), Config.Entries());
+
+            GUI.EndScrollView();
         }
 
         private void DrawManagerConfig(Rect area)

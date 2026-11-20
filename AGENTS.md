@@ -10,7 +10,7 @@
 | 产物 | 源码 | 作用 |
 | --- | --- | --- |
 | `DDExcNet-CUmodM.dll` | `src/DDExcNet.CUmodM/` | **管理器**：统一功能界面 + 全部配置界面 + **兼容性总控** |
-| `DDEN.MPUnchippedSyncFix.dll` | `src/DDEN.MPUnchippedSyncFix/` | 多人「无芯片模式」主机 → 客机同步 |
+| `DDEN.MPfix.dll` | `src/DDEN.MPfix/` | 多人相关修复合集：无芯片同步 + 联机合成/物品生成兜底 + 物品网络登记 |
 | `DDEN.SaveEditor.dll` | `src/DDEN.SaveEditor/` | 可视化存档编辑器（图标/血条点选，QoL 多存档位） |
 | `DDEN.Shared.dll` | `src/DDEN.Shared/` | 公共层：反射、日志、联机桥、存档编解码、**IDdenModule / DdenHub / Compat / DdenUI** |
 
@@ -83,9 +83,13 @@ dotnet build CUmod.slnx -v m    # 只编译
 - **联机合成“无法生成物品”**：Together 主机侧自己实现了一份 spawn
   （`PlayerCamera_TryCraft_MultiplayerPatch.RecipeResult_SpawnResult` → `Utils.Create` → `Resources.Load(id)`），
   模组物品不在 Resources 里 → `CraftReason.SpawnFailed`（客户端文案 `craft_deny_spawnfailed`）。
-  修复在 `DDExcNet.CUmodM.CompatCraftSpawnPatch`：给 `Utils.Create` 加前缀，Resources 找不到时用
-  `CUCoreLib.Helpers.CustomInstantiate.InstantiateReturn` 生成（开关 `Compat/FixModItemCraftSpawn`）。
+  修复在 `DDEN.MPfix.Utils_Create_ModItemPatch`：给 `Utils.Create` 加前缀，Resources 找不到时用
+  `CUCoreLib.Helpers.CustomInstantiate.InstantiateReturn` 生成，并在主机侧补 `NetObjectRegistry.Server_EnsureItemIsNetworkRegistered`
+  （开关 `联机合成/FixModItemCraftSpawn`、`联机合成/RegisterSpawnedItemsOnHost`）。
   注意 Together 会按 attempt 缓存失败 receipt，同一会话重试仍失败，换层/重连才会清 —— 这是“过一层又能合成”的来源。
+- **配置界面必须是两行一条**：上行「键 + 控件」，下行说明（`DdenUI.ConfigRow`，行高 44）。
+  “全部配置”页必须把**所有模块的配置**都列出来（按模块分块、按 Section 分组），不能要求先选模块才看得到。
+  说明放不下时用 `DdenUI.Hover` 让鼠标悬停看全文。
 - **不要在模块里重复造兼容判断**，也别各自写自己的弹窗系统。
 - **存档编辑红线**：只改用户点过的字段；`cheatedSave`（禁用成就）**绝不自动写入**，仅由“进度/成就”页手动切换；
   写盘只走 `SaveCodec.Write` + `SyncMeta`（原子 + `.cumod.bak`），写前查 `Compat.IsQolAutosaveBusy()`。
@@ -96,6 +100,7 @@ dotnet build CUmod.slnx -v m    # 只编译
 ```bash
 touch "<游戏>/BepInEx/config/cumod.selftest"   # 数据自检（用副本，跑完自删）
 touch "<游戏>/BepInEx/config/cumod.uitest"     # 界面冒烟（自动轮播全部页面/标签页）
+touch "<游戏>/BepInEx/config/cumod.cfgtest"    # 直接停在“全部配置”页（截图/核对排版用）
 # 启动游戏 → 等 8~40 秒 → 看日志
 grep -nE "SELFTEST|UITEST|Loading \[DDEN|Loading \[DDExcNet" "<游戏>/BepInEx/LogOutput.log"
 ```

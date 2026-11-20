@@ -4,7 +4,7 @@ using DDEN.Shared;
 using HarmonyLib;
 using UnityEngine;
 
-namespace DDExcNet.CUmodM
+namespace DDEN.MPfix
 {
     /// <summary>
     /// 兼容修复：联机合成“无法合成：无法生成物品”。
@@ -42,7 +42,7 @@ namespace DDExcNet.CUmodM
         {
             try
             {
-                if (!HubPlugin.CfgFixModItemCraftSpawn.Value) return true;
+                if (!MPfixPlugin.CfgFixModItemCraftSpawn.Value) return true;
                 if (string.IsNullOrEmpty(id)) return true;
                 if (VanillaIds.Contains(id)) return true;
 
@@ -79,13 +79,13 @@ namespace DDExcNet.CUmodM
                 if (Time.unscaledTime - _lastLogAt > 0.5f)
                 {
                     _lastLogAt = Time.unscaledTime;
-                    HubPlugin.Log.Info($"[CraftFix] 物品 '{id}' 不在 Resources，已用模组资源生成（修复联机合成失败）");
+                    MPfixPlugin.Log.Info($"[CraftFix] 物品 '{id}' 不在 Resources，已用模组资源生成（修复联机合成失败）");
                 }
                 return false;
             }
             catch (Exception ex)
             {
-                HubPlugin.Log.Debug("Utils.Create 前缀异常：" + ex.Message);
+                MPfixPlugin.Log.Debug("Utils.Create 前缀异常：" + ex.Message);
                 return true;
             }
         }
@@ -111,7 +111,7 @@ namespace DDExcNet.CUmodM
             }
             catch (Exception ex)
             {
-                HubPlugin.Log.Debug("物品网络登记失败：" + ex.Message);
+                MPfixPlugin.Log.Debug("物品网络登记失败：" + ex.Message);
             }
         }
     }

@@ -8,25 +8,39 @@ using HarmonyLib;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 
-namespace DDEN.MPUnchippedSyncFix
+namespace DDEN.MPfix
 {
-    [BepInPlugin(Guid, "DDEN MP Unchipped Sync Fix", "1.0.0")]
+    /// <summary>
+    /// DDEN.MPfix —— 把“多人相关的修复”收在一个插件里：
+    ///  ① 无芯片模式（unchipped）主机裁决 → 客机同步（原来的 MPUnchippedSyncFix）；
+    ///  ② 联机合成模组物品“无法生成物品”修复（Utils.Create 走 CustomInstantiate + 主机侧网络登记）；
+    ///  ③ 物品网络身份补登记（水晶层装备在主机上闪烁的根因）。
+    /// 界面与配置统一交给 DDExcNet-CUmodM 显示（模块 id = mpfix）。
+    /// </summary>
+    [BepInPlugin(Guid, "DDEN MP Fix", "1.1.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
-    public class UnchippedSyncPlugin : BaseUnityPlugin, IDdenModule
+    public class MPfixPlugin : BaseUnityPlugin, IDdenModule
     {
-        public const string Guid = "com.dden.mpunchippedsync";
-        public const string DisplayNameText = "MP 无芯片同步";
+        public const string Guid = "com.dden.mpfix";
+        public const string Title = "多人修复";
 
-        internal static UnchippedSyncPlugin Instance;
+        internal static MPfixPlugin Instance;
         internal static ManualLogSource LogSource;
         internal static LogChannel Log;
 
-        internal static ConfigEntry<bool> CfgEnabled;
+        // ===== 无芯片同步 =====
+        internal static ConfigEntry<bool> CfgChipEnabled;
         internal static ConfigEntry<bool> CfgForceHost;
         internal static ConfigEntry<bool> CfgOverrideIndividualRule;
         internal static ConfigEntry<float> CfgWatchdogSeconds;
         internal static ConfigEntry<bool> CfgAnnounce;
+
+        // ===== 联机物品/合成 =====
+        internal static ConfigEntry<bool> CfgFixModItemCraftSpawn;
+        internal static ConfigEntry<bool> CfgRegisterSpawnedItems;
+
+        // ===== 其它 =====
         internal static ConfigEntry<KeyboardShortcut> CfgStandaloneKey;
         internal static ConfigEntry<bool> CfgVerbose;
 
@@ -43,19 +57,26 @@ namespace DDEN.MPUnchippedSyncFix
         private bool _forcePushNextTick;
         private int _appliedCount;
         private string _lastReason = "-";
-        private float _lastAppliedAt;
 
         private KeyCode _standaloneKey = KeyCode.F10;
         private bool _standaloneVisible;
+        private Rect _standaloneRect;
+        private Vector2 _standaloneScroll;
 
         // ===== IDdenModule =====
-        public string Id => "mpunchipped";
-        public string DisplayName => DisplayNameText;
+        public string Id => "mpfix";
+        public string DisplayName => Title;
         public string Version => Info.Metadata.Version.ToString();
         public bool Ready => Mp.CoreAvailable;
-        public string Summary => Ready
-            ? (Mp.IsRunning ? (Mp.IsServer ? "主机 · 正在下发" : "客机 · 正在跟随") : "未联机")
-            : "CUCoreLib 缺失";
+        public string Summary
+        {
+            get
+            {
+                if (!Mp.CoreAvailable) return "CUCoreLib 缺失";
+                if (!Mp.IsRunning) return "未联机";
+                return Mp.IsServer ? "主机 · 下发中" : "客机 · 跟随中";
+            }
+        }
         public IEnumerable<ConfigEntryBase> ConfigEntries => Config.Entries();
 
         private void Awake()
@@ -63,39 +84,58 @@ namespace DDEN.MPUnchippedSyncFix
             Instance = this;
             LogSource = base.Logger;
 
-            CfgEnabled = Config.Bind("General", "Enabled", true,
-                "总开关。关闭后本组件完全不介入，行为与未安装时一致。");
-            CfgForceHost = Config.Bind("General", "ForceHostUnchipped", true,
-                "主机裁决优先：主机开无芯片，客机强制无芯片；主机关，客机也强制有芯片。\n" +
-                "关掉后只把主机的值同步成“客机的初始值”，客机本地仍可自行改变。");
-            CfgOverrideIndividualRule = Config.Bind("General", "OverrideIndividualRule", true,
-                "把 Together 的 UnchippedIsIndividual 规则改成 false（全员一致），\n" +
+            CfgChipEnabled = Config.Bind("无芯片同步", "Enabled", true,
+                "总开关。关闭后本模块完全不介入无芯片状态。");
+            CfgForceHost = Config.Bind("无芯片同步", "ForceHostUnchipped", true,
+                "主机裁决优先：主机开无芯片 → 客机强制无芯片；主机有芯片 → 客机也有芯片。\n" +
+                "关掉后只把主机的值当成客机初始值，之后客机可以自己改。");
+            CfgOverrideIndividualRule = Config.Bind("无芯片同步", "OverrideIndividualRule", true,
+                "把 Together 的 UnchippedIsIndividual 置为 false（全员一致），\n" +
                 "使名牌 / 附近语音 / 状态栏等 Together 自己的判定也跟随主机。");
-            CfgWatchdogSeconds = Config.Bind("General", "WatchdogSeconds", 0.5f,
-                new ConfigDescription("客机纠偏轮询间隔（秒）。0 = 关闭轮询。", new AcceptableValueRange<float>(0f, 10f)));
-            CfgAnnounce = Config.Bind("General", "AnnounceToHostChat", false,
-                "客机纠偏时在控制台打印一行说明（排查用）。");
+            CfgWatchdogSeconds = Config.Bind("无芯片同步", "WatchdogSeconds", 0.5f,
+                new ConfigDescription("客机纠偏轮询间隔（秒）。0 = 关闭轮询。",
+                    new AcceptableValueRange<float>(0f, 10f)));
+            CfgAnnounce = Config.Bind("无芯片同步", "AnnounceToOtherPlayers", false,
+                "客机被纠偏时在控制台打印一行说明（排查用）。");
+
+            CfgFixModItemCraftSpawn = Config.Bind("联机合成", "FixModItemCraftSpawn", true,
+                "修复联机合成模组物品时报“无法合成：无法生成物品”。\n" +
+                "原因：Together 主机侧用 Utils.Create → Resources.Load(id) 生成成品，而模组物品不在 Resources 里。\n" +
+                "开启后用 CUCoreLib 的 CustomInstantiate 兜底（掉落/世界生成同路径一并受益）。");
+            CfgRegisterSpawnedItems = Config.Bind("联机合成", "RegisterSpawnedItemsOnHost", true,
+                "兜底生成出来的物品，主机侧立刻补登记进 NetObjectRegistry。\n" +
+                "不登记的话客机穿上后主机会拒绝穿戴同步（Server declines itemwearing），\n" +
+                "表现为主机看到装备“掉下去又回到身上”（水晶层装备尤其明显）。");
+
             CfgStandaloneKey = Config.Bind("UI", "StandaloneKey", new KeyboardShortcut(KeyCode.F10),
-                "管理器缺席时的兜底面板快捷键（管理器在跑时用管理器）。");
+                "管理器缺席时的兜底面板快捷键（管理器在跑时请用管理器）。");
             CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出调试日志。");
 
-            Log = DDEN.Shared.Log.For(LogSource, "MPUnchipped", CfgVerbose.Value);
+            Log = DDEN.Shared.Log.For(LogSource, "MPfix", CfgVerbose.Value);
 
-            try
-            {
-                new Harmony(Guid).PatchAll(typeof(WorldGeneration_SetUnchipped_Patch));
-            }
-            catch (Exception ex)
-            {
-                Log.Exception(ex, "Harmony 打补丁失败（主机侧变更广播会退化为主机状态轮询）");
-            }
+            Harmony harmony = new Harmony(Guid);
+            TryPatch(harmony, typeof(WorldGeneration_SetUnchipped_Patch), "无芯片变更广播");
+            TryPatch(harmony, typeof(Utils_Create_ModItemPatch), "联机合成/物品生成兜底");
 
             RegisterChannels();
             DdenHub.Register(this);
             _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
 
-            Log.Info("已加载：主机无芯片裁决 → 客机同步。");
+            Log.Info("已加载：无芯片同步 + 联机物品/合成修复。");
             if (UnchippedSelfTest.Requested) StartCoroutine(SelfTestDelayed());
+        }
+
+        private void TryPatch(Harmony harmony, Type patchType, string what)
+        {
+            try
+            {
+                harmony.PatchAll(patchType);
+                Log.Info("已启用补丁：" + what);
+            }
+            catch (Exception ex)
+            {
+                Log.Exception(ex, "补丁失败：" + what);
+            }
         }
 
         private System.Collections.IEnumerator SelfTestDelayed()
@@ -110,9 +150,8 @@ namespace DDEN.MPUnchippedSyncFix
         {
             float y = area.y;
 
-            GUI.Label(new Rect(area.x, y, area.width, 18f), "状态", DdenUI.Sub);
-            y += 22f;
-
+            GUI.Label(new Rect(area.x, y, area.width, 18f), "无芯片同步", DdenUI.Sub);
+            y += 20f;
             (string k, string v)[] rows =
             {
                 ("CUCoreLib 联机桥", Mp.CoreAvailable ? "可用" : "缺失"),
@@ -122,41 +161,37 @@ namespace DDEN.MPUnchippedSyncFix
                 ("已纠正次数", _appliedCount.ToString()),
                 ("最近原因", _lastReason)
             };
-
             foreach ((string k, string v) in rows)
             {
-                GUI.Label(new Rect(area.x, y, 180f, 18f), k, DdenUI.Sub);
-                GUI.Label(new Rect(area.x + 186f, y, area.width - 190f, 18f), v, DdenUI.Row);
-                y += 20f;
+                GUI.Label(new Rect(area.x, y, 190f, 18f), k, DdenUI.Sub);
+                GUI.Label(new Rect(area.x + 196f, y, area.width - 200f, 18f), v, DdenUI.Row);
+                y += 19f;
             }
 
-            y += 8f;
-            GUI.Label(new Rect(area.x, y, area.width, 18f), "操作", DdenUI.Sub);
+            y += 6f;
+            GUI.Label(new Rect(area.x, y, area.width, 18f), "物品 / 合成修复", DdenUI.Sub);
+            y += 20f;
+            GUI.Label(new Rect(area.x, y, area.width, 18f),
+                $"合成兜底：{(CfgFixModItemCraftSpawn.Value ? "开" : "关")}     " +
+                $"物品网络登记：{(CfgRegisterSpawnedItems.Value ? "开" : "关")}", DdenUI.Row);
             y += 22f;
 
-            if (DdenUI.Button(new Rect(area.x, y, 150f, 26f), "按主机裁决纠正一次", true)) ForceApply();
-            if (DdenUI.Button(new Rect(area.x + 158f, y, 150f, 26f), "重新向主机请求")) RequestNow();
+            if (DdenUI.Button(new Rect(area.x, y, 160f, 24f), "按主机裁决纠正一次", true)) ForceApply();
+            if (DdenUI.Button(new Rect(area.x + 168f, y, 150f, 24f), "重新向主机请求")) RequestNow();
             GUI.enabled = Mp.IsRunning && Mp.IsServer;
-            if (DdenUI.Button(new Rect(area.x + 316f, y, 170f, 26f), "主机侧切换开/关")) ToggleHostState();
+            if (DdenUI.Button(new Rect(area.x + 326f, y, 160f, 24f), "主机侧切换开/关")) ToggleHostState();
             GUI.enabled = true;
-            y += 34f;
 
-            GUI.Label(new Rect(area.x, y, area.width, 60f),
-                "说明：客机侧的 world.unchippedMode 是本地字段，游戏里所有“有没有芯片”的判定都读它。\n" +
-                "本模块在快照/推送/请求三条链路上把它钉死在主机裁决上，并用 watchdog 兜住其它模组的改写。",
+            y += 32f;
+            GUI.Label(new Rect(area.x, y, area.width, 44f),
+                "无芯片：客机本地 world.unchippedMode 会被钉在主机裁决上（快照/推送/请求三路 + 0.5s watchdog）。\n" +
+                "合成/物品：模组物品不在 Unity Resources，联机时由 CUCoreLib 的 CustomInstantiate 生成并补登记网络身份。",
                 DdenUI.Wrap);
-
-            if (!Ready)
-            {
-                GUI.Label(new Rect(area.x, y + 64f, area.width, 40f),
-                    "<color=#f0a>CUCoreLib 未就绪：同步功能暂停。装好 net.cucorelib 后重开游戏即可。</color>", DdenUI.Wrap);
-            }
         }
 
-        public bool DrawSettings(Rect area)
-        {
-            return false; // 交给管理器的通用配置渲染器
-        }
+        public bool DrawSettings(Rect area) => false;
+
+        // ===== 无芯片同步（原逻辑）=====
 
         public void ForceApply()
         {
@@ -193,8 +228,6 @@ namespace DDEN.MPUnchippedSyncFix
             Game.Alert($"[DDEN] 主机无芯片：{(next ? "开" : "关")}");
         }
 
-        // ===== 联机协议 =====
-
         private void RegisterChannels()
         {
             if (!Mp.CoreAvailable)
@@ -213,7 +246,7 @@ namespace DDEN.MPUnchippedSyncFix
             });
             Mp.RegisterServerHandler(UnchippedProtocol.RequestChannel, _ =>
             {
-                if (!CfgEnabled.Value) return null;
+                if (!CfgChipEnabled.Value) return null;
                 bool value = Mp.IsServer ? Mp.HostUnchipped() : _lastHostValue;
                 if (Mp.IsServer) OnHostValueSeen(value);
                 return JObject.FromObject(new
@@ -230,7 +263,6 @@ namespace DDEN.MPUnchippedSyncFix
         {
             bool value = Mp.HostUnchipped();
             OnHostValueSeen(value);
-            Log.Debug($"capture unchipped={value}");
             return new JObject
             {
                 [UnchippedProtocol.StateField] = value,
@@ -255,7 +287,7 @@ namespace DDEN.MPUnchippedSyncFix
 
         private void OnHostState(bool value, string source)
         {
-            if (!CfgEnabled.Value) return;
+            if (!CfgChipEnabled.Value) return;
 
             bool changed = !_hasHostValue || _lastHostValue != value;
             _hasHostValue = true;
@@ -263,8 +295,6 @@ namespace DDEN.MPUnchippedSyncFix
 
             if (CfgForceHost.Value) ApplyLocal(value, source);
             else if (changed) ApplyLocal(value, source + ":seed-only");
-
-            Log.Debug($"host unchipped={value} via {source} (changed={changed})");
         }
 
         private void ApplyLocal(bool value, string reason)
@@ -281,7 +311,6 @@ namespace DDEN.MPUnchippedSyncFix
                         world.SetUnchipped(value);
                         _appliedCount++;
                         _lastReason = reason;
-                        _lastAppliedAt = Time.unscaledTime;
                         Log.Debug($"本地 world.SetUnchipped({value}) 生效（{reason}，累计 {_appliedCount} 次）");
                         if (CfgAnnounce.Value && !Mp.IsServer)
                         {
@@ -380,10 +409,10 @@ namespace DDEN.MPUnchippedSyncFix
                 {
                     if (_standaloneVisible) DdenBlocker.Show(0.12f);
                     else DdenBlocker.Hide();
-                    DdenHub.SetPanelVisible("mpunchipped", _standaloneVisible);
+                    DdenHub.SetPanelVisible("mpfix", _standaloneVisible);
                 }
 
-                if (!CfgEnabled.Value) return;
+                if (!CfgChipEnabled.Value) return;
                 if (!Mp.CoreAvailable) return;
 
                 bool running = Mp.IsRunning;
@@ -458,9 +487,9 @@ namespace DDEN.MPUnchippedSyncFix
             if (DdenHub.ManagerLoaded || !_standaloneVisible) return;
             try
             {
-                var rect = new Rect(120f, 120f, 460f, 380f);
+                var rect = new Rect(120f, 120f, 520f, 420f);
                 _standaloneRect = rect;
-                GUI.Window(0x4D5055, rect, _ =>
+                GUI.Window(0x4D504658, rect, _ =>
                 {
                     DdenUI.DrawStandalone(new Rect(0, 0, rect.width, rect.height), this, ref _standaloneScroll, false);
                     GUI.DragWindow(new Rect(0, 0, rect.width, 30f));
@@ -472,9 +501,6 @@ namespace DDEN.MPUnchippedSyncFix
             }
         }
 
-        private Vector2 _standaloneScroll;
-        private Rect _standaloneRect;
-
         private void OnDestroy()
         {
             try { new Harmony(Guid).UnpatchSelf(); }
@@ -482,15 +508,15 @@ namespace DDEN.MPUnchippedSyncFix
         }
     }
 
-    /// <summary>主机侧：任何人调用 WorldGeneration.SetUnchipped 都会被看到（含控制台 unchipped 指令、LayerModifier）。</summary>
+    /// <summary>主机侧：任何人调用 WorldGeneration.SetUnchipped 都会被看到（控制台 / LayerModifier / 规则菜单）。</summary>
     [HarmonyPatch(typeof(WorldGeneration), "SetUnchipped")]
     [HarmonyAfter(new[] { "CasualtiesMP", "net.cucorelib" })]
     internal static class WorldGeneration_SetUnchipped_Patch
     {
         private static void Postfix(bool unchipped)
         {
-            UnchippedSyncPlugin plugin = UnchippedSyncPlugin.Instance;
-            if (plugin == null || !UnchippedSyncPlugin.CfgEnabled.Value) return;
+            MPfixPlugin plugin = MPfixPlugin.Instance;
+            if (plugin == null || !MPfixPlugin.CfgChipEnabled.Value) return;
             if (!Mp.IsRunning || !Mp.IsServer) return;
 
             plugin.RequestImmediatePush(unchipped);

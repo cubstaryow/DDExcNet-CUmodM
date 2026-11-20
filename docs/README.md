@@ -9,7 +9,7 @@
 | 文件 | 作用 |
 | --- | --- |
 | `DDExcNet-CUmodM.dll` | **统一管理器**：功能界面 + 全部配置界面 + 兼容性总控 |
-| `DDEN.MPUnchippedSyncFix.dll` | 多人「无芯片模式」主机 → 客机同步修复 |
+| `DDEN.MPfix.dll` | 多人相关修复合集：无芯片同步 + 联机合成/物品生成兜底 + 物品网络登记 |
 | `DDEN.SaveEditor.dll` | 可视化存档编辑器（图标/血条点选，QoL 多存档位） |
 | `DDEN.Shared.dll` | 公共层（模块契约、UI 皮肤、兼容层、反射、存档编解码） |
 
@@ -62,7 +62,15 @@ IEnumerable<ConfigEntryBase> ConfigEntries { get; }
 
 ---
 
-## 3. `DDEN.MPUnchippedSyncFix`
+## 3. `DDEN.MPfix`（多人修复合集）
+
+一个 dll 里装三件事，界面/配置都在管理器里：
+
+| 分组 | 内容 |
+| --- | --- |
+| 无芯片同步 | 主机裁决经 快照 / 推送 / 请求 三路下发，客机 0.5s watchdog 纠偏（`ForceHostUnchipped`、`OverrideIndividualRule`、`WatchdogSeconds`） |
+| 联机合成 | `FixModItemCraftSpawn`：给 `Utils.Create` 加前缀，模组物品不在 Resources 时用 `CustomInstantiate` 生成，修 “无法生成物品” |
+| 物品网络身份 | `RegisterSpawnedItemsOnHost`：兜底生成的物品立刻 `NetObjectRegistry.Server_EnsureItemIsNetworkRegistered`，修“主机看到装备掉下去又回来” |
 
 游戏里“有没有芯片”只有 `WorldGeneration.unchippedMode` 一个开关，所有判定（深度表/视野/伤口/心搏骤停/辐照/枪膛）
 都读它，而它**没有网络同步**；Together 的主机裁决分支默认关闭（`UnchippedIsIndividual = true`），

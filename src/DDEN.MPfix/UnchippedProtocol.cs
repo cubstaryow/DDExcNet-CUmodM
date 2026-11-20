@@ -1,7 +1,7 @@
 using System;
 using DDEN.Shared;
 
-namespace DDEN.MPUnchippedSyncFix
+namespace DDEN.MPfix
 {
     /// <summary>
     /// “无芯片模式”联机同步组件。

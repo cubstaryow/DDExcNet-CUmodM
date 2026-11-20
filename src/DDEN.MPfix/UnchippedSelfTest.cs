@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using DDEN.Shared;
 
-namespace DDEN.MPUnchippedSyncFix
+namespace DDEN.MPfix
 {
     /// <summary>-cumodtest 时跑一遍：确认 CUCoreLib 桥、Together 反射面、本地写入通道都真的可用。</summary>
     internal static class UnchippedSelfTest
