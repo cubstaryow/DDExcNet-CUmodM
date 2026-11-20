@@ -50,9 +50,9 @@ dotnet build CUmod.slnx -v m                  # 只编译
   （`OWNED=(DDEN.Shared / DDExcNet-CUmodM / DDEN.MPfix / DDEN.SaveEditor)`）决定写谁、删谁，
   并在结尾打印 `== 保持不动（其它模组 / 非本脚本产物）: …`。
   **任何情况下都不要对 `DDEN/` 做通配删除**（`rm -rf`、`rm *.dll`）；新增产物必须同时加进 OWNED。
-- **每次部署自动备份到仓库根目录**（`backup/` 已 git-ignore）：
-  `backup/plugins_<时间戳>/*.dll + manifest.txt`（含 md5/大小/配置/是否带编辑器）、
-  `backup/latest/`（最近一次副本）、`backup/DDEN-plugins-<时间戳>.zip`（有 PowerShell 时）。
+- **不做插件备份**（2026-11 按用户要求移除）：`scripts/build.sh` 里原来那套
+  `backup/plugins_<时间戳>` + `backup/latest` + zip 已删掉，**agent 部署时也不要再手工造 `backup/`**。
+  需要留旧版就在部署前自己复制一份。`.gitignore` 里仍保留 `backup/` 一行（防手滑把 dll 提交进去）。
 
 换机器只改 `Directory.Build.props` 的 `<GameDir>`（或 `-p:GameDir=...`）。
 引用白名单：`Assembly-CSharp / UnityEngine.* / BepInEx / 0Harmony / Newtonsoft.Json / CUCoreLib`；

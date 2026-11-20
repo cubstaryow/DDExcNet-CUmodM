@@ -26,8 +26,8 @@ cd L:/github/game/CUmod
 ```
 
 - 若之前部署过 `DDEN.SaveEditor.dll`，默认构建会**主动把它撤下来**（正常游戏不带它）；
-- 每次部署都会在仓库根目录生成备份：`backup/plugins_<时间戳>/{*.dll,manifest.txt}`、
-  `backup/latest/`、`backup/DDEN-plugins-<时间戳>.zip`（`backup/` 不进 git）。
+- 部署**不再自动生成备份**（2026-11 移除）：需要留旧版就在部署前自己复制一份
+  `BepInEx/plugins/DDEN/`。
 
 ---
 
