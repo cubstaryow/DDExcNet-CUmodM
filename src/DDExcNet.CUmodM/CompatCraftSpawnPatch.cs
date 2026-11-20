@@ -74,6 +74,8 @@ namespace DDExcNet.CUmodM
                 }
 
                 __result = made;
+                RegisterOnHost(made);
+
                 if (Time.unscaledTime - _lastLogAt > 0.5f)
                 {
                     _lastLogAt = Time.unscaledTime;
@@ -85,6 +87,31 @@ namespace DDExcNet.CUmodM
             {
                 HubPlugin.Log.Debug("Utils.Create 前缀异常：" + ex.Message);
                 return true;
+            }
+        }
+        /// <summary>
+        /// 主机侧把模组物品登记进联机的网络对象表。
+        /// 不登记的话：客机拿起/穿上后，主机在 <c>ServerReceiver__ItemWearing</c> 里 TryGetItem 找不到它
+        /// → “Server declines itemwearing” → 主机看到物品掉在地上、过一会又被客机拽回身上（就是那个闪烁）。
+        /// </summary>
+        private static void RegisterOnHost(GameObject go)
+        {
+            try
+            {
+                if (go == null || !Mp.IsRunning || !Mp.IsServer) return;
+
+                Type regType = CUCoreLib.Networking.MultiplayerApi.ResolveKrokMpType("NetObjectRegistry");
+                if (regType == null) return;
+
+                System.Reflection.MethodInfo mi = CUCoreLib.Networking.MultiplayerApi.FindKrokMpMethod(
+                    regType, "Server_EnsureItemIsNetworkRegistered", new[] { typeof(GameObject) });
+                if (mi == null) return;
+
+                mi.Invoke(null, new object[] { go });
+            }
+            catch (Exception ex)
+            {
+                HubPlugin.Log.Debug("物品网络登记失败：" + ex.Message);
             }
         }
     }
