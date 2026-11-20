@@ -39,6 +39,12 @@ namespace DDEN.MPfix
             }
         }
 
+        /// <summary>错峰起步：让三个周期巡检不要在同一帧一起扫。</summary>
+        internal static void PrimeScan(float offsetSeconds)
+        {
+            _nextScan = Time.unscaledTime + Mathf.Max(0f, offsetSeconds);
+        }
+
         internal static void Tick()
         {
             if (_disabled) return;
@@ -48,15 +54,16 @@ namespace DDEN.MPfix
             {
                 float now = Time.unscaledTime;
                 if (now < _nextScan) return;
-                _nextScan = now + 2f;
+                // 与 WearableVisualFix / OrphanItemFix 错峰（各自 +0.6s），避免三个巡检撞在同一帧
+                _nextScan = now + Mathf.Max(1f, MPfixPlugin.CfgSnapInterval.Value);
 
                 Body local = Game.LocalBody;
                 if (local != null) ScanBody(local);
 
-                foreach (Body body in UnityEngine.Object.FindObjectsOfType<Body>())
+                // 用共享缓存（整局只有一份 Body 列表、只留身边 25 米的角色），不再每个模块各扫一遍全场景
+                foreach (Body body in NearbyBodies.Get())
                 {
                     if (body == null || body == local) continue;
-                    if (local != null && Vector2.Distance(body.transform.position, local.transform.position) > 40f) continue;
                     ScanBody(body);
                 }
             }

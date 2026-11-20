@@ -34,6 +34,12 @@ namespace DDEN.MPfix
         private static float _nextScan;
         private static float _lastLogAt = -99f;
 
+        /// <summary>错峰起步：让三个周期巡检不要在同一帧一起扫。</summary>
+        internal static void PrimeScan(float offsetSeconds)
+        {
+            _nextScan = Time.unscaledTime + Mathf.Max(0f, offsetSeconds);
+        }
+
         internal static void Tick()
         {
             if (!MPfixPlugin.CfgOrphanItemFix.Value) return;

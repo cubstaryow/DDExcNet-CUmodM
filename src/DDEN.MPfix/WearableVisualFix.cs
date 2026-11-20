@@ -50,6 +50,12 @@ namespace DDEN.MPfix
             }
         }
 
+        /// <summary>错峰起步：让三个周期巡检不要在同一帧一起扫。</summary>
+        internal static void PrimeScan(float offsetSeconds)
+        {
+            _nextScan = Time.unscaledTime + Mathf.Max(0f, offsetSeconds);
+        }
+
         internal static void Tick()
         {
             if (!MPfixPlugin.CfgCleanWearableVisuals.Value) return;
@@ -58,13 +64,12 @@ namespace DDEN.MPfix
             {
                 float now = Time.unscaledTime;
                 if (now < _nextScan) return;
-                _nextScan = now + 2f;
+                _nextScan = now + Mathf.Max(1f, MPfixPlugin.CfgVisualInterval.Value);
 
-                Body local = Game.LocalBody;
-                foreach (Body body in UnityEngine.Object.FindObjectsOfType<Body>())
+                // 共享缓存：不再自己扫全场景（半径由 NearbyBodies 统一管，25 米）
+                foreach (Body body in NearbyBodies.Get())
                 {
                     if (body == null) continue;
-                    if (local != null && Vector2.Distance(body.transform.position, local.transform.position) > 45f) continue;
                     SweepBody(body);
                 }
             }

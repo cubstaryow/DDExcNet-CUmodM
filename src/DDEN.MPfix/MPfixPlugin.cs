@@ -63,6 +63,10 @@ namespace DDEN.MPfix
         internal static ConfigEntry<bool> CfgCleanWearableVisuals;
         internal static ConfigEntry<bool> CfgOrphanItemFix;
         internal static ConfigEntry<int> CfgOrphanFixMax;
+        internal static ConfigEntry<float> CfgSnapInterval;
+        internal static ConfigEntry<float> CfgVisualInterval;
+        internal static ConfigEntry<bool> CfgFreezeGhostItems;
+        internal static ConfigEntry<int> CfgFreezeGhostMax;
 
         // ===== 娱乐 =====
         internal static ConfigEntry<bool> CfgDoublePurchase;
@@ -179,6 +183,19 @@ namespace DDEN.MPfix
             CfgOrphanFixMax = Config.Bind("联机修正", "MaxOrphanFixPerSession", 50,
                 new ConfigDescription("一局最多处理几件，超过就停手。",
                     new AcceptableValueRange<int>(1, 500)));
+            CfgFreezeGhostItems = Config.Bind("联机修正", "FreezeGhostItems", true,
+                "修“一台客机掉线后，另一台客机帧数暴跌”。\n" +
+                "掉线玩家的物品有时会留在你这边变成「没人认领、还在一直下坠」的东西，\n" +
+                "它们会一直消耗物理计算，把人拖到十几帧。开启后会把这些物品**原地停下**（不移动、不删除）。");
+            CfgFreezeGhostMax = Config.Bind("联机修正", "FreezeGhostItemsMaxPerSession", 400,
+                new ConfigDescription("一局最多停下几件，超过就停手。",
+                    new AcceptableValueRange<int>(0, 4000)));
+            CfgSnapInterval = Config.Bind("性能", "ItemSnapScanSeconds", 2f,
+                new ConfigDescription("物品贴合巡检的间隔（秒）。机器吃不消就调大。",
+                    new AcceptableValueRange<float>(1f, 30f)));
+            CfgVisualInterval = Config.Bind("性能", "WearableVisualScanSeconds", 2f,
+                new ConfigDescription("装备贴图残留巡检的间隔（秒）。",
+                    new AcceptableValueRange<float>(1f, 30f)));
             CfgDoublePurchase = Config.Bind("娱乐", "道生一 一生二", false,
                 "道生一，一生二：在商人那里买东西时额外多送一份，直接放进背包。\n" +
                 "纯娱乐开关，默认关闭。只需要主机打开，客机买东西同样会多一件。");
@@ -213,6 +230,10 @@ namespace DDEN.MPfix
             TraderSnapshotFix.RegisterHost();
             BlockDamageSyncFix.RegisterHost();
             DoublePurchase.Install(harmony);
+            // 三个周期巡检错峰起步：不再同一帧一起扫（主机上那一下就是可见的卡顿）
+            WornItemSnap.PrimeScan(0.4f);
+            WearableVisualFix.PrimeScan(1.0f);
+            OrphanItemFix.PrimeScan(1.6f);
             DdenHub.Register(this);
             _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
 
@@ -573,6 +594,7 @@ namespace DDEN.MPfix
                 WornItemSnap.Tick();
                 WearableVisualFix.Tick();
                 OrphanItemFix.Tick();
+                StaleItemFreezer.Tick();
 
                 if (!CfgChipEnabled.Value) return;
                 if (!Mp.CoreAvailable) return;

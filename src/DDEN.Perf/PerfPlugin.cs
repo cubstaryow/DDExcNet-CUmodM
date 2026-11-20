@@ -90,6 +90,7 @@ namespace DDEN.Perf
         private float _heavyAt = -99f;
         private bool _colliderScan = true;      // 统计撞体太贵时自动关掉
         private int _heavySlowCount;
+        private int _heavyPass;
 
         // 玩家数 / 世界 / 联机状态，用于判定"事件"
         private int _lastPlayers = -1;
@@ -355,7 +356,9 @@ namespace DDEN.Perf
             try { _bodies = UnityEngine.Object.FindObjectsOfType<Body>().Length; }
             catch { /* ignored */ }
 
-            // 物理压力：活跃刚体 + 碰撞体。碰撞体这项最贵，统计耗时超标就自动关掉。
+            // 物理压力：活跃刚体 + 碰撞体。碰撞体这项最贵：
+            // 刚体一多（>150，典型是掉线后残留的一堆自由物品）就不再每轮都数，隔一轮数一次，
+            // 免得"观察者自己"成了周期性卡顿的来源。
             try
             {
                 Rigidbody2D[] rbs = UnityEngine.Object.FindObjectsOfType<Rigidbody2D>();
@@ -368,7 +371,9 @@ namespace DDEN.Perf
             }
             catch { _rigid = -1; }
 
-            if (_colliderScan)
+            _heavyPass++;
+            bool wantCols = _colliderScan && (_rigid >= 0 && _rigid <= 150 || (_heavyPass & 1) == 0);
+            if (wantCols)
             {
                 try { _cols = UnityEngine.Object.FindObjectsOfType<Collider2D>().Length; }
                 catch { _cols = -1; }
@@ -397,7 +402,7 @@ namespace DDEN.Perf
             _heavyAt = Time.realtimeSinceStartup - _startedAt;
 
             // 自适应降级：统计自己太贵就先砍掉最贵的碰撞体计数（绝不能观察者把机器拖慢）
-            if (_heavyCostMs > 8f && _colliderScan)
+            if (_heavyCostMs > 5f && _colliderScan)
             {
                 if (++_heavySlowCount >= 2)
                 {
@@ -405,7 +410,7 @@ namespace DDEN.Perf
                     Log.Info($"统计自身耗时 {_heavyCostMs:0.0}ms 偏高，已关闭碰撞体计数（曲线不受影响）。");
                 }
             }
-            else if (_heavyCostMs <= 8f)
+            else if (_heavyCostMs <= 5f)
             {
                 _heavySlowCount = 0;
             }
