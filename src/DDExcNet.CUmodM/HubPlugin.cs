@@ -6,6 +6,7 @@ using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using DDEN.Shared;
+using HarmonyLib;
 using UnityEngine;
 
 namespace DDExcNet.CUmodM
@@ -74,6 +75,8 @@ namespace DDExcNet.CUmodM
 
             DdenHub.MarkManagerLoaded();
             DdenHub.OpenRequested += OnOpenRequested;
+            try { new Harmony(Guid).PatchAll(typeof(AdaptiveButton_ClickGuard)); }
+            catch (Exception ex) { Log.Exception(ex, "菜单按钮拦截补丁失败"); }
             _rect = LoadRect();
 
             _effectiveKey = Compat.ResolveHotkey(CfgToggleKey, Guid, CfgAutoFixHotkeys.Value);
@@ -230,6 +233,7 @@ namespace DDExcNet.CUmodM
         private void UpdateBlocker()
         {
             bool want = _visible && CfgModalBlocker.Value;
+            DdenHub.SetPanelVisible("hub", _visible);
             if (want) DdenBlocker.Show(CfgBlockerDim.Value);
             else DdenBlocker.Hide();
 

@@ -130,6 +130,7 @@ namespace DDEN.SaveEditor
 
                 if (_standaloneVisible) DdenBlocker.Show(0.12f);
                 else DdenBlocker.Hide();
+                DdenHub.SetPanelVisible("saveeditor", _standaloneVisible);
             }
             catch (Exception ex)
             {

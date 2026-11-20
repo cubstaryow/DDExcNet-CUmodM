@@ -64,9 +64,13 @@ dotnet build CUmod.slnx -v m    # 只编译
 - **UI**：只用 `DdenUI`（配色/精灵/条/配置行），保证四个页面观感一致；`GUI.depth = -1000` 画在别人上面。
 - **窗口必须用无皮肤模式**：`GUI.Window(id, rect, Draw, GUIContent.none, GUIStyle.none)` + 自己画标题栏。
   用默认窗框时它会把 y<20 的第一行内容盖住（表现为“文字上下被切掉”）。
-- **输入隔离**：不用 EventSystem 开关（会和别的模组抢），改用 `DdenBlocker`：
-  面板可见时在 32000 排序的 Canvas 上挂一张全屏透明 `Image`（raycastTarget=true），uGUI 射线先命中它，
-  游戏按钮收不到点击；面板关掉就 `Hide()`。IMGUI 不受影响（两套输入）。
+- **输入隔离（关键：这游戏的菜单按钮不走 uGUI）**：
+  主菜单按钮是 `AdaptiveButton.Update()` 里 **直接读 `Input.GetMouseButtonDown(0)`** 再调 `Clicked()`，
+  既不经过 EventSystem，也不吃 uGUI 遮罩 —— 所以“关 EventSystem”和“挂 uGUI 遮罩”都拦不住它。
+  现行方案两层：① `DDExcNet.CUmodM.UiGuardPatch` 给 `AdaptiveButton.Clicked` 加 Harmony 前缀，
+  只要有 DDEN 面板可见就 return false（日志 `[UIGuard] 面板打开，已拦截菜单按钮点击（Play）`）；
+  ② `DdenBlocker` 的 uGUI 遮罩负责游戏内其它 uGUI 界面。两者都受 `UI/ModalBlocker` 开关控制。
+  面板可见性用 `DdenHub.SetPanelVisible(owner, visible)` 维护，`DdenHub.AnyPanelVisible` 供补丁判断。
 - **图形化肢体**：世界内读原版 `WoundView.limbImages / origPositions / localScale.x`，并把每块贴图
   **Blit+ReadPixels 抓成 PNG** 存到 `BepInEx/config/dden.limbs/`（布局存 `dden.limbs.json`），
   这样主菜单也能用原版美术。

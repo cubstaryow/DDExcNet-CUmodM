@@ -88,6 +88,23 @@ namespace DDEN.Shared
             try { action?.Invoke(); }
             catch (Exception ex) { Log.Warn("DdenHub 事件回调异常：" + ex.Message); }
         }
+
+        // ===== 面板可见性（供 Unity 侧补丁判断“现在能不能点游戏”）=====
+
+        private static readonly HashSet<string> OpenPanels = new HashSet<string>(StringComparer.Ordinal);
+
+        /// <summary>是否有任意 DDEN 面板正在显示。</summary>
+        public static bool AnyPanelVisible
+        {
+            get { return OpenPanels.Count > 0; }
+        }
+
+        public static void SetPanelVisible(string owner, bool visible)
+        {
+            if (string.IsNullOrEmpty(owner)) return;
+            if (visible) OpenPanels.Add(owner);
+            else OpenPanels.Remove(owner);
+        }
     }
 
     public static class ConfigExt

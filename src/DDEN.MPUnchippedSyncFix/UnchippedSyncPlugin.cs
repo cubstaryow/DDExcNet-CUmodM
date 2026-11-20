@@ -380,6 +380,7 @@ namespace DDEN.MPUnchippedSyncFix
                 {
                     if (_standaloneVisible) DdenBlocker.Show(0.12f);
                     else DdenBlocker.Hide();
+                    DdenHub.SetPanelVisible("mpunchipped", _standaloneVisible);
                 }
 
                 if (!CfgEnabled.Value) return;
