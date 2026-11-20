@@ -68,6 +68,10 @@ dotnet build CUmod.slnx -v m    # 只编译
   否则点管理器按钮会同时点到主菜单的「开始游戏 / 退出」。窗口隐藏或鼠标移出时置 false。
 - **标签统一 `clipping = Overflow` 并按宽度截断**：`DdenUI.ElideToWidth(text, width)`；
   Overflow 是为了中文行高不被切，但会横向溢出到邻居控件，凡是定宽列一律先截断。
+- **悬停提示别用 `GUI.tooltip`**：那个值会残留，表现为“鼠标后面一直跟着一个黑框”。
+  用 `DdenUI.Hover(rect, text)` + 每帧 `DdenUI.BeginFrame()` + 末尾 `DdenUI.DrawTooltip(bounds)`（会钳在窗口内）。
+- **图形化肢体**：世界内直接读原版 `WoundView.limbImages / origPositions`（索引与 `body.limbs` 对齐），
+  布局缓存 `BepInEx/config/dden.limbs.json` 供主菜单复用；都没有时用内置 15 部位人形布局。
 - **不要在模块里重复造兼容判断**，也别各自写自己的弹窗系统。
 - **存档编辑红线**：只改用户点过的字段；`cheatedSave`（禁用成就）**绝不自动写入**，仅由“进度/成就”页手动切换；
   写盘只走 `SaveCodec.Write` + `SyncMeta`（原子 + `.cumod.bak`），写前查 `Compat.IsQolAutosaveBusy()`。
