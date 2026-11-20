@@ -49,5 +49,6 @@ dotnet sln CUmod.slnx add src/DDEN.MyMod/DDEN.MyMod.csproj
   Harmony postfix 已声明 `[HarmonyAfter("CasualtiesMP","net.cucorelib")]`。
 - **存档编辑器**：`FieldRow` 是 JToken 视图，改它就是改文档，**不要重建文档**；
   写盘只走 `SaveCodec.Write` + `SyncMeta`；`cheatedSave` 只有“进度/成就”页的手动开关能改；
-  删除物品时 `items` 与 `itemComponents` 必须同步删。
+  删除物品时 `items` 与 `itemComponents` 必须同步删；
+  物品按 `slot|wearSlot` 归组（原版存档把父物品写在子物品前），子物品显示在容器头下面。
 - **兼容层**：任何“会不会和别的模组打架”的判断都加到 `Compat`，不要在模块里各写一份。

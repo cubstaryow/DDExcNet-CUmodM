@@ -62,6 +62,12 @@ dotnet build CUmod.slnx -v m    # 只编译
 - **日志**：插件里用 `internal static LogChannel Log = DDEN.Shared.Log.For(Logger, "Tag", verbose)`，
   共享层用静态 `Log`（管理器 Awake 里 `Log.Attach` 兜住，否则只进 Player.log 不进 BepInEx 日志）。
 - **UI**：只用 `DdenUI`（配色/精灵/条/配置行），保证四个页面观感一致；`GUI.depth = -1000` 画在别人上面。
+- **窗口必须用无皮肤模式**：`GUI.Window(id, rect, Draw, GUIContent.none, GUIStyle.none)` + 自己画标题栏。
+  用默认窗框时它会把 y<20 的第一行内容盖住（表现为“文字上下被切掉”）。
+- **必须挡点击穿透**：鼠标在窗口矩形内时调 `DdenUI.BlockGameInput(true)`（内部关掉 EventSystem），
+  否则点管理器按钮会同时点到主菜单的「开始游戏 / 退出」。窗口隐藏或鼠标移出时置 false。
+- **标签统一 `clipping = Overflow` 并按宽度截断**：`DdenUI.ElideToWidth(text, width)`；
+  Overflow 是为了中文行高不被切，但会横向溢出到邻居控件，凡是定宽列一律先截断。
 - **不要在模块里重复造兼容判断**，也别各自写自己的弹窗系统。
 - **存档编辑红线**：只改用户点过的字段；`cheatedSave`（禁用成就）**绝不自动写入**，仅由“进度/成就”页手动切换；
   写盘只走 `SaveCodec.Write` + `SyncMeta`（原子 + `.cumod.bak`），写前查 `Compat.IsQolAutosaveBusy()`。
