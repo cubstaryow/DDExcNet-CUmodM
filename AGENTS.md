@@ -114,7 +114,7 @@ dotnet build CUmod.slnx -v m                  # 只编译
   - 用途：抓「一台客机掉线 → 另一台客机巨卡」这类现场 —— 看 `sim`（无主且物理开着）、`deadsync`、`players` 的台阶。
   - 它**随发布包一起发**（用户 2026-11 明确要求：本地输出要包含全部模块，含存档编辑器与性能跟踪器）；
     它不打任何补丁，装不装都不影响游戏，只是排查掉帧时能直接抓现场。
-  - ⚠️ `[BepInPlugin(..., "1.2.0")]` 里的版本号读不了 MSBuild 属性：**改 `<DdenVersion>` 时顺手改各插件的 `[BepInPlugin]`**。
+  - ⚠️ `[BepInPlugin(..., "1.3.0")]` 里的版本号读不了 MSBuild 属性：**改 `<DdenVersion>` 时顺手改各插件的 `[BepInPlugin]`**。
 - **窗口必须用无皮肤模式**：`GUI.Window(id, rect, Draw, GUIContent.none, GUIStyle.none)` + 自己画标题栏。
   用默认窗框时它会把 y<20 的第一行内容盖住（表现为“文字上下被切掉”）。
 - **输入隔离（关键：这游戏的菜单按钮不走 uGUI）**：
