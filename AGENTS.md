@@ -91,9 +91,14 @@ dotnet build CUmod.slnx -v m                  # 只编译
 - **联机合成“无法生成物品”**：Together 主机侧自己实现了一份 spawn
   （`PlayerCamera_TryCraft_MultiplayerPatch.RecipeResult_SpawnResult` → `Utils.Create` → `Resources.Load(id)`），
   模组物品不在 Resources 里 → `CraftReason.SpawnFailed`（客户端文案 `craft_deny_spawnfailed`）。
-  修复在 `DDEN.MPfix.Utils_Create_ModItemPatch`：给 `Utils.Create` 加前缀，Resources 找不到时用
-  `CUCoreLib.Helpers.CustomInstantiate.InstantiateReturn` 生成，并在主机侧补 `NetObjectRegistry.Server_EnsureItemIsNetworkRegistered`
+  修复在 `DDEN.MPfix.Utils_Create_ModItemPatch`：给 `Utils.Create` 加前缀，Resources 找不到时按三级兜底生成：
+  ① `CustomInstantiate.InstantiateReturn` → ② `ResolvePrefab` + `Instantiate` →
+  ③ **克隆场上/背包里同 id 的现成物品**（清掉子物品、缩放归位；专治“修理类配方”，因为玩家手里必然有一件同 id 材料）；
+  生成后在主机侧补 `NetObjectRegistry.Server_EnsureItemIsNetworkRegistered`
   （开关 `联机合成/FixModItemCraftSpawn`、`联机合成/RegisterSpawnedItemsOnHost`）。
+  **失败必须留痕**：三级都失败会打一条 `[CraftFix] 生成失败 '<id>'：…（含注册表是否命中）`（同 id 30s 去重），
+  用来判断是“没注册”还是“注册了但造不出来”。**绝对不要加“失败即永久拉黑这个 id”的负缓存**——
+  首次调用可能早于模组注册/资源就绪，一旦拉黑该配方整局都失败。
   注意 Together 会按 attempt 缓存失败 receipt，同一会话重试仍失败，换层/重连才会清 —— 这是“过一层又能合成”的来源。
 - **穿戴兜底（联机）**：`DDEN.MPfix.WearGhostFix` —— 客机穿上物品后 1.5s，经 CUCoreLib 频道
   `ddn.mp.wearfix` 把 {id, 位置} 发给主机；主机用**带发送者**的处理器拿到 clientId →
