@@ -667,7 +667,9 @@ namespace DDEN.NetPerfTracker
 
             GUI.Label(new Rect(r.x + 6f, r.y + 2f, r.width - 12f, 16f), title, DdenUI.Sub);
 
-            Rect inner = new Rect(r.x + 34f, r.y + 18f, r.width - 42f, r.height - 24f);
+            // 右侧留一列显示"最新一次的数值"，不靠肉眼看曲线估数
+            const float gutter = 82f;
+            Rect inner = new Rect(r.x + 34f, r.y + 18f, Mathf.Max(8f, r.width - 42f - gutter), r.height - 24f);
             if (inner.width < 8f || inner.height < 8f) return;
 
             // 值域
@@ -742,6 +744,74 @@ namespace DDEN.NetPerfTracker
                 }
             }
 
+            // 右侧"最新值"列：每条曲线一个色块 + 当前数值（取最后一条有效样本）
+            Rect valCol = new Rect(inner.xMax + 10f, inner.y, gutter - 16f, inner.height);
+            float vy = valCol.y;
+            for (int si = 0; si < series.Length; si++)
+            {
+                float v = LastValue(series[si]);
+                if (v < 0f) continue;
+                Color sc = colors != null && si < colors.Length ? colors[si] : DdenUI.Accent;
+                DdenUI.Fill(new Rect(valCol.x, vy + 5f, 6f, 6f), sc);
+                GUI.Label(new Rect(valCol.x + 9f, vy - 1f, valCol.width - 9f, 15f), FmtValue(v), DdenUI.Small);
+                vy += 15f;
+                if (vy > valCol.yMax - 12f) break;
+            }
+
+            // 鼠标悬停：竖线 + 该时刻所有曲线的数值框（IMGUI 里自己画，别用 GUI.tooltip）
+            Event ev = Event.current;
+            if (ev != null && inner.Contains(ev.mousePosition) && count > startIdx)
+            {
+                float frac = Mathf.Clamp01((ev.mousePosition.x - inner.x) / inner.width);
+                int idx = Mathf.Clamp(startIdx + Mathf.RoundToInt((count - 1 - startIdx) * frac), startIdx, count - 1);
+                float px = inner.x + inner.width * frac;
+
+                DdenUI.Fill(new Rect(px, inner.y, 1f, inner.height),
+                    new Color(DdenUI.Accent.r, DdenUI.Accent.g, DdenUI.Accent.b, 0.85f));
+
+                // 每条曲线在该点的位置画个点
+                for (int si = 0; si < series.Length; si++)
+                {
+                    float[] arr = series[si];
+                    if (arr == null || idx >= arr.Length) continue;
+                    float v = arr[idx];
+                    if (v < 0f) continue;
+                    Color sc = colors != null && si < colors.Length ? colors[si] : DdenUI.Accent;
+                    float py = inner.y + inner.height * (1f - Mathf.InverseLerp(min, vmax, Mathf.Clamp(v, min, vmax)));
+                    DdenUI.Fill(new Rect(px - 2f, py - 2f, 5f, 5f), sc);
+                }
+
+                // 数值框
+                int rows = 1;
+                for (int si = 0; si < series.Length; si++)
+                {
+                    if (series[si] != null && idx < series[si].Length && series[si][idx] >= 0f) rows++;
+                }
+                float bw = 150f;
+                float bh = 6f + rows * 15f;
+                float bx = Mathf.Clamp(px + 14f, inner.x, Mathf.Max(inner.x, inner.xMax - bw));
+                float by = Mathf.Clamp(ev.mousePosition.y - bh * 0.5f, inner.y, Mathf.Max(inner.y, inner.yMax - bh));
+                Rect box = new Rect(bx, by, bw, bh);
+                DdenUI.Fill(box, new Color(0.05f, 0.06f, 0.08f, 0.96f));
+                DdenUI.Frame(box, DdenUI.AccentDim);
+
+                GUI.Label(new Rect(box.x + 6f, box.y + 3f, bw - 12f, 15f),
+                    "距现在 -" + Mathf.Max(0f, tEnd - _cT[idx]).ToString("0.0", CultureInfo.InvariantCulture) + "s",
+                    DdenUI.Small);
+
+                float ly = box.y + 3f + 15f;
+                for (int si = 0; si < series.Length; si++)
+                {
+                    float[] arr = series[si];
+                    if (arr == null || idx >= arr.Length || arr[idx] < 0f) continue;
+                    Color sc = colors != null && si < colors.Length ? colors[si] : DdenUI.Accent;
+                    DdenUI.Fill(new Rect(box.x + 6f, ly + 5f, 6f, 6f), sc);
+                    string nm = labels != null && si < labels.Length ? labels[si] : ("#" + si);
+                    GUI.Label(new Rect(box.x + 16f, ly, bw - 22f, 15f), nm + "  " + FmtValue(arr[idx]), DdenUI.Small);
+                    ly += 15f;
+                }
+            }
+
             // 时间轴说明
             GUI.Label(new Rect(inner.x, r.yMax - 15f, 80f, 14f), "-" + Mathf.RoundToInt(tEnd - tStart) + "s", DdenUI.Small);
             DdenUI.Label(new Rect(inner.x, r.yMax - 15f, inner.width, 14f), "", DdenUI.Small);
@@ -760,6 +830,25 @@ namespace DDEN.NetPerfTracker
                     GUI.Label(new Rect(lx + 10f, r.y + 1f, w - 10f, 16f), labels[i], DdenUI.Sub);
                 }
             }
+        }
+
+        /// <summary>取数组里最后一个有效（≥0）的值；全无效返回 -1。</summary>
+        private static float LastValue(float[] arr)
+        {
+            if (arr == null) return -1f;
+            for (int i = arr.Length - 1; i >= 0; i--)
+            {
+                if (arr[i] >= 0f) return arr[i];
+            }
+            return -1f;
+        }
+
+        /// <summary>数值格式：大数取整，小数保留 1~2 位，避免右侧一列数字挤在一起还看不出量级。</summary>
+        private static string FmtValue(float v)
+        {
+            if (v >= 100f) return v.ToString("0", CultureInfo.InvariantCulture);
+            if (v >= 10f) return v.ToString("0.0", CultureInfo.InvariantCulture);
+            return v.ToString("0.00", CultureInfo.InvariantCulture);
         }
 
         /// <summary>把环形缓冲摊平成数组（只在新增采样点时重建一次）。</summary>
