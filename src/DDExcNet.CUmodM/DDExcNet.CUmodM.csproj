@@ -12,6 +12,11 @@
     </ProjectReference>
   </ItemGroup>
 
+  <!-- 图标等内嵌资源（像素图 dragon_cloud.png 打进 dll，运行时按资源名读出） -->
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\*.png" />
+  </ItemGroup>
+
   <Target Name="DeployPlugin" AfterTargets="Build" Condition="'$(DeployOnBuild)' == 'true'">
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(DdenPluginsDir)" />
   </Target>

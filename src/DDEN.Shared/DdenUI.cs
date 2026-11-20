@@ -224,31 +224,129 @@ namespace DDEN.Shared
         }
 
         // ===== 常用控件 =====
+        //
+        // 全部自绘：Unity 默认皮肤（GUI.skin.button / toggle / textField）是浅灰描边的圆角贴图，
+        // 贴在 DDEN 的深色像素风面板上非常跳，而且缩放时会糊。这里统一成「填色块 + 1px 描边 + 直角」。
 
+        private static GUIStyle _center, _field;
+
+        /// <summary>居中文案（按钮内部用）。</summary>
+        public static GUIStyle Center => _center ??= Make(12, FontStyle.Normal, TextAnchor.MiddleCenter);
+
+        /// <summary>无背景的输入框样式：底与边框由我们自己画，这里只留文字与光标。</summary>
+        public static GUIStyle FieldStyle => _field ??= MakeField();
+
+        private static GUIStyle MakeField()
+        {
+            var s = new GUIStyle(GUI.skin.textField)
+            {
+                border = new RectOffset(0, 0, 0, 0),
+                padding = new RectOffset(4, 4, 2, 2),
+                margin = new RectOffset(0, 0, 0, 0),
+                fontSize = 12,
+                alignment = TextAnchor.MiddleLeft,
+                richText = false,
+                clipping = TextClipping.Clip
+            };
+            // 各状态的底图要逐个清掉（GUIStyle 没有统一的 background 属性），否则仍然会画出默认白框
+            s.normal.background = null;
+            s.hover.background = null;
+            s.active.background = null;
+            s.focused.background = null;
+            s.normal.textColor = Text;
+            s.hover.textColor = Text;
+            s.active.textColor = Text;
+            s.focused.textColor = Accent;
+            return s;
+        }
+
+        private static readonly Color FieldBg = new Color(0f, 0f, 0f, 0.38f);
+        private static readonly Color Hairline = new Color(1f, 1f, 1f, 0.14f);
+
+        /// <summary>DDEN 风格按钮：直角块 + 描边，highlight=true 用强调色填充。</summary>
         public static bool Button(Rect r, string text, bool highlight = false)
         {
-            Color old = GUI.backgroundColor;
-            GUI.backgroundColor = highlight ? Accent : Color.white;
-            bool clicked = GUI.Button(r, text, GUI.skin.button);
-            GUI.backgroundColor = old;
-            return clicked;
+            Fill(r, highlight ? new Color(Accent.r, Accent.g, Accent.b, 0.32f) : new Color(1f, 1f, 1f, 0.07f));
+            Frame(r, highlight ? Accent : Hairline);
+
+            bool hovered = false;
+            try { hovered = Event.current != null && r.Contains(Event.current.mousePosition); }
+            catch { /* ignored */ }
+            if (hovered) Fill(r, new Color(1f, 1f, 1f, 0.06f));
+
+            GUI.Label(new Rect(r.x + 4f, r.y, r.width - 8f, r.height),
+                ElideToWidth(text, r.width - 8f, Center), Center);
+            return GUI.Button(r, GUIContent.none, GUIStyle.none);
+        }
+
+        /// <summary>只画方框的复选框（像素风对勾用三段短横拼，不依赖字体里有没有 ✓）。返回点击后的值。</summary>
+        public static bool CheckBox(Rect r, bool value)
+        {
+            float size = Mathf.Min(18f, Mathf.Max(12f, r.height));
+            var box = new Rect(r.x, r.y + (r.height - size) * 0.5f, size, size);
+
+            Fill(box, value ? Accent : FieldBg);
+            Frame(box, value ? Accent : new Color(1f, 1f, 1f, 0.22f));
+
+            if (value)
+            {
+                Color ink = new Color(0.05f, 0.08f, 0.10f, 1f);
+                float u = Mathf.Max(1f, Mathf.Floor(size / 7f));
+                float baseY = box.y + size * 0.58f;
+                Fill(new Rect(box.x + size * 0.18f, baseY, u * 1.6f, u), ink);
+                Fill(new Rect(box.x + size * 0.38f, baseY - u * 1.4f, u * 1.6f, u), ink);
+                Fill(new Rect(box.x + size * 0.58f, baseY - u * 2.8f, u * 2.0f, u), ink);
+            }
+
+            return GUI.Button(r, GUIContent.none, GUIStyle.none) ? !value : value;
+        }
+
+        /// <summary>复选框 + 右侧文字（整行可点）。</summary>
+        public static bool CheckBoxLabeled(Rect r, bool value, string label)
+        {
+            bool nv = CheckBox(new Rect(r.x, r.y, 18f, r.height), value);
+            if (!string.IsNullOrEmpty(label))
+            {
+                GUI.Label(new Rect(r.x + 24f, r.y, Mathf.Max(0f, r.width - 24f), r.height), label, Row);
+            }
+            return nv;
+        }
+
+        /// <summary>DDEN 风格单行输入框（底/边框自绘，只借用 TextField 的输入与光标）。</summary>
+        public static string TextField(Rect r, string text)
+        {
+            Fill(r, FieldBg);
+            Frame(r, Hairline);
+            Fill(new Rect(r.x, r.y + 2f, 2f, Mathf.Max(0f, r.height - 4f)), AccentDim);
+            var inner = new Rect(r.x + 5f, r.y + 1f, Mathf.Max(0f, r.width - 8f), Mathf.Max(0f, r.height - 2f));
+            return GUI.TextField(inner, text ?? string.Empty, FieldStyle);
         }
 
         public static bool Toggle(Rect r, bool value, string label)
         {
-            bool nv = GUI.Toggle(r, value, " " + label, GUI.skin.toggle);
-            return nv;
+            return CheckBoxLabeled(r, value, label);
         }
 
         /// <summary>数值输入（保留 token 原类型由调用方处理）；返回是否有改动。</summary>
         public static bool NumberField(Rect r, ref string buffer, out double value)
         {
-            string nv = GUI.TextField(r, buffer ?? "0");
+            string nv = TextField(r, buffer ?? "0");
             value = 0;
             if (nv == buffer) return false;
             buffer = nv;
             return double.TryParse(nv, System.Globalization.NumberStyles.Float,
                 System.Globalization.CultureInfo.InvariantCulture, out value);
+        }
+
+        /// <summary>画一张普通 Texture（像素图会按 Texture.filterMode 放大：Point = 硬像素边）。</summary>
+        public static bool DrawTex(Rect r, Texture tex, Color? tint = null)
+        {
+            if (tex == null) return false;
+            Color old = GUI.color;
+            GUI.color = tint ?? Color.white;
+            GUI.DrawTexture(r, tex, ScaleMode.StretchToFill, true);
+            GUI.color = old;
+            return true;
         }
 
         /// <summary>0..1 的条（耐久 / 血量）。</summary>
@@ -298,29 +396,29 @@ namespace DDEN.Shared
             {
                 if (value is bool b)
                 {
-                    bool nv = GUI.Toggle(field, b, b ? " 开" : " 关", GUI.skin.toggle);
+                    bool nv = CheckBoxLabeled(field, b, b ? "开" : "关");
                     if (nv != b) entry.BoxedValue = nv;
                 }
                 else if (value is int i && entry.SettingType == typeof(int))
                 {
-                    string txt = GUI.TextField(field, i.ToString());
+                    string txt = TextField(field, i.ToString());
                     if (int.TryParse(txt, out int ni) && ni != i) entry.BoxedValue = ni;
                 }
                 else if (value is float f)
                 {
-                    string txt = GUI.TextField(field, f.ToString("0.###"));
+                    string txt = TextField(field, f.ToString("0.###"));
                     if (float.TryParse(txt, out float nf) && Math.Abs(nf - f) > 0.0001f) entry.BoxedValue = nf;
                 }
                 else if (value is KeyboardShortcut ks)
                 {
-                    if (GUI.Button(field, KeyCapture.Active ? "按下新键…" : ks.MainKey.ToString()))
+                    if (Button(field, KeyCapture.Active ? "按下新键…" : ks.MainKey.ToString()))
                     {
                         KeyCapture.Begin(entry);
                     }
                 }
                 else
                 {
-                    string txt = GUI.TextField(field, Convert.ToString(value));
+                    string txt = TextField(field, Convert.ToString(value));
                     if (txt != Convert.ToString(value)) entry.BoxedValue = txt;
                 }
             }

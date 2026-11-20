@@ -233,5 +233,31 @@ namespace DDEN.MPfix
                 MPfixPlugin.Log.Debug("物品网络登记失败：" + ex.Message);
             }
         }
+
+        /// <summary>
+        /// 把一件已经在主机侧改过状态的物品推给所有客机：<c>NetObjectRegistry.SafeNewGO</c>。
+        /// Together 自己在 <c>ServerReceiver__ItemWearing</c> 穿完物品后紧跟的就是这一句（反编译 136245）；
+        /// 少了它，主机改对了、客机仍按旧状态渲染（典型表现：物品还贴在客机身边/仍在掉落）。
+        /// </summary>
+        internal static void SyncNow(GameObject go)
+        {
+            try
+            {
+                if (go == null || !Mp.IsRunning || !Mp.IsServer) return;
+
+                Type regType = CUCoreLib.Networking.MultiplayerApi.ResolveKrokMpType("NetObjectRegistry");
+                if (regType == null) return;
+
+                System.Reflection.MethodInfo mi = CUCoreLib.Networking.MultiplayerApi.FindKrokMpMethod(
+                    regType, "SafeNewGO", new[] { typeof(GameObject) });
+                if (mi == null) return;
+
+                mi.Invoke(null, new object[] { go });
+            }
+            catch (Exception ex)
+            {
+                MPfixPlugin.Log.Debug("物品状态推送失败：" + ex.Message);
+            }
+        }
     }
 }

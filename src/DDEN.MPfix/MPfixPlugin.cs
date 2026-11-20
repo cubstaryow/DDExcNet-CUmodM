@@ -12,12 +12,16 @@ namespace DDEN.MPfix
 {
     /// <summary>
     /// DDEN.MPfix —— 把“多人相关的修复”收在一个插件里：
-    ///  ① 无芯片模式（unchipped）主机裁决 → 客机同步（原来的 MPUnchippedSyncFix）；
-    ///  ② 联机合成模组物品“无法生成物品”修复（Utils.Create 走 CustomInstantiate + 主机侧网络登记）；
-    ///  ③ 物品网络身份补登记（水晶层装备在主机上闪烁的根因）。
+    ///  ① 无芯片模式（unchipped）主机裁决 → 客机同步；
+    ///  ② 联机合成模组物品“无法生成物品”修复（Utils.Create 走 CUCoreLib 两条正路 + 主机侧网络登记）；
+    ///  ③ 穿戴兜底（客机穿上、主机没认下来 → 主机按 id 认出并穿上，再推状态给客机）；
+    ///  ④ 物品物理保险（丢出/卸下后只补开碰撞体，绝不移动物品）；
+    ///  ⑤ 挖块收敛（主机放宽伤害比例 + 客机已碎上报，主机校验后收敛）；
+    ///  ⑥ 商人商品表补发 / 穿戴贴图残留 / 孤儿物品；
+    ///  ⑦ 娱乐：道生一 一生二（商人购买多给一份，只在主机生效）。
     /// 界面与配置统一交给 DDExcNet-CUmodM 显示（模块 id = mpfix）。
     /// </summary>
-    [BepInPlugin(Guid, "DDEN MP Fix", "1.1.0")]
+    [BepInPlugin(Guid, "DDEN MP Fix", "1.2.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
     public class MPfixPlugin : BaseUnityPlugin, IDdenModule
@@ -51,10 +55,11 @@ namespace DDEN.MPfix
         internal static ConfigEntry<bool> CfgSnapWornItems;
         internal static ConfigEntry<int> CfgSnapWornMax;
 
-        // ===== 联机修正（商人商品表 / 工具耐久 / 挖块） =====
+        // ===== 联机修正（商人商品表 / 挖块） =====
         internal static ConfigEntry<bool> CfgTraderSnapshot;
-        internal static ConfigEntry<bool> CfgToolDurability;
         internal static ConfigEntry<bool> CfgBlockBreakSync;
+        internal static ConfigEntry<float> CfgBlockDamageRatio;
+        internal static ConfigEntry<float> CfgBlockBreakMinFraction;
         internal static ConfigEntry<bool> CfgCleanWearableVisuals;
         internal static ConfigEntry<bool> CfgOrphanItemFix;
         internal static ConfigEntry<int> CfgOrphanFixMax;
@@ -94,9 +99,9 @@ namespace DDEN.MPfix
         {
             get
             {
-                if (!Mp.CoreAvailable) return "CUCoreLib 缺失";
+                if (!Mp.CoreAvailable) return "缺少联机组件";
                 if (!Mp.IsRunning) return "未联机";
-                return Mp.IsServer ? "主机 · 下发中" : "客机 · 跟随中";
+                return Mp.IsServer ? "主机 · 同步中" : "客机 · 跟随中";
             }
         }
         public IEnumerable<ConfigEntryBase> ConfigEntries => Config.Entries();
@@ -107,74 +112,77 @@ namespace DDEN.MPfix
             LogSource = base.Logger;
 
             CfgChipEnabled = Config.Bind("无芯片同步", "Enabled", true,
-                "总开关。关闭后本模块完全不介入无芯片状态。");
+                "总开关。关掉后这个模块不再管“有没有芯片”这件事。");
             CfgForceHost = Config.Bind("无芯片同步", "ForceHostUnchipped", true,
-                "主机裁决优先：主机开无芯片 → 客机强制无芯片；主机有芯片 → 客机也有芯片。\n" +
-                "关掉后只把主机的值当成客机初始值，之后客机可以自己改。");
+                "跟随主机：主机开了无芯片你就自动无芯片，主机关了你也恢复有芯片。\n" +
+                "关掉后只在进局时跟一次，之后可以自己改。");
             CfgOverrideIndividualRule = Config.Bind("无芯片同步", "OverrideIndividualRule", true,
-                "把 Together 的 UnchippedIsIndividual 置为 false（全员一致），\n" +
-                "使名牌 / 附近语音 / 状态栏等 Together 自己的判定也跟随主机。");
+                "全员一致：名牌、附近语音、状态栏这些显示也跟着主机的设置走。\n" +
+                "关掉可能出现“世界里是无芯片，但名牌还按有芯片显示”。");
             CfgWatchdogSeconds = Config.Bind("无芯片同步", "WatchdogSeconds", 30f,
-                new ConfigDescription("客机纠偏轮询间隔（秒）。芯片状态通常一次同步就够，默认 30 秒；0 = 关闭轮询。",
+                new ConfigDescription("自动核对的间隔（秒）。平时同步一次就够，默认 30 秒；0 = 不自动核对。",
                     new AcceptableValueRange<float>(0f, 600f)));
             CfgAnnounce = Config.Bind("无芯片同步", "AnnounceToOtherPlayers", false,
-                "客机被纠偏时在控制台打印一行说明（排查用）。");
+                "被自动纠正时在控制台提示一行（排查问题时用）。");
 
             CfgFixModItemCraftSpawn = Config.Bind("联机合成", "FixModItemCraftSpawn", true,
-                "修复联机合成模组物品时报“无法合成：无法生成物品”。\n" +
-                "原因：Together 主机侧用 Utils.Create → Resources.Load(id) 生成成品，而模组物品不在 Resources 里。\n" +
-                "开启后用 CUCoreLib 的 CustomInstantiate 兜底（掉落/世界生成同路径一并受益）。");
+                "修“联机时合成模组加的物品，提示无法生成物品”。\n" +
+                "开启后，模组加的东西在主机上也能正常做出来；地上的掉落物、世界生成也一起受益。");
             CfgRegisterSpawnedItems = Config.Bind("联机合成", "RegisterSpawnedItemsOnHost", true,
-                "兜底生成出来的物品，主机侧立刻补登记进 NetObjectRegistry。\n" +
-                "不登记的话客机穿上后主机会拒绝穿戴同步（Server declines itemwearing），\n" +
-                "表现为主机看到装备“掉下去又回到身上”（水晶层装备尤其明显）。");
+                "做出来的物品立刻在主机登记，联机才认它是“一件存在的物品”。\n" +
+                "不登记的话，你穿上之后主机不认，装备会表现为“掉下去又回到身上”。");
 
             CfgStandaloneKey = Config.Bind("UI", "StandaloneKey", new KeyboardShortcut(KeyCode.F10),
-                "管理器缺席时的兜底面板快捷键（管理器在跑时请用管理器）。");
+                "没有管理器时，用这个键打开修复模块自己的小面板。");
             CfgWearFix = Config.Bind("穿戴兜底", "Enabled", true,
-                "客机穿上物品但主机没认下来时（主机眼里它还在地上/掉落），\n" +
-                "1.5s 后请主机按 id 找到那件物品并正确穿到该玩家身上 —— 不重建、不复制、不掉落。");
+                "你在客机上穿好了，主机那边却没认（它眼里装备还在地上或正在掉）时，\n" +
+                "自动请主机把装备正确穿到这名玩家身上。不会复制、不会掉落、不会重建物品。");
             CfgWearGrace = Config.Bind("穿戴兜底", "GraceSeconds", 1.5f,
-                new ConfigDescription("穿上后等多久再去问主机（秒）。太快可能撞上还没同步完。",
+                new ConfigDescription("穿好之后等多久再去问主机（秒）。太快可能还没同步完。",
                     new AcceptableValueRange<float>(0.3f, 10f)));
             CfgWearFixMax = Config.Bind("穿戴兜底", "MaxPerSession", 20,
-                new ConfigDescription("每局最多兜底几次；超过就停手。",
+                new ConfigDescription("一局最多自动处理几次，超过就停手。",
                     new AcceptableValueRange<int>(1, 200)));
             CfgWearRebuild = Config.Bind("穿戴兜底", "RebuildIfHostLacksItem", false,
-                "仅在主机确实找不到这件物品时才用：取消穿戴 → 掉地 → 请求主机重建。\n" +
-                "默认关闭（只做“认出并穿上”）；开着会有复制风险，仅作最后手段。");
+                "只有主机真的找不到这件装备时才用：先脱下来放地上，再请主机造一件新的。\n" +
+                "默认关闭（会有多出一件的风险），只当最后手段。");
             CfgSnapWornItems = Config.Bind("物品物理", "SnapWornItems", true,
-                "物品还穿在身上/握在手里，却浮在角色上方（局部坐标错位）时，把它贴合回原位。\n" +
-                "每 2 秒扫一次附近角色，只改 localPosition/localRotation，不动缩放。");
+                "装备或手持物品明明在身上，却浮在角色头顶附近时，把它贴回原位。\n" +
+                "每 2 秒检查一次附近角色，只改位置，不改大小和角度。");
             CfgSnapWornMax = Config.Bind("物品物理", "SnapMaxPerSession", 100,
-                new ConfigDescription("每局最多修正几次；超过就停手。",
+                new ConfigDescription("一局最多修正几次，超过就停手。",
                     new AcceptableValueRange<int>(1, 1000)));
             CfgPhysicsGuard = Config.Bind("物品物理", "GuardDropPhysics", true,
-                "只在“丢出/卸下”这些真正的动作后做保险：只处理自由物品（不在手/身/包里），\n" +
-                "只补开被关掉的碰撞体与没打开的物理，**不再自动移动物品**（避免位移残留导致错位）。\n" +
-                "用于修联机里“丢东西穿墙往下掉”。");
+                "丢东西后补一道保险：让落地物品恢复正常碰撞，别穿墙掉到地图外面。\n" +
+                "只处理真正丢在地上的物品，不会挪动它们。");
             CfgTraderSnapshot = Config.Bind("联机修正", "TraderSnapshotOnOpen", true,
-                "客机每次打开商人界面时，向主机索要一次完整商品表（走 Together 自己的 TraderSync.SendTraderState）。\n" +
-                "用于修“看到的商品和主机不一致 → 付了钱却拿不到东西”。");
-            CfgToolDurability = Config.Bind("联机修正", "SyncToolDurability", false,
-                "（实验）客机使用工具后，把本地扣掉的耐久报给主机，让主机那份一起扣。\n" +
-                "默认关闭：只有确认存在“耐久不同步”问题时才需要打开。");
+                "每次打开商人界面，向主机要一份最新的商品表。\n" +
+                "修“看到的商品和主机不一样，结果付了钱却拿不到东西”。");
             CfgBlockBreakSync = Config.Bind("联机修正", "SyncBlockBreak", true,
-                "客机本地挖碎方块时，额外通知主机把同一格按剩余血量打碎。\n" +
-                "用于修“客机挖掉方块后又重新长出来”（主机没认这次破坏 → chunk 同步把原来那块推回来）。");
+                "修“客机把方块挖掉了，过一会儿它又长回来”，以及挖的时候方块血量忽上忽下。\n" +
+                "会把你这一镐的伤害和主机对齐，两边看到的结果一致。");
+            CfgBlockDamageRatio = Config.Bind("联机修正", "BlockDamageRatio", 6f,
+                new ConfigDescription("主机愿意接受你报的挖块伤害，最多是它自己算的几倍（原版是 3 倍）。\n" +
+                                      "用了模组工具、或把世界设置的伤害倍率调高时，3 倍经常不够，表现为“怎么挖都挖不动”；\n" +
+                                      "填 3 就是完全按原版。",
+                    new AcceptableValueRange<float>(1f, 20f)));
+            CfgBlockBreakMinFraction = Config.Bind("联机修正", "BlockBreakMinFraction", 0.5f,
+                new ConfigDescription("判定门槛：主机记录里这块方块至少已经掉了这个比例的血，才会接受“已经挖穿”的结论。\n" +
+                                      "调低更灵敏（更容易修好），调高更保守（更难靠一句上报敲穿硬墙）。",
+                    new AcceptableValueRange<float>(0f, 0.95f)));
             CfgCleanWearableVisuals = Config.Bind("联机修正", "CleanStaleWearableVisuals", true,
-                "清理“人身上还挂着一件装备贴图、其实没穿戴”的残留视觉层（WearableExtension）。\n" +
-                "只删纯视觉子物体，不碰任何真实物品。");
+                "修“人身上还挂着一件装备的贴图，其实并没有穿”。\n" +
+                "只清理那层贴图，不碰真实物品。");
             CfgOrphanItemFix = Config.Bind("联机修正", "FixOrphanItems", true,
-                "修“有一件真实物品一直卡在玩家中心（能打开内容、但不算穿戴也不在背包里）”。\n" +
-                "判定持续 2.5 秒后：先尝试重新拾取归位；拾不进背包就从身上摘下放回地面（物品本体不删）。");
+                "修“有件物品一直贴在角色身上：能打开看内容，但既不算穿着也不在背包里”。\n" +
+                "判定持续一小会儿后：能放回背包就放回，放不进就从身上取下放到地上（物品不会消失）。");
             CfgOrphanFixMax = Config.Bind("联机修正", "MaxOrphanFixPerSession", 50,
-                new ConfigDescription("每局最多处理多少个孤儿物品；超过就停手。",
+                new ConfigDescription("一局最多处理几件，超过就停手。",
                     new AcceptableValueRange<int>(1, 500)));
             CfgDoublePurchase = Config.Bind("娱乐", "道生一 一生二", false,
-                "道生一，一生二：主机在商人购买时额外奉送一份（同样的物品，直接进买家背包）。\n" +
-                "纯娱乐开关，默认关闭。只在主机生效，客机购买也会多一件。");
-            CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出调试日志。");
+                "道生一，一生二：在商人那里买东西时额外多送一份，直接放进背包。\n" +
+                "纯娱乐开关，默认关闭。只需要主机打开，客机买东西同样会多一件。");
+            CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出更详细的日志（排查问题用）。");
 
             Log = DDEN.Shared.Log.For(LogSource, "MPfix", CfgVerbose.Value);
 
@@ -187,10 +195,15 @@ namespace DDEN.MPfix
             ItemPhysicsGuard.InstallHeldQuietRepair(harmony);
             TryPatch(harmony, typeof(WornItemSnap.Body_WearWearable_SnapPatch), "穿戴贴合修正（防浮空错位）");
             TryPatch(harmony, typeof(TraderSnapshotFix.ToggleTradeMenu_Postfix), "打开商人时索要商品表");
-            TryPatch(harmony, typeof(DurabilityFix.UseItemInHand_Patch), "工具耐久同步（手持使用）");
-            TryPatch(harmony, typeof(DurabilityFix.UseItem_Patch), "工具耐久同步（UseItem）");
-            DurabilityFix.InstallHostWatcher(harmony);
-            TryPatch(harmony, typeof(BlockBreakFix.DamageBlock_Postfix), "客机挖块后通知主机打碎");
+            if (CfgBlockBreakSync.Value)
+            {
+                TryPatch(harmony, typeof(BlockDamageSyncFix.DamageBlock_Patch), "客机挖块伤害收敛（上报）");
+                BlockDamageRelax.Install(harmony);
+            }
+            else
+            {
+                Log.Info("挖块收敛与比例放宽未启用（联机修正/SyncBlockBreak = false）。");
+            }
             TryPatch(harmony, typeof(WearableVisualFix.Body_DropWearable_ClearPatch), "卸下时清理穿戴贴图");
 
             MigrateOldWatchdog();
@@ -198,13 +211,12 @@ namespace DDEN.MPfix
             RegisterChannels();
             WearGhostFix.RegisterHostHandlers();
             TraderSnapshotFix.RegisterHost();
-            DurabilityFix.RegisterHost();
-            BlockBreakFix.RegisterHost();
+            BlockDamageSyncFix.RegisterHost();
             DoublePurchase.Install(harmony);
             DdenHub.Register(this);
             _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
 
-            Log.Info("已加载：无芯片同步 + 联机物品/合成修复。");
+            Log.Info("已加载：无芯片同步 + 联机物品/合成 + 穿戴兜底 + 物品物理 + 挖块收敛 + 娱乐开关。");
             LogMpCompatReport();
             if (UnchippedSelfTest.Requested) StartCoroutine(SelfTestDelayed());
         }
@@ -284,12 +296,12 @@ namespace DDEN.MPfix
             y += 20f;
             (string k, string v)[] rows =
             {
-                ("CUCoreLib 联机桥", Mp.CoreAvailable ? "可用" : "缺失"),
-                ("联机状态", !Mp.IsRunning ? "未联机" : (Mp.IsServer ? "主机（下发）" : "客机（跟随）")),
-                ("主机裁决", _hasHostValue ? (_lastHostValue ? "无芯片（开）" : "有芯片（关）") : "未知"),
-                ("本地世界", Game.InWorld ? (WorldGeneration.world.unchippedMode ? "无芯片（开）" : "有芯片（关）") : "未进世界"),
-                ("已纠正次数", _appliedCount.ToString()),
-                ("最近原因", _lastReason)
+                ("联机组件", Mp.CoreAvailable ? "已就绪" : "未安装"),
+                ("联机状态", !Mp.IsRunning ? "未联机" : (Mp.IsServer ? "主机（我把设置同步给别人）" : "客机（跟随主机）")),
+                ("主机的设置", _hasHostValue ? (_lastHostValue ? "无芯片" : "有芯片") : "还没拿到"),
+                ("本机世界", Game.InWorld ? (WorldGeneration.world.unchippedMode ? "无芯片" : "有芯片") : "还没进世界"),
+                ("已自动纠正", _appliedCount + " 次"),
+                ("最近一次原因", ReasonText(_lastReason))
             };
             foreach ((string k, string v) in rows)
             {
@@ -302,21 +314,36 @@ namespace DDEN.MPfix
             GUI.Label(new Rect(area.x, y, area.width, 18f), "物品 / 合成修复", DdenUI.Sub);
             y += 20f;
             GUI.Label(new Rect(area.x, y, area.width, 18f),
-                $"合成兜底：{(CfgFixModItemCraftSpawn.Value ? "开" : "关")}     " +
-                $"物品网络登记：{(CfgRegisterSpawnedItems.Value ? "开" : "关")}", DdenUI.Row);
+                $"合成修复：{(CfgFixModItemCraftSpawn.Value ? "开" : "关")}     " +
+                $"物品登记：{(CfgRegisterSpawnedItems.Value ? "开" : "关")}", DdenUI.Row);
             y += 22f;
 
-            if (DdenUI.Button(new Rect(area.x, y, 160f, 24f), "按主机裁决纠正一次", true)) ForceApply();
-            if (DdenUI.Button(new Rect(area.x + 168f, y, 150f, 24f), "重新向主机请求")) RequestNow();
+            if (DdenUI.Button(new Rect(area.x, y, 150f, 24f), "立即按主机同步", true)) ForceApply();
+            if (DdenUI.Button(new Rect(area.x + 158f, y, 130f, 24f), "再问一次主机")) RequestNow();
             GUI.enabled = Mp.IsRunning && Mp.IsServer;
-            if (DdenUI.Button(new Rect(area.x + 326f, y, 160f, 24f), "主机侧切换开/关")) ToggleHostState();
+            if (DdenUI.Button(new Rect(area.x + 296f, y, 140f, 24f), "在主机上切换")) ToggleHostState();
             GUI.enabled = true;
 
             y += 32f;
-            GUI.Label(new Rect(area.x, y, area.width, 44f),
-                "无芯片：客机本地 world.unchippedMode 会被钉在主机裁决上（快照/推送/请求三路 + 0.5s watchdog）。\n" +
-                "合成/物品：模组物品不在 Unity Resources，联机时由 CUCoreLib 的 CustomInstantiate 生成并补登记网络身份。",
+            GUI.Label(new Rect(area.x, y, area.width, 60f),
+                "无芯片：联机时以主机的设置为准，本机自动跟着改（默认每 30 秒核对一次）。\n" +
+                "合成 / 物品：模组加的东西在联机里也能正常做出来、捡起来、穿上去。\n" +
+                $"挖块：两边的方块血量与破坏结果保持一致（信任上限 {CfgBlockDamageRatio.Value:0.#} 倍、判定门槛 {CfgBlockBreakMinFraction.Value:P0}）。",
                 DdenUI.Wrap);
+        }
+
+        /// <summary>把内部原因码翻成人话（这些串只用来记原因，不该原样显示给玩家）。</summary>
+        private static string ReasonText(string reason)
+        {
+            if (string.IsNullOrEmpty(reason) || reason == "-") return "-";
+            if (reason.IndexOf("runSettings", StringComparison.Ordinal) >= 0) return "还没进世界（设置已记下，进局生效）";
+            if (reason.StartsWith("request", StringComparison.Ordinal)) return "向主机查询";
+            if (reason.StartsWith("push", StringComparison.Ordinal)) return "主机主动同步";
+            if (reason.StartsWith("snapshot", StringComparison.Ordinal)) return "进局时同步";
+            if (reason.StartsWith("watchdog", StringComparison.Ordinal)) return "定时核对";
+            if (reason.StartsWith("manual", StringComparison.Ordinal)) return "手动纠正";
+            if (reason.StartsWith("seed-only", StringComparison.Ordinal)) return "只跟主机初始值";
+            return "已同步";
         }
 
         public bool DrawSettings(Rect area) => false;

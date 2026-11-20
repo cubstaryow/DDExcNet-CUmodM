@@ -40,6 +40,11 @@ namespace DDExcNet.CUmodM
         private Vector2 _sideScroll;
         private Vector2 _compatScroll;
         private Vector2 _configScroll;
+        private Vector2 _configSoloScroll;
+        private string _soloConfigFor;      // 当前“单独看”的模块 id（换模块时把滚动条归零）
+        private Vector2 _extScroll;         // 外部模组页的滚动条
+        private Texture2D _logo;
+        private const string AboutPage = "about";
         private string _page = "overview";
         private bool _visible;
         private bool _modalActive;
@@ -55,20 +60,20 @@ namespace DDExcNet.CUmodM
             LogSource = base.Logger;
 
             CfgToggleKey = Config.Bind("UI", "ToggleKey", new KeyboardShortcut(KeyCode.F8),
-                "打开/关闭 DDEN 管理器。若与其它模组抢键，会在启动时自动换一个空闲键（见 AutoFixHotkeyConflicts）。");
+                "打开/关闭管理器。这个键如果和别的模组撞了，启动时会自动换一个空闲键。");
             CfgScale = Config.Bind("UI", "Scale", 1.1f,
                 new ConfigDescription("界面缩放。", new AcceptableValueRange<float>(0.75f, 2f)));
             CfgAutoFixHotkeys = Config.Bind("Compat", "AutoFixHotkeyConflicts", true,
-                "启动时检测快捷键冲突，冲突则自动改用空闲的 F 键并写入配置。");
+                "启动时检查快捷键有没有被别的模组占用；撞了就自动换一个空闲键，并把新键记下来。");
             CfgScanOnStart = Config.Bind("Compat", "ScanOnStart", true,
-                "启动时扫描已装模组/补丁栈/旧文件残留，结果显示在“兼容性”页。");
+                "启动时检查已装的模组、有没有互抢快捷键、有没有旧版本留下的文件，结果显示在「兼容性」页。");
             CfgModalBlocker = Config.Bind("UI", "ModalBlocker", true,
-                "面板打开时挂一张 uGUI 模态遮罩（和联机模组的做法一样）：吃掉鼠标点击，游戏按钮不会被点穿。\n" +
-                "关闭后不拦截，点击会穿到游戏界面。");
+                "管理器打开时挡住游戏界面的点击，避免点穿面板、误触到游戏里的按钮。\n" +
+                "关掉后不挡，点击会穿到游戏界面。");
             CfgBlockerDim = Config.Bind("UI", "BlockerDim", 0.15f,
-                new ConfigDescription("遮罩暗化程度（0 = 全透明只吃点击）。",
+                new ConfigDescription("挡点击时那层暗色的深浅（0 = 完全透明，只是挡住点击）。",
                     new AcceptableValueRange<float>(0f, 0.8f)));
-            CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出调试日志。");
+            CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出更详细的日志（排查问题用）。");
 
             Log = DDEN.Shared.Log.For(LogSource, "CUmodM", CfgVerbose.Value);
             DDEN.Shared.Log.Attach(LogSource, "DDEN", CfgVerbose.Value);   // 共享代码（Compat/Reflect/SaveCodec）的落点
@@ -92,10 +97,10 @@ namespace DDExcNet.CUmodM
 
         private void Start()
         {
-            // 等所有插件 Awake 完再补扫一次：此时别的模组的配置/补丁都已就位
+            // 等所有插件 Awake 完再补扫：此时别的模组的配置/补丁都已就位
             try { DdenExternal.Scan(); }
             catch (Exception ex) { Log.Exception(ex, "扫描外部配置接入"); }
-            // 等所有插件 Awake 完再补扫一次：此时别的模组的配置/补丁都已就位
+
             if (CfgScanOnStart.Value)
             {
                 try { Compat.Rescan(); }
@@ -130,9 +135,10 @@ namespace DDExcNet.CUmodM
             yield return new WaitForSecondsRealtime(0.5f);
             Log.Info($"[UITEST] 已注册模块 {DdenHub.Modules.Count} 个：{string.Join(", ", DdenHub.Modules.Select(m => m.Id))}");
 
-            string[] pages = new[] { "overview", "compat", "config" }
+            string[] pages = new[] { "overview", "compat", "config", "about" }
                 .Concat(DdenHub.Modules.Select(m => m.Id))
                 .Concat(DdenHub.Modules.Select(m => "config:" + m.Id))
+                .Concat(Enumerable.Range(0, DdenExternal.Blocks.Count).Select(i => "ext:" + i))
                 .ToArray();
 
             foreach (string page in pages)
@@ -305,7 +311,9 @@ namespace DDExcNet.CUmodM
             Rect header = new Rect(0, 0, _rect.width, 36f);
             DdenUI.Fill(header, DdenUI.Panel);
             DdenUI.Fill(new Rect(0, header.yMax - 1f, header.width, 1f), DdenUI.AccentDim);
-            GUI.Label(new Rect(12, 6, 320, 24), "DDEN 模组管理器", DdenUI.Title);
+            Texture2D logo = Logo;
+            if (logo != null) DdenUI.DrawTex(new Rect(9f, 7f, 22f, 22f), logo);   // 16×16 放大到 22（Point 过滤，硬像素）
+            GUI.Label(new Rect(logo != null ? 37f : 12f, 6, 320, 24), "DDEN 模组管理器", DdenUI.Title);
             GUI.Label(new Rect(340, 9, _rect.width - 360, 20), Compat.Headline(), DdenUI.Sub);
             if (DdenUI.Button(new Rect(_rect.width - 30f, 8f, 22f, 20f), "×", false)) _visible = false;
 
@@ -334,18 +342,25 @@ namespace DDExcNet.CUmodM
             y += NavButton(new Rect(area.x, y, area.width, 28f), "overview", "总览");
             y += NavButton(new Rect(area.x, y, area.width, 28f), "compat", "兼容性  " + Compat.Headline());
             y += NavButton(new Rect(area.x, y, area.width, 28f), "config", "全部配置");
+            y += NavButton(new Rect(area.x, y, area.width, 28f), AboutPage, "关于 DDExcNet");
             y += 10f;
 
             DdenUI.Label(new Rect(area.x, y, area.width, 18f), "模组", DdenUI.Sub);
             y += 20f;
 
-            if (DdenHub.Modules.Count == 0)
+            if (DdenHub.Modules.Count == 0 && DdenExternal.Blocks.Count == 0)
             {
-                GUI.Label(new Rect(area.x, y, area.width, 40f), "尚未发现 DDEN 模块\n（检查 dll 是否都在同一目录）", DdenUI.Wrap);
+                GUI.Label(new Rect(area.x, y, area.width, 40f), "还没有可显示的模组\n（确认它们装在同一目录里）", DdenUI.Wrap);
             }
 
-            _sideScroll = GUI.BeginScrollView(new Rect(area.x, y, area.width, area.yMax - y), _sideScroll,
-                new Rect(0, 0, area.width - 16f, Mathf.Max(DdenHub.Modules.Count * 32f, 40f)));
+            // 模组 + 外部模组一起滚：外部模组（只交配置、没有 IDdenModule 的）也要能单独点开
+            float listH = Mathf.Max(24f, area.yMax - y);
+            float contentH = DdenHub.Modules.Count * 32f;
+            if (DdenExternal.Blocks.Count > 0) contentH += 22f + DdenExternal.Blocks.Count * 32f;
+            contentH = Mathf.Max(contentH, listH - 2f);
+
+            _sideScroll = GUI.BeginScrollView(new Rect(area.x, y, area.width, listH), _sideScroll,
+                new Rect(0, 0, area.width - 16f, contentH));
             float sy = 0f;
             foreach (IDdenModule module in DdenHub.Modules)
             {
@@ -358,6 +373,28 @@ namespace DDExcNet.CUmodM
                 if (GUI.Button(r, GUIContent.none, GUIStyle.none)) _page = module.Id;
                 sy += 32f;
             }
+
+            if (DdenExternal.Blocks.Count > 0)
+            {
+                DdenUI.Label(new Rect(0, sy, area.width - 16f, 18f), "其它模组的设置", DdenUI.Sub);
+                sy += 22f;
+
+                for (int i = 0; i < DdenExternal.Blocks.Count; i++)
+                {
+                    DdenExternal.Block b = DdenExternal.Blocks[i];
+                    string page = "ext:" + i;
+                    bool selected = _page == page;
+                    var r = new Rect(0, sy, area.width - 16f, 30f);
+                    DdenUI.Fill(r, selected ? DdenUI.AccentDim : DdenUI.PanelAlt);
+                    DdenUI.Label(new Rect(r.x + 8f, r.y + 4f, r.width - 20f, 16f),
+                        "<color=#89a>◇</color> " + (b.Title ?? b.Owner ?? "外部模组"), DdenUI.Row);
+                    DdenUI.Label(new Rect(r.x + 8f, r.y + 17f, r.width - 20f, 12f),
+                        string.IsNullOrEmpty(b.Summary) ? (b.Owner ?? string.Empty) : b.Summary, DdenUI.Small);
+                    if (GUI.Button(r, GUIContent.none, GUIStyle.none)) _page = page;
+                    sy += 32f;
+                }
+            }
+
             GUI.EndScrollView();
         }
 
@@ -381,7 +418,16 @@ namespace DDExcNet.CUmodM
                 case "overview": DrawOverview(inner); break;
                 case "compat": DrawCompat(inner); break;
                 case "config": DrawAllConfig(inner); break;
+                case AboutPage: DrawAbout(inner); break;
                 default:
+                    // ★ “单独看某个模组的配置”走的是页面名 "config:<模块id>"。
+                    //   这里原来没有这一支 → 落进 default 后又 DdenHub.Find("config:mpfix") = null → 回到总览，
+                    //   表现就是“点了没反应”（三个入口全都这样：总览的【配置】、模块页的【配置】、全部配置里的【单独看】）。
+                    if (_page != null && _page.StartsWith("config:", StringComparison.Ordinal))
+                    {
+                        DrawAllConfig(inner);
+                        break;
+                    }
                     if (_page != null && _page.StartsWith("ext:", StringComparison.Ordinal))
                     {
                         DrawExternalPage(inner, _page.Substring(4));
@@ -398,7 +444,7 @@ namespace DDExcNet.CUmodM
         {
             GUI.Label(new Rect(area.x, area.y, area.width, 20f), "总览", DdenUI.Title);
             GUI.Label(new Rect(area.x, area.y + 22f, area.width, 18f),
-                "本管理器统一承载功能界面与配置界面；模块缺失时各自降级为独立小窗。", DdenUI.Sub);
+                "这里集中放各个模组的功能页和设置项。没装管理器的模组会自己开一个小窗口。", DdenUI.Sub);
 
             float y = area.y + 48f;
             foreach (IDdenModule module in DdenHub.Modules)
@@ -409,10 +455,25 @@ namespace DDExcNet.CUmodM
                 DdenUI.Label(new Rect(card.x + 10f, card.y + 6f, card.width - 200f, 18f),
                     module.DisplayName + $"  <size=10><color=#89a>{module.Version}</color></size>", DdenUI.Row);
                 DdenUI.Label(new Rect(card.x + 10f, card.y + 26f, card.width - 200f, 16f),
-                    (module.Ready ? "<color=#8cd97c>就绪</color> · " : "<color=#f0a>降级</color> · ") + (module.Summary ?? ""), DdenUI.Sub);
+                    (module.Ready ? "<color=#8cd97c>正常</color> · " : "<color=#f0a>功能受限</color> · ") + (module.Summary ?? ""), DdenUI.Sub);
                 if (DdenUI.Button(new Rect(card.xMax - 180f, card.y + 14f, 90f, 26f), "打开界面", true)) _page = module.Id;
                 if (DdenUI.Button(new Rect(card.xMax - 84f, card.y + 14f, 74f, 26f), "配置")) _page = "config:" + module.Id;
                 y += 62f;
+            }
+
+            // 外部模组（只交配置、没有 IDdenModule 的）：也给一张卡，点进去就是它自己的页
+            for (int i = 0; i < DdenExternal.Blocks.Count; i++)
+            {
+                DdenExternal.Block b = DdenExternal.Blocks[i];
+                var card = new Rect(area.x, y, area.width, 50f);
+                DdenUI.Fill(card, DdenUI.Panel);
+                DdenUI.Frame(card, b.Draw != null ? DdenUI.AccentDim : DdenUI.Warn);
+                DdenUI.Label(new Rect(card.x + 10f, card.y + 5f, card.width - 200f, 18f),
+                    "<color=#89a>其它模组 · </color>" + (b.Title ?? b.Owner ?? "外部模组"), DdenUI.Row);
+                DdenUI.Label(new Rect(card.x + 10f, card.y + 24f, card.width - 200f, 16f),
+                    string.IsNullOrEmpty(b.Summary) ? "它把自己的设置交给管理器显示" : b.Summary, DdenUI.Sub);
+                if (DdenUI.Button(new Rect(card.xMax - 84f, card.y + 11f, 74f, 26f), "单独看", true)) _page = "ext:" + i;
+                y += 56f;
             }
 
             if (y + 60f < area.yMax)
@@ -456,7 +517,7 @@ namespace DDExcNet.CUmodM
             GUI.EndScrollView();
         }
 
-        /// <summary>外部模组交出的自定义页面（DdenDraw）。</summary>
+        /// <summary>外部模组自己的页：有 DdenDraw 就画自定义页，没有就画它交出来的配置项。</summary>
         private void DrawExternalPage(Rect area, string indexText)
         {
             int index;
@@ -467,7 +528,8 @@ namespace DDExcNet.CUmodM
             }
 
             DdenExternal.Block block = DdenExternal.Blocks[index];
-            GUI.Label(new Rect(area.x, area.y, area.width - 130f, 20f), block.Title, DdenUI.Title);
+            GUI.Label(new Rect(area.x, area.y, area.width - 130f, 20f),
+                (block.Title ?? block.Owner ?? "其它模组") + "  <size=10><color=#89a>其它模组</color></size>", DdenUI.Title);
             if (DdenUI.Button(new Rect(area.xMax - 120f, area.y, 120f, 22f), "← 看全部配置"))
             {
                 _page = "config";
@@ -475,6 +537,18 @@ namespace DDExcNet.CUmodM
             }
 
             Rect body = new Rect(area.x, area.y + 26f, area.width, area.height - 26f);
+
+            if (block.Draw == null)
+            {
+                // 只交配置、没交页面的：直接把它的配置项画出来（这就是“单独配置页”）
+                float h = DdenUI.ConfigListHeight(block.Entries) + 12f;
+                _extScroll = GUI.BeginScrollView(body, _extScroll,
+                    new Rect(0, 0, body.width - 18f, Mathf.Max(body.height, h)));
+                DdenUI.DrawConfigGrouped(new Rect(0, 0, body.width - 18f, h), block.Entries);
+                GUI.EndScrollView();
+                return;
+            }
+
             try
             {
                 block.Draw(body);
@@ -504,25 +578,38 @@ namespace DDExcNet.CUmodM
             if (module != null)
             {
                 Rect solo = new Rect(area.x, area.y + 26f, area.width, area.height - 26f);
+
+                // 换了一个模块看配置时把滚动条归零（否则会带着上一个模块的位置落到底部）
+                if (_soloConfigFor != module.Id)
+                {
+                    _soloConfigFor = module.Id;
+                    _configSoloScroll = Vector2.zero;
+                    Log.Info($"[CFG] 单独查看配置：{module.DisplayName}（{module.Id}，{module.ConfigEntries.Count()} 条）");
+                }
+
                 bool handled = false;
                 try { handled = module.DrawSettings(solo); }
                 catch (Exception ex) { DdenUI.Label(solo, "配置绘制失败：" + ex.Message, DdenUI.Wrap); handled = true; }
                 if (handled) return;
 
                 float soloH = DdenUI.ConfigListHeight(module.ConfigEntries) + 12f;
-                _configScroll = GUI.BeginScrollView(solo, _configScroll,
+                _configSoloScroll = GUI.BeginScrollView(solo, _configSoloScroll,
                     new Rect(0, 0, solo.width - 18f, Mathf.Max(solo.height, soloH)));
                 DdenUI.DrawConfigGrouped(new Rect(0, 0, solo.width - 18f, soloH), module.ConfigEntries);
                 GUI.EndScrollView();
                 return;
             }
+            _soloConfigFor = null;
 
             // 全部模块 + 管理器自身，一次滚到底
             Rect body = new Rect(area.x, area.y + 26f, area.width, area.height - 26f);
+            // 每块实际占用 = 22(标题条) + 4 + 配置区 + 10(间距) = 36 + 配置区；
+            // 原来按 28 算，模块一多就差出几十像素 → 最底下的配置行滚不到。
+            const float blockOverhead = 36f;
             float total = 40f;
-            foreach (IDdenModule m in DdenHub.Modules) total += 28f + DdenUI.ConfigListHeight(m.ConfigEntries);
-            total += 28f + DdenUI.ConfigListHeight(Config.Entries());
-            foreach (DdenExternal.Block b in DdenExternal.Blocks) total += 28f + DdenUI.ConfigListHeight(b.Entries);
+            foreach (IDdenModule m in DdenHub.Modules) total += blockOverhead + DdenUI.ConfigListHeight(m.ConfigEntries);
+            total += blockOverhead + DdenUI.ConfigListHeight(Config.Entries());
+            foreach (DdenExternal.Block b in DdenExternal.Blocks) total += blockOverhead + DdenUI.ConfigListHeight(b.Entries);
 
             float w = body.width - 18f;
             _configScroll = GUI.BeginScrollView(body, _configScroll,
@@ -559,7 +646,7 @@ namespace DDExcNet.CUmodM
                 GUI.Label(new Rect(6f, y + 2f, w - 90f, 18f),
                     $"{b.Title}  <size=10><color=#89a>{b.Owner}</color></size>" +
                     (string.IsNullOrEmpty(b.Summary) ? "" : $"  ·  {b.Summary}"), DdenUI.Row);
-                if (b.Draw != null && DdenUI.Button(new Rect(w - 78f, y + 2f, 70f, 18f), "单独看"))
+                if (DdenUI.Button(new Rect(w - 78f, y + 2f, 70f, 18f), "单独看"))
                 {
                     _page = "ext:" + i;
                     GUI.EndScrollView();
@@ -573,16 +660,112 @@ namespace DDExcNet.CUmodM
             GUI.EndScrollView();
         }
 
-        private void DrawManagerConfig(Rect area)
+        /// <summary>内嵌像素图标（Resources/dragon_cloud.png，16×16，按 Point 过滤放大）。</summary>
+        private Texture2D Logo => _logo ??= LoadLogo();
+
+        private static Texture2D LoadLogo()
         {
-            DdenUI.Section(new Rect(area.x, area.y, area.width, 18f), "管理器自身");
-            float y = area.y + 24f;
-            foreach (ConfigEntryBase entry in Config.Entries())
+            try
             {
-                DdenUI.ConfigRow(new Rect(area.x, y, area.width, 22f), entry);
-                y += 26f;
-                if (y > area.yMax - 24f) break;
+                System.Reflection.Assembly asm = typeof(HubPlugin).Assembly;
+                string name = null;
+                foreach (string n in asm.GetManifestResourceNames())
+                {
+                    if (n.EndsWith("dragon_cloud.png", StringComparison.OrdinalIgnoreCase)) { name = n; break; }
+                }
+                if (name == null)
+                {
+                    Log.Debug("未找到内嵌图标 dragon_cloud.png（csproj 的 EmbeddedResource 掉了？）");
+                    return null;
+                }
+
+                using (Stream s = asm.GetManifestResourceStream(name))
+                {
+                    if (s == null) return null;
+                    var bytes = new byte[s.Length];
+                    int read = 0;
+                    while (read < bytes.Length)
+                    {
+                        int n = s.Read(bytes, read, bytes.Length - read);
+                        if (n <= 0) break;
+                        read += n;
+                    }
+
+                    var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                    if (!tex.LoadImage(bytes)) return null;
+                    // ★ Point：像素图放大时保持硬边，Bilinear 会糊成一团
+                    tex.filterMode = FilterMode.Point;
+                    tex.wrapMode = TextureWrapMode.Clamp;
+                    Log.Info($"[UI] 内嵌图标已加载：{tex.width}×{tex.height}（Point 过滤，按整数倍放大用）");
+                    return tex;
+                }
             }
+            catch (Exception ex)
+            {
+                Log.Debug("加载内嵌图标失败：" + ex.Message);
+                return null;
+            }
+        }
+
+        /// <summary>关于页：DDExcNet 是什么、作者、本仓库组成。</summary>
+        private void DrawAbout(Rect area)
+        {
+            GUI.Label(new Rect(area.x, area.y, area.width, 20f), "关于 DDExcNet", DdenUI.Title);
+
+            float top = area.y + 28f;
+            const float logoSize = 132f;
+            var logoBox = new Rect(area.x, top, logoSize, logoSize);
+            DdenUI.Fill(logoBox, DdenUI.Panel);
+            DdenUI.Frame(logoBox, DdenUI.AccentDim);
+            Texture2D logo = Logo;
+            if (logo != null) DdenUI.DrawTex(new Rect(logoBox.x + 2f, logoBox.y + 2f, logoSize - 4f, logoSize - 4f), logo);
+            else GUI.Label(logoBox, "DDEN", DdenUI.TabStyle);
+
+            float x = logoBox.xMax + 18f;
+            float w = Mathf.Max(120f, area.xMax - x);
+            float y = top;
+
+            GUI.Label(new Rect(x, y, w, 30f), "<size=22><b>DDExcNet</b></size>", DdenUI.Title);
+            y += 32f;
+            GUI.Label(new Rect(x, y, w, 18f), "龙域信息交换网络标准", DdenUI.Sub);
+            y += 20f;
+            GUI.Label(new Rect(x, y, w, 18f), "模组作者：<color=#8cd97c>cubstaryow</color>", DdenUI.Row);
+            y += 24f;
+            GUI.Label(new Rect(x, y, w, 76f),
+                "DDExcNet 是「幼龙云」所属「视界」世界观下的<b>龙域信息交换网络标准</b>——" +
+                "一套约定「不同端口、不同实现之间怎么互相认出对方、怎么交换状态」的接口规范。\n" +
+                "本仓库是它在《Casualties Unknown》里的落地实现：一个管理器、一套联机修复、一个可选的存档编辑器。",
+                DdenUI.Wrap);
+
+            float ly = top + logoSize + 18f;
+            DdenUI.Section(new Rect(area.x, ly, area.width, 18f), "本仓库组成");
+            ly += 26f;
+
+            (string name, string ver, string note)[] rows =
+            {
+                ("管理器", Info.Metadata.Version.ToString(), "界面、全部设置、兼容性检查都在这里"),
+                ("多人修复", ModuleVersion("mpfix") ?? "未安装", "联机不同步相关的一整套修正"),
+                ("存档编辑器", ModuleVersion("saveeditor") ?? "未安装", "图形化改存档（可选组件）"),
+            };
+
+            foreach ((string name, string ver, string note) in rows)
+            {
+                DdenUI.Fill(new Rect(area.x, ly, area.width, 20f), DdenUI.Panel);
+                DdenUI.Label(new Rect(area.x + 6f, ly + 1f, 170f, 18f), name, DdenUI.Row);
+                DdenUI.Label(new Rect(area.x + 180f, ly + 1f, 90f, 18f), "<color=#89a>" + ver + "</color>", DdenUI.Row);
+                DdenUI.Label(new Rect(area.x + 274f, ly + 1f, Mathf.Max(0f, area.width - 280f), 18f), note, DdenUI.Sub);
+                ly += 22f;
+            }
+
+            ly += 8f;
+            GUI.Label(new Rect(area.x, ly, area.width, 18f),
+                "兼容性检查：" + Compat.Headline() + "　·　设置都在「全部配置」页里，改完立刻生效", DdenUI.Sub);
+        }
+
+        private static string ModuleVersion(string id)
+        {
+            IDdenModule module = DdenHub.Find(id);
+            return module?.Version;
         }
 
         private void DrawModule(Rect area, IDdenModule module)

@@ -58,10 +58,10 @@ namespace DDEN.SaveEditor
             LogSource = base.Logger;
 
             CfgStandaloneKey = Config.Bind("UI", "StandaloneKey", new KeyboardShortcut(KeyCode.F9),
-                "管理器缺席时的兜底面板快捷键。管理器在跑时请直接用它（默认 F8）。");
+                "没有管理器时，用这个键打开存档编辑器自己的小窗口。");
             CfgScale = Config.Bind("UI", "Scale", 1.1f,
-                new ConfigDescription("兜底面板缩放（管理器内跟随管理器缩放）。", new AcceptableValueRange<float>(0.75f, 2f)));
-            CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出调试日志。");
+                new ConfigDescription("小窗口的界面缩放（从管理器里打开时跟随管理器）。", new AcceptableValueRange<float>(0.75f, 2f)));
+            CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出更详细的日志（排查问题用）。");
 
             Log = DDEN.Shared.Log.For(LogSource, "SaveEditor", CfgVerbose.Value);
 

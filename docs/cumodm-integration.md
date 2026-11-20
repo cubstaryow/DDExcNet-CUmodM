@@ -13,7 +13,7 @@
 | 级别 | 你要做的事 | 需要引用 DDEN.Shared 吗 | 你能得到什么 |
 | --- | --- | --- | --- |
 | **L0 什么都不做** | 无 | 否 | 出现在「兼容性」页的插件清单/补丁栈里；管理器不会动你的配置 |
-| **L1 交出配置（推荐给大多数模组）** | 在插件程序集里加 1 个成员（见 §1） | **不需要** | 你的所有 `ConfigEntry` 出现在「全部配置」页，按插件分组、两行式渲染、可直接改值并写回 cfg |
+| **L1 交出配置（推荐给大多数模组）** | 在插件程序集里加 1 个成员（见 §1） | **不需要** | 你的所有 `ConfigEntry` 出现在「全部配置」页，按插件分组、两行式渲染、可直接改值并写回 cfg；**并且自动获得一个独立配置页**（侧边栏「外部模组」、总览卡片、全部配置页的【单独看】三个入口都进得去） |
 | **L2 注册成 DDEN 模块** | 引用 `DDEN.Shared.dll`，实现 `IDdenModule`（见 §2） | 需要 | 额外获得：侧边栏入口、自己的功能页、自己的配置页、总览卡片、状态行 |
 | **L3 用公共能力** | 调用 `Compat` / `Mp` / `Game` / `DdenUI` / `Log` / `SaveCodec`（见 §3） | 需要 | 快捷键仲裁、联机频道、日志通道、统一皮肤、存档编解码、物理保险等 |
 
@@ -54,7 +54,7 @@ namespace MyMod
 | `DdenConfig` / `DdenConfigEntries` / `DdenConfigFile` | `ConfigFile`、`IEnumerable<ConfigEntryBase>`、`ConfigEntryBase`、或它们的 public static 属性/字段/无参方法 | **是（三选一）** | 交出哪些配置 |
 | `DdenTitle` | `string`（属性/字段/无参方法） | 否 | 「全部配置」页里的分组标题 |
 | `DdenSummary` | `string`（同上） | 否 | 标题右侧的一行状态 |
-| `DdenDraw` | `public static void DdenDraw(Rect area)` | 否 | 自定义页面；有它时该分组会出现「单独看」按钮 |
+| `DdenDraw` | `public static void DdenDraw(Rect area)` | 否 | 自定义页面内容；**不给也行** —— 不给就直接把你的 `ConfigEntry` 画成配置列表 |
 
 扫描规则（`DdenExternal.Scan()`）：
 - 遍历 `Chainloader.PluginInfos` 里**每个已加载插件**的程序集，跳过 DDEN 自己的 dll；

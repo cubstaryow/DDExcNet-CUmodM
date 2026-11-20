@@ -75,6 +75,9 @@ namespace DDEN.MPfix
                 Item it = items[i];
                 if (it == null) continue;
 
+                // 穿戴兜底正在处理这件：它“挂在身上但还没穿上”是**正常中间态**，谁先动手谁把另一套修复搞坏
+                if (WearGhostFix.RecentlyRequested(it.id)) continue;
+
                 Transform parent = it.transform.parent;
                 if (parent == null) continue;                              // 自由物品，不归我们管
                 if (parent.GetComponentInParent<Item>() != null) continue; // 容器内容物

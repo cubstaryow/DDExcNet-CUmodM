@@ -117,19 +117,19 @@ namespace DDEN.Shared
                     string note = kind ?? string.Empty;
                     if (kind == "本系列(旧)")
                     {
-                        note = "旧命名残留：与新版 GUID 不同但功能重叠，建议删除旧 dll";
+                        note = "旧版本留下的同名模组：功能和新版重复，建议删掉旧文件";
                     }
                     else if (kind == "QoL")
                     {
-                        note = "多存档位/自动存档由它接管；写入存档前会检测其 autosave 状态";
+                        note = "存档位和自动存档由它负责；我们写存档前会先确认它没在自动保存";
                     }
                     else if (kind == "联机")
                     {
-                        note = "芯片同步会镜像 RunUnchippedLock；补丁顺序已声明 HarmonyAfter";
+                        note = "“有无芯片”会跟它保持一致；我们的改动排在它之后执行";
                     }
                     else if (kind == "前置")
                     {
-                        note = "联机桥/注册表来源；版本过低会导致部分功能降级";
+                        note = "联机功能靠它；版本太旧的话，部分修复不会生效";
                     }
 
                     _rows.Add(new CompatRow
@@ -173,7 +173,7 @@ namespace DDEN.Shared
                         Name = Path.GetFileName(legacy),
                         Version = "-",
                         Level = CompatLevel.Problem,
-                        Note = "旧 CUmod 程序集仍在 plugins：会与新 DDEN 同时加载造成重复 GUID/双份界面，请删除"
+                        Note = "旧版本文件还在插件目录里：会和新版同时加载，界面会出现两份，请删掉它"
                     });
                 }
 
@@ -186,7 +186,7 @@ namespace DDEN.Shared
                         Name = group.Key,
                         Version = "-",
                         Level = CompatLevel.Problem,
-                        Note = "同一 dll 存在于多个目录：" + string.Join(" | ", group.Select(p => Shorten(p, plugins)))
+                        Note = "同一个文件出现在多个目录：" + string.Join(" | ", group.Select(p => Shorten(p, plugins)))
                     });
                 }
             }
@@ -205,10 +205,10 @@ namespace DDEN.Shared
         // ===== 3. 补丁栈（谁还改了同一个方法）=====
         private static void ScanPatchStacks()
         {
-            AddPatchRow("WorldGeneration.SetUnchipped", AccessTools.Method(typeof(WorldGeneration), "SetUnchipped"));
-            AddPatchRow("SaveSystem.SaveGame", AccessTools.Method(typeof(SaveSystem), "SaveGame"));
-            AddPatchRow("SaveSystem.TryLoadGame", AccessTools.Method(typeof(SaveSystem), "TryLoadGame"));
-            AddPatchRow("PlayerCamera.Update", AccessTools.Method(typeof(PlayerCamera), "Update"));
+            AddPatchRow("无芯片模式切换", AccessTools.Method(typeof(WorldGeneration), "SetUnchipped"));
+            AddPatchRow("存档保存", AccessTools.Method(typeof(SaveSystem), "SaveGame"));
+            AddPatchRow("存档读取", AccessTools.Method(typeof(SaveSystem), "TryLoadGame"));
+            AddPatchRow("画面主循环", AccessTools.Method(typeof(PlayerCamera), "Update"));
         }
 
         private static void AddPatchRow(string label, MethodBase method)
@@ -226,14 +226,14 @@ namespace DDEN.Shared
                 _rows.Add(new CompatRow
                 {
                     Name = label,
-                    Version = owners.Count + " 个补丁",
+                    Version = owners.Count + " 个模组同时改它",
                     Level = crowded ? CompatLevel.Warn : CompatLevel.Info,
                     Note = string.Join(", ", owners)
                 });
             }
             catch (Exception ex)
             {
-                _rows.Add(new CompatRow { Name = label, Version = "-", Level = CompatLevel.Info, Note = "补丁栈读取失败：" + ex.Message });
+                _rows.Add(new CompatRow { Name = label, Version = "-", Level = CompatLevel.Info, Note = "读取失败：" + ex.Message });
             }
         }
 
