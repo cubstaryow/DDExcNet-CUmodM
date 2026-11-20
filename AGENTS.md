@@ -319,8 +319,10 @@ ilspycmd -o decomp/qol  --nested-directories "<plugins>/QoL Unknown 1.1.5 - 实�
   详见 [docs/workflow.md](docs/workflow.md)。
 - **不要直接往 master 提交功能改动**，也不要替用户做合并/打 tag；`git push origin dev` 是例行动作，
   但**不要** force push、不要改 remote、不要删别人的分支。
-- **发布**：`pwsh scripts/release.ps1` 打包到 `dist/`（已 git-ignore），`-Upload` 走 gh CLI 或 `GITHUB_TOKEN`
-  建 GitHub Release。版本号只有一处：`Directory.Build.props` 的 `<DdenVersion>`（三个 dll 共用）。
+- **发布**：`pwsh scripts/release.ps1` 打包到 `dist/`（已 git-ignore）；`-Upload` 走 gh CLI 或 `GITHUB_TOKEN`
+  自动建 Release；用户用的是 **GitHub 桌面版**，它**不能发 Release 也不能建 tag** —— 所以手动发版走
+  `-OpenPage`（复制发布说明 + 打开网页）再拖 zip 上传。版本号只有一处：`Directory.Build.props` 的
+  `<DdenVersion>`（三个 dll 共用）。
 - **CI 构建不了**，别尝试加 Actions：编译需要游戏本体的 `Assembly-CSharp.dll` / `UnityEngine.*` 与
   `0Harmony.dll`，这些是商业游戏安装文件，不能进仓库也不能传 CI —— 只能本地构建再上传产物。
 - 不提交 `decomp/`、`bin/`、`obj/`、`dist/`、`backup/`、`artifacts/`。

@@ -25,7 +25,9 @@ param(
     [switch]$Upload,
     [string]$Notes,
     [switch]$SkipBuild,
-    [string]$Target
+    [string]$Target,
+    # 没有 gh / token 时用这条：把发布说明复制到剪贴板，并打开 GitHub 的「新建 Release」页
+    [switch]$OpenPage
 )
 
 $ErrorActionPreference = 'Stop'
@@ -126,9 +128,30 @@ try {
     Write-Host "== 发布说明: dist/RELEASE-$Tag.md"
 
     # ===== 6. 上传（可选） =====
+    # 仓库地址：gh / REST / 手动三种方式都要用
+    $remote = (git remote get-url origin) -replace '\.git$', ''
+    $rm = [regex]::Match($remote, 'github\.com[:/](?<owner>[^/]+)/(?<repo>[^/]+)$')
+    $repoUrl = if ($rm.Success) { "https://github.com/$($rm.Groups['owner'].Value)/$($rm.Groups['repo'].Value)" } else { $null }
+    $newReleaseUrl = if ($repoUrl) {
+        "$repoUrl/releases/new?tag=$Tag&title=" + [uri]::EscapeDataString("DDEN $Tag") + "&body=" + [uri]::EscapeDataString((Get-Content $notesPath -Raw))
+    } else { $null }
+
     if (-not $Upload) {
         Write-Host ''
-        Write-Host '未上传。要创建 GitHub Release，加 -Upload；或手动把 zip 拖到 Releases 页。' -ForegroundColor Yellow
+        if ($newReleaseUrl) {
+            Write-Host '手动发版（GitHub 桌面版 / 网页）：' -ForegroundColor Yellow
+            Write-Host "  1. 打开发布页：$repoUrl/releases/new" -ForegroundColor Yellow
+            Write-Host "     tag 填 $Tag，标题填 DDEN $Tag" -ForegroundColor Yellow
+            Write-Host "  2. 发布说明直接从 dist/RELEASE-$Tag.md 复制（或加 -OpenPage 自动复制到剪贴板并打开页面）" -ForegroundColor Yellow
+            Write-Host "  3. 把 dist/DDEN-$Tag.zip 拖进附件框，点 Publish release" -ForegroundColor Yellow
+        }
+        Write-Host ''
+        Write-Host '自动上传：加 -Upload（需要 gh CLI 或 $env:GITHUB_TOKEN）。' -ForegroundColor Yellow
+        if ($OpenPage -and $newReleaseUrl) {
+            Set-Clipboard -Value (Get-Content $notesPath -Raw)
+            Write-Host '== 发布说明已复制到剪贴板，正在打开新建 Release 页面…' -ForegroundColor Cyan
+            Start-Process $newReleaseUrl
+        }
         return
     }
 
@@ -143,14 +166,12 @@ try {
     }
 
     if (-not $env:GITHUB_TOKEN) {
-        throw '既没有 gh CLI，也没有 GITHUB_TOKEN 环境变量。装 gh（winget install GitHub.cli）后 gh auth login，或设置 $env:GITHUB_TOKEN 再跑。'
+        throw '既没有 gh CLI，也没有 GITHUB_TOKEN。用 -OpenPage 走网页手动上传，或装 gh（winget install GitHub.cli）后 gh auth login。'
     }
 
-    $remote = (git remote get-url origin) -replace '\.git$', ''
-    $m = [regex]::Match($remote, 'github\.com[:/](?<owner>[^/]+)/(?<repo>[^/]+)$')
-    if (-not $m.Success) { throw "解析不出 GitHub 仓库：$remote" }
-    $owner = $m.Groups['owner'].Value
-    $repo = $m.Groups['repo'].Value
+    if (-not $rm.Success) { throw "解析不出 GitHub 仓库：$remote" }
+    $owner = $rm.Groups['owner'].Value
+    $repo = $rm.Groups['repo'].Value
 
     $headers = @{ Authorization = "token $env:GITHUB_TOKEN"; Accept = 'application/vnd.github+json'; 'User-Agent' = 'DDEN-release' }
     Write-Host "== 用 REST API 创建 Release（$owner/$repo，target $Target）…" -ForegroundColor Cyan

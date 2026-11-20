@@ -75,12 +75,30 @@ pwsh scripts/release.ps1 -Version 1.2.1 -Notes "顺手修了什么" -Upload
 5. 生成 `dist/RELEASE-v<版本>.md`（安装步骤 + 上次 tag 以来的提交 + 校验值 + 授权说明）；
 6. 加 `-Upload` 时创建 tag `v<版本>` 的 Release 并挂上 zip。
 
-上传需要二选一：
+上传需要三选一：
 
-- **gh CLI**（推荐）：`winget install GitHub.cli` → `gh auth login` → 之后脚本自动用 `gh release create`；
-- **Token**：设 `$env:GITHUB_TOKEN`（`repo` 权限），脚本走 REST API 直接建 Release + 传附件。
+- **gh CLI**（最省事）：`winget install GitHub.cli` → `gh auth login` → 之后脚本自动用 `gh release create`；
+- **Token**：设 `$env:GITHUB_TOKEN`（`repo` 权限），脚本走 REST API 直接建 Release + 传附件；
+- **网页手动**（不需要装任何东西，见下）。
 
-两者都没有时，脚本只打包并提示你手动把 zip 拖到仓库 Releases 页（这条路永远可用）。
+### 用 GitHub 桌面版发版？—— 桌面版做不了，用网页
+
+GitHub Desktop **只能**做提交、推送、切分支、合并、开 PR；它**没有** Releases 页面，也**不能建 tag**。
+发版要回网页（桌面版里 `Repository → View on GitHub` 就是跳过去）：
+
+```powershell
+pwsh scripts/release.ps1 -OpenPage    # 打包 + 发布说明复制到剪贴板 + 自动打开新建 Release 页
+```
+
+然后在网页上：
+
+1. **Choose a tag** 填 `v1.2.0`（点 “Create new tag: v1.2.0 on publish”—— tag 会在发布时自动创建）；
+2. **Release title** 填 `DDEN v1.2.0`；
+3. 正文框 `Ctrl+V`（发布说明已在剪贴板，里面带安装步骤、本次改动、SHA256）；
+4. 把 `dist/DDEN-v1.2.0.zip` **拖进附件框**（“Attach binaries by dropping them here”），等它上传完；
+5. 点 **Publish release**。
+
+> 只有 84 KB 左右，网页上传很快。发完顺手核对一下正文里的 SHA256 和本地 `Get-FileHash` 结果一致。
 
 ### 版本号怎么走
 
