@@ -36,6 +36,18 @@ dotnet build "$ROOT/CUmod.slnx" -c "$CONFIG" -v m
 
 echo "== 部署到 $DDEN_DIR"
 mkdir -p "$DDEN_DIR"
+
+# 我们的产物清单：**只有这些文件由本脚本负责写/删**。
+# DDEN/ 目录里可能还有别人做的修复 mod，绝不能碰。
+OWNED=("DDEN.Shared.dll" "DDExcNet-CUmodM.dll" "DDEN.MPfix.dll" "DDEN.SaveEditor.dll")
+LEGACY_IN_DDEN=("DDEN.MPUnchippedSyncFix.dll")
+
+is_owned() {
+  local name="$1" o
+  for o in "${OWNED[@]}"; do [ "$name" = "$o" ] && return 0; done
+  return 1
+}
+
 cp -v "$ROOT/src/DDEN.Shared/bin/$CONFIG/DDEN.Shared.dll"         "$DDEN_DIR/"
 cp -v "$ROOT/src/DDExcNet.CUmodM/bin/$CONFIG/DDExcNet-CUmodM.dll" "$DDEN_DIR/"
 cp -v "$ROOT/src/DDEN.MPfix/bin/$CONFIG/DDEN.MPfix.dll"           "$DDEN_DIR/"
@@ -43,8 +55,8 @@ cp -v "$ROOT/src/DDEN.MPfix/bin/$CONFIG/DDEN.MPfix.dll"           "$DDEN_DIR/"
 if [ "$WITH_SAVEEDITOR" = "1" ]; then
   cp -v "$ROOT/src/DDEN.SaveEditor/bin/$CONFIG/DDEN.SaveEditor.dll" "$DDEN_DIR/"
 else
-  # 正常游戏不带存档编辑器：已部署过就撤掉（文件在跑游戏时可能被锁，提示一下即可）
-  if [ -e "$DDEN_DIR/DDEN.SaveEditor.dll" ]; then
+  # 正常游戏不带存档编辑器：已部署过就撤掉（只撤我们自己的这个名字）
+  if [ -e "$DDEN_DIR/DDEN.SaveEditor.dll" ] && is_owned "DDEN.SaveEditor.dll"; then
     if rm -f "$DDEN_DIR/DDEN.SaveEditor.dll" 2>/dev/null; then
       echo "== 已撤下 DDEN.SaveEditor.dll（正常游戏不带它；需要时加 --with-saveeditor）"
     else
@@ -55,12 +67,31 @@ else
   fi
 fi
 
-# 清理旧命名残留（否则会和新 dll 抢同一个功能 / 重复界面）
-for legacy in "$PLUGINS"/CUmod.*.dll "$DDEN_DIR"/DDEN.MPUnchippedSyncFix.dll; do
+# 清理我们自己的历史命名残留（只按已知文件名删，不做通配删除）
+for legacy in "$PLUGINS"/CUmod.*.dll; do
   [ -e "$legacy" ] || continue
   echo "== 删除旧版本残留: $legacy"
   rm -f "$legacy"
 done
+for legacy in "${LEGACY_IN_DDEN[@]}"; do
+  [ -e "$DDEN_DIR/$legacy" ] || continue
+  echo "== 删除旧版本残留: $DDEN_DIR/$legacy"
+  rm -f "$DDEN_DIR/$legacy"
+done
+
+# 报告并保护其它模组的文件（不删、不覆盖）
+shopt -s nullglob
+kept=()
+for f in "$DDEN_DIR"/*; do
+  [ -e "$f" ] || continue
+  name="$(basename "$f")"
+  is_owned "$name" && continue
+  kept+=("$name")
+done
+shopt -u nullglob
+if [ ${#kept[@]} -gt 0 ]; then
+  echo "== 保持不动（其它模组 / 非本脚本产物）: ${kept[*]}"
+fi
 
 # ===== 仓库根目录的插件备份 =====
 TS="$(date +%Y%m%d-%H%M%S)"

@@ -43,6 +43,11 @@ dotnet build CUmod.slnx -v m                  # 只编译
 
 - **默认不部署存档编辑器**：正常游戏只带共享层 + 管理器 + MPfix；如果之前部署过，脚本会主动把
   `plugins/DDEN/DDEN.SaveEditor.dll` 撤下来（游戏在跑导致文件被锁时会提示关游戏重跑）。
+- **`DDEN/` 目录不是我们的私有目录**：里面可能还有别人做的修复 mod
+  （实例：`ET-NoBatteryFix.dll`、`QoL-EMI-RecipeRowFix.dll`）。`scripts/build.sh` 用**白名单**
+  （`OWNED=(DDEN.Shared / DDExcNet-CUmodM / DDEN.MPfix / DDEN.SaveEditor)`）决定写谁、删谁，
+  并在结尾打印 `== 保持不动（其它模组 / 非本脚本产物）: …`。
+  **任何情况下都不要对 `DDEN/` 做通配删除**（`rm -rf`、`rm *.dll`）；新增产物必须同时加进 OWNED。
 - **每次部署自动备份到仓库根目录**（`backup/` 已 git-ignore）：
   `backup/plugins_<时间戳>/*.dll + manifest.txt`（含 md5/大小/配置/是否带编辑器）、
   `backup/latest/`（最近一次副本）、`backup/DDEN-plugins-<时间戳>.zip`（有 PowerShell 时）。
