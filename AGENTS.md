@@ -13,7 +13,7 @@
 | 产物 | 源码 | 作用 |
 | --- | --- | --- |
 | `DDExcNet-CUmodM.dll` | `src/DDExcNet.CUmodM/` | **管理器**：统一功能界面 + 全部配置界面 + **兼容性总控** |
-| `DDEN.MPfix.dll` | `src/DDEN.MPfix/` | 多人修复合集：无芯片同步 + 联机合成/物品生成兜底 + 物品网络登记 + 穿戴兜底 + 物品物理保险 + 挖块收敛 + 商人快照 + 掉线遗留物品冻结 + 娱乐（道生一 一生二） |
+| `DDEN.MPfix.dll` | `src/DDEN.MPfix/` | 多人修复合集：无芯片同步 + 联机合成/物品生成兜底 + 物品网络登记 + 穿戴兜底 + 物品物理保险 + 挖块收敛 + 商人快照 + 掉线遗留物品清理 + 娱乐（道生一 一生二） |
 | `DDEN.SaveEditor.dll` | `src/DDEN.SaveEditor/` | 可视化存档编辑器（图标/血条点选，QoL 多存档位） |
 | `DDEN.NetPerfTracker.dll` | `src/DDEN.NetPerfTracker/` | **性能跟踪器**（正式名 NetPerfTracker，调试/观测工具）：管理器里单独一页，帧数/CPU/物理压力曲线 + 世界对象与网络状态的文字读数；同时写 `BepInEx/config/DDEN/perf-*.log`。**不打任何补丁**，随发布包一起发（玩家不用也不会影响游戏，排查掉帧时让他开着就能抓现场） |
 | `DDEN.Shared.dll` | `src/DDEN.Shared/` | 公共层：反射、日志、联机桥、存档编解码、**IDdenModule / DdenHub / Compat / DdenUI** |
@@ -178,7 +178,20 @@ dotnet build CUmod.slnx -v m                  # 只编译
   （重复修复导致的错位/残留/孤儿），而且“贴图残留”从未被证实存在——是上一个 agent 的推测。
   **不要再加回来**：它们会去改物品的父级与 localPosition，一旦判断错就是"身上物品乱飞/被挪走"，
   比它想解决的问题更糟。真出现“装备浮空/贴图残留”，先查是谁改了父级，别用巡检去猜。
-- **现在只剩两个周期巡检**：`WearGhostFix.Tick()` 与 `StaleItemFreezer.Tick()`，
+- **掉线后另一台客机掉帧（`GhostItemCleaner`，2026-11 第二版）**：
+  现场数据（NetPerfTracker 实测）：物品 296 中**无主 107、无主且物理开着 82**、活跃刚体 336、碰撞体 676、
+  物理 2.55 步/帧、注册表 374 条里 **78 条死条目**、帧数 19；伴随「物品在原地闪烁」。
+  **v1 只冻结为什么没用**：`rb.simulated = false` 之后只要还有东西在写位置/状态，物理就被重新打开 →
+  闪烁 + 冻结失效（打不赢拉锯战）。所以 v2 改成两段式：
+  ① 先冻结（可逆、保守）；② 同一件物品**第二次**又活过来 → 判定为"主机已经不认的幽灵"，
+  调 Together **自己的** `NetObjectRegistry.Client_DeleteUnregisteredSyncableObject(go)` 让它删
+  （该接口自己会再判一次 `ObjectShouldNotBeSynced`，拒绝就退回冻结，绝不自己 Destroy）；
+  ③ 每 60 秒顺手清 `SyncRegistry` 里 key 已销毁的死条目（纯垃圾，且会让每帧遍历变贵）。
+  **只在客机跑**；本地玩家 2.5m 内不碰；`IsRegistered` 为真的物品**一律不碰**（主机还认得，
+  客户端怎么改都会被同步写回来 → 只计数，日志里打「主机仍认得 N 件」，这种情况只能主机侧解决）。
+  开关 `联机修正/CleanGhostItems`、`联机修正/CleanGhostItemsMaxPerSession`（400）。
+  判据日志：`[幽灵物品] 本次：冻结 a 件、删除 b 件、主机仍认得 c 件`。
+- **现在只剩两个周期巡检**：`WearGhostFix.Tick()` 与 `GhostItemCleaner.Tick()`，
   逐帧计时后每 60 秒汇总一条 `[巡检]`（平均 ≥0.5ms 或峰值 ≥2ms 才写），状态页常驻显示 `巡检开销`。
 - **“一生二”重复物品（重要）**：合成 / 购买 / 生成在客机上**也会跑一遍本地预测**。
   只要客机的 `Utils.Create` 成功造出模组物品，它自己那份 + 主机同步来的那份就是两份。

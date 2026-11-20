@@ -41,6 +41,6 @@
 | 物品物理保险 | 丢在地上的物品不再穿过墙体与地板往下消失 | `物品物理 / GuardDropPhysics`（开） |
 | 挖块修复 | 血量不再「掉一截又弹回」、挖掉的方块不再重生 | `联机修正 / SyncBlockBreak`（开）· `联机修正 / BlockDamageRatio`（6 倍）· `联机修正 / BlockBreakMinFraction`（0.5） |
 | 商人商品表对齐 | 打开交易界面时重新对齐一次商品表，避免「付了钱不发货」 | `联机修正 / TraderSnapshotOnOpen`（开） |
-| 掉线后的掉帧 | 把掉线遗留、一直下坠的异常物品原地停下（不移动、不删除），不再持续拖垮物理 | `联机修正 / FreezeGhostItems`（开）· `联机修正 / FreezeGhostItemsMaxPerSession`（400） |
+| 掉线后的掉帧 | 掉线遗留的异常物品先原地停下；再被写活（原地闪烁）就交给联机框架清掉；主机仍认得的物品一律不碰 | `联机修正 / CleanGhostItems`（开）· `联机修正 / CleanGhostItemsMaxPerSession`（400） |
 
 另有一个纯娱乐开关，不影响上面任何修复：`娱乐 / 道生一 一生二`（联机在商人那儿买东西多送一件，默认**关**）。

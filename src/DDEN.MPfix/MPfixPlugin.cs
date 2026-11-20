@@ -58,8 +58,8 @@ namespace DDEN.MPfix
         internal static ConfigEntry<bool> CfgBlockBreakSync;
         internal static ConfigEntry<float> CfgBlockDamageRatio;
         internal static ConfigEntry<float> CfgBlockBreakMinFraction;
-        internal static ConfigEntry<bool> CfgFreezeGhostItems;
-        internal static ConfigEntry<int> CfgFreezeGhostMax;
+        internal static ConfigEntry<bool> CfgCleanGhostItems;
+        internal static ConfigEntry<int> CfgCleanGhostMax;
 
         // ===== 娱乐 =====
         internal static ConfigEntry<bool> CfgDoublePurchase;
@@ -161,12 +161,13 @@ namespace DDEN.MPfix
                 new ConfigDescription("判定门槛：主机记录里这块方块至少已经掉了这个比例的血，才会接受“已经挖穿”的结论。\n" +
                                       "调低更灵敏（更容易修好），调高更保守（更难靠一句上报敲穿硬墙）。",
                     new AcceptableValueRange<float>(0f, 0.95f)));
-            CfgFreezeGhostItems = Config.Bind("联机修正", "FreezeGhostItems", true,
-                "修“一台客机掉线后，另一台客机帧数暴跌”。\n" +
-                "掉线玩家的物品有时会留在你这边变成「没人认领、还在一直下坠」的东西，\n" +
-                "它们会一直消耗物理计算，把人拖到十几帧。开启后会把这些物品**原地停下**（不移动、不删除）。");
-            CfgFreezeGhostMax = Config.Bind("联机修正", "FreezeGhostItemsMaxPerSession", 400,
-                new ConfigDescription("一局最多停下几件，超过就停手。",
+            CfgCleanGhostItems = Config.Bind("联机修正", "CleanGhostItems", true,
+                "修“一台客机掉线后，另一台客机帧数暴跌、地上的东西还在原地闪”。\n" +
+                "掉线玩家的物品有时会留在你这边变成「没人认领、还在一直下坠」的东西，一直吃物理计算。\n" +
+                "开启后先把它原地停下；如果它又被写活了（闪烁），就交给联机框架把这种幽灵清掉。\n" +
+                "主机那边还认得的物品一律不碰 —— 那种只能主机侧解决。");
+            CfgCleanGhostMax = Config.Bind("联机修正", "CleanGhostItemsMaxPerSession", 400,
+                new ConfigDescription("一局最多处理几件，超过就停手。",
                     new AcceptableValueRange<int>(0, 4000)));
             CfgDoublePurchase = Config.Bind("娱乐", "道生一 一生二", false,
                 "道生一，一生二：在商人那里买东西时额外多送一份，直接放进背包。\n" +
@@ -563,7 +564,7 @@ namespace DDEN.MPfix
                 float t0 = Time.realtimeSinceStartup;
                 WearGhostFix.Tick();
                 float t1 = Time.realtimeSinceStartup;
-                StaleItemFreezer.Tick();
+                GhostItemCleaner.Tick();
                 float t2 = Time.realtimeSinceStartup;
 
                 ReportTickCost((t2 - t0) * 1000f, (t1 - t0) * 1000f, (t2 - t1) * 1000f);
