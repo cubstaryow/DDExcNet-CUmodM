@@ -58,6 +58,7 @@ namespace DDEN.MPfix
         internal static ConfigEntry<bool> CfgBlockBreakSync;
         internal static ConfigEntry<float> CfgBlockDamageRatio;
         internal static ConfigEntry<float> CfgBlockBreakMinFraction;
+        internal static ConfigEntry<bool> CfgRelayGhostItems;
         internal static ConfigEntry<bool> CfgCleanGhostItems;
         internal static ConfigEntry<int> CfgCleanGhostMax;
 
@@ -161,11 +162,15 @@ namespace DDEN.MPfix
                 new ConfigDescription("判定门槛：主机记录里这块方块至少已经掉了这个比例的血，才会接受“已经挖穿”的结论。\n" +
                                       "调低更灵敏（更容易修好），调高更保守（更难靠一句上报敲穿硬墙）。",
                     new AcceptableValueRange<float>(0f, 0.95f)));
-            CfgCleanGhostItems = Config.Bind("联机修正", "CleanGhostItems", true,
+            CfgRelayGhostItems = Config.Bind("联机修正", "RelayGhostItems", true,
                 "修“一台客机掉线后，另一台客机帧数暴跌、地上的东西还在原地闪”。\n" +
-                "掉线玩家的物品有时会留在你这边变成「没人认领、还在一直下坠」的东西，一直吃物理计算。\n" +
-                "开启后先把它原地停下；如果它又被写活了（闪烁），就交给联机框架把这种幽灵清掉。\n" +
-                "主机那边还认得的物品一律不碰 —— 那种只能主机侧解决。");
+                "原理：主机把退场玩家的物品收进存档时，会把这份清单广播给所有客机，\n" +
+                "客机据此删掉本地那份「没人管、一直下坠」的副本。这是照着联机框架自己的退场流程做的，不靠猜。\n" +
+                "主机没开这个开关就不会有这类残留，客机也就不会删任何东西。");
+            CfgCleanGhostItems = Config.Bind("联机修正", "CleanGhostItems", false,
+                "【备用，默认关】只在本机自己判断哪些是没人要的遗留物（靠“无主 + 一直在动”）。\n" +
+                "判据不稳定（物品也可能真的掉很久，还有浮空机制），所以正常请用上面的 RelayGhostItems。\n" +
+                "它只冻结/清理本机看到的无主物品，作为最后兜底。");
             CfgCleanGhostMax = Config.Bind("联机修正", "CleanGhostItemsMaxPerSession", 400,
                 new ConfigDescription("一局最多处理几件，超过就停手。",
                     new AcceptableValueRange<int>(0, 4000)));
@@ -201,6 +206,7 @@ namespace DDEN.MPfix
             TraderSnapshotFix.RegisterHost();
             BlockDamageSyncFix.RegisterHost();
             DoublePurchase.Install(harmony);
+            GhostItemRelay.Install(harmony);
             _warmupUntil = Time.realtimeSinceStartup + 6f;      // 巡检耗时统计跳过冷启动
             DdenHub.Register(this);
             _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
@@ -564,6 +570,7 @@ namespace DDEN.MPfix
                 float t0 = Time.realtimeSinceStartup;
                 WearGhostFix.Tick();
                 float t1 = Time.realtimeSinceStartup;
+                GhostItemRelay.Tick();
                 GhostItemCleaner.Tick();
                 float t2 = Time.realtimeSinceStartup;
 

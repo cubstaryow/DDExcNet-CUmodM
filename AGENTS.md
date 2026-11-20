@@ -178,21 +178,26 @@ dotnet build CUmod.slnx -v m                  # 只编译
   （重复修复导致的错位/残留/孤儿），而且“贴图残留”从未被证实存在——是上一个 agent 的推测。
   **不要再加回来**：它们会去改物品的父级与 localPosition，一旦判断错就是"身上物品乱飞/被挪走"，
   比它想解决的问题更糟。真出现“装备浮空/贴图残留”，先查是谁改了父级，别用巡检去猜。
-- **掉线后另一台客机掉帧（`GhostItemCleaner`，2026-11 第二版）**：
-  现场数据（NetPerfTracker 实测）：物品 296 中**无主 107、无主且物理开着 82**、活跃刚体 336、碰撞体 676、
-  物理 2.55 步/帧、注册表 374 条里 **78 条死条目**、帧数 19；伴随「物品在原地闪烁」。
-  **v1 只冻结为什么没用**：`rb.simulated = false` 之后只要还有东西在写位置/状态，物理就被重新打开 →
-  闪烁 + 冻结失效（打不赢拉锯战）。所以 v2 改成两段式：
-  ① 先冻结（可逆、保守）；② 同一件物品**第二次**又活过来 → 判定为"主机已经不认的幽灵"，
-  调 Together **自己的** `NetObjectRegistry.Client_DeleteUnregisteredSyncableObject(go)` 让它删
-  （该接口自己会再判一次 `ObjectShouldNotBeSynced`，拒绝就退回冻结，绝不自己 Destroy）；
-  ③ 每 60 秒顺手清 `SyncRegistry` 里 key 已销毁的死条目（纯垃圾，且会让每帧遍历变贵）。
-  **只在客机跑**；本地玩家 2.5m 内不碰；`IsRegistered` 为真的物品**一律不碰**（主机还认得，
-  客户端怎么改都会被同步写回来 → 只计数，日志里打「主机仍认得 N 件」，这种情况只能主机侧解决）。
-  开关 `联机修正/CleanGhostItems`、`联机修正/CleanGhostItemsMaxPerSession`（400）。
-  判据日志：`[幽灵物品] 本次：冻结 a 件、删除 b 件、主机仍认得 c 件`。
-- **现在只剩两个周期巡检**：`WearGhostFix.Tick()` 与 `GhostItemCleaner.Tick()`，
-  逐帧计时后每 60 秒汇总一条 `[巡检]`（平均 ≥0.5ms 或峰值 ≥2ms 才写），状态页常驻显示 `巡检开销`。
+- **掉线后另一台客机掉帧（`GhostItemRelay` 主机点名 + `GhostItemCleaner` 备用，2026-11 第三版）**：
+  **先读 MP 自己的退场流程**（decomp/mp554）：主机 `ScavPlayer.OnDestroy` → `PlayerCheckpoint.WriteOne` →
+  `new PlayerSavedState(body)`：物品 `SetParent` 到 `SAVESTATE_<nb>` → `NetObjectRegistry.DetachSyncKeepMesh(go)` → 容器 `SetActive(false)`。
+  **`DetachSyncKeepMesh` 是 `if (!Net.IsServer) return;`，只改主机注册表、不给客机发任何消息** ——
+  客机那份副本于是没人管：`HeldSeat.Detach/Release` 把它 `SetParent(null)` 并设回 Dynamic + `simulated = true`，
+  碰撞体却停在"被抓时"的关闭状态 → 一路下坠、永远 sleep 不了（实测 82 件 / 336 刚体 / 2.55 步每帧 / 19fps）。
+  注意客机自己的 `SyncRegistry` 仍有这些条目 → `IsRegistered` 为真，所以"按注册状态判断"的写法会全部放过它们。
+  - **主修 `GhostItemRelay`**（按用户口径：主机点名、客机执行）：Harmony postfix 到
+    `Together.NetObjectRegistry.DetachSyncKeepMesh(GameObject)`（反射挂，因为 Together 不能硬引用），
+    记下 `{item.id, 坐标}`，1.2 秒攒批后用 CUCoreLib `MultiplayerBridge.Broadcast("ddn.mp.ghostitems", …)` 广播；
+    客机 `RegisterClientHandler` 收到后按 **id + 1.5m 内** 精确命中本地"无主副本"，调
+    `NetObjectRegistry.SafeDestroyObject`（MP 自己的销毁通道：先卸容器内容物 → 摘注册表 → Destroy）删掉。
+    **不用任何"是不是在下坠/还登不登记"的猜测**；开关 `联机修正/RelayGhostItems`（默认开）。
+  - **备用 `GhostItemCleaner`**：只在 `联机修正/CleanGhostItems`（**默认关**）打开时生效，
+    按"无主 + 一直在动 + 首见以来 y 掉 ≥1.5m"判断，先冻结、第二轮才删。用户明确说这条判据不稳
+    （物品可能真的掉很久、也有浮空机制），所以它只是兜底，别再把它当主修。
+  - `NetPerfTracker` 的「活跃刚体」只数 `Dynamic`（运动学/静态刚体不算压力），指标才反映真实开销。
+- **现在有三个周期节拍**：`WearGhostFix.Tick()`、`GhostItemRelay.Tick()`（主机攒批广播）、
+  `GhostItemCleaner.Tick()`（备用，默认关）；逐帧计时后每 60 秒汇总一条 `[巡检]`（平均 ≥0.5ms 或峰值 ≥2ms 才写），
+  状态页常驻显示 `巡检开销`。
 - **“一生二”重复物品（重要）**：合成 / 购买 / 生成在客机上**也会跑一遍本地预测**。
   只要客机的 `Utils.Create` 成功造出模组物品，它自己那份 + 主机同步来的那份就是两份。
   所以 `Utils_Create_ModItemPatch` 的第一道闸是 `if (Mp.IsRunning && !Mp.IsServer) return true;`
