@@ -23,3 +23,6 @@ DDEN/
 
 # 插件备份（本地生成，不进 git）
 backup/
+
+# 发布打包产物（本地生成，随 Release 上传）
+dist/

@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <AssemblyName>DDEN.Shared</AssemblyName>
+    <Version>$(DdenVersion)</Version>
     <RootNamespace>DDEN.Shared</RootNamespace>
   </PropertyGroup>
 

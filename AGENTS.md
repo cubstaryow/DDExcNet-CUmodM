@@ -237,6 +237,13 @@ dotnet build CUmod.slnx -v m                  # 只编译
   入口有三处，别只留「全部配置」：侧边栏「外部模组（只交配置）」、总览卡片、全部配置页的【单独看】，
   三个都指向 `ext:<下标>` 页（有 `DdenDraw` 画自定义页，没有就把它的 `ConfigEntry` 画成配置列表）。
   实测能自动认出 `QoL-EMI-RecipeRowFix` / `ET-NoBatteryFix` 这类别人做的插件并给它们生成独立配置页。
+- **授权边界（2026-11 定，别越界）**：**代码 = MPL-2.0**（根目录 `LICENSE`）；
+  **图标 / 名称 / 世界观文本 = 保留所有权利**（`LICENSE-ASSETS`）；第三方归属与「不复制别人代码」的说明在 `NOTICE`。
+  规矩：① 新增任何「资源」（png、字体、世界观文案、专有名词）必须同步登记到 `LICENSE-ASSETS`；
+  ② **不要把世界观文案写成 .cs 里的字符串** —— MPL 的「软件」会连带覆盖它，文案放 `Resources/*.txt`
+  由代码读取（例：`about.txt` 的 key=value 解析）；③ 借阅外部代码前先确认对方许可；
+  ④ 反编译只用于阅读结论，不复制代码，`decomp/` 永不提交；⑤ 新增源码文件不必加版权头（`LICENSE` 已覆盖），
+  但**不要**把别人的版权声明删掉。
 - **不要在模块里重复造兼容判断**，也别各自写自己的弹窗系统。
 - **存档编辑红线**：只改用户点过的字段；`cheatedSave`（禁用成就）**绝不自动写入**，仅由“进度/成就”页手动切换；
   写盘只走 `SaveCodec.Write` + `SyncMeta`（原子 + `.cumod.bak`），写前查 `Compat.IsQolAutosaveBusy()`。
@@ -303,7 +310,19 @@ ilspycmd -o decomp/qol  --nested-directories "<plugins>/QoL Unknown 1.1.5 - 实�
 | `QoL_Unknown.SaveManager/SaveFileStore/SaveMetadata` | `decomp/qol/…` |
 | `CUCoreLib.Networking.* / Registries.* / Helpers.AssetLoader` | `decomp/core/CUCoreLib.decompiled.cs` |
 
-## 8. Git
+## 8. Git / 分支 / 发布
 
-本仓库**已 `git init` 并做了首次提交，没有远端、没有 push**。用户会自己建 GitHub 仓库再推。
-不要自行 `git push`、不要改 remote、不要提交 `decomp/`、`bin/`、`obj/`。
+**已 `git init` 并有远端：`origin = https://github.com/cubstaryow/DDExcNet-CUmodM.git`，默认分支 `master`。**
+
+- **分支模型（2026-11 定）**：`master` = 发布分支（只放验收过的），`dev` = 日常工作分支。
+  **agent 每次会话的改动先提交并 push 到 `dev`**；用户验收通过后再由用户合并到 `master`。
+  详见 [docs/workflow.md](docs/workflow.md)。
+- **不要直接往 master 提交功能改动**，也不要替用户做合并/打 tag；`git push origin dev` 是例行动作，
+  但**不要** force push、不要改 remote、不要删别人的分支。
+- **发布**：`pwsh scripts/release.ps1` 打包到 `dist/`（已 git-ignore）；`-Upload` 走 gh CLI 或 `GITHUB_TOKEN`
+  自动建 Release；用户用的是 **GitHub 桌面版**，它**不能发 Release 也不能建 tag** —— 所以手动发版走
+  `-OpenPage`（复制发布说明 + 打开网页）再拖 zip 上传。版本号只有一处：`Directory.Build.props` 的
+  `<DdenVersion>`（三个 dll 共用）。
+- **CI 构建不了**，别尝试加 Actions：编译需要游戏本体的 `Assembly-CSharp.dll` / `UnityEngine.*` 与
+  `0Harmony.dll`，这些是商业游戏安装文件，不能进仓库也不能传 CI —— 只能本地构建再上传产物。
+- 不提交 `decomp/`、`bin/`、`obj/`、`dist/`、`backup/`、`artifacts/`。
