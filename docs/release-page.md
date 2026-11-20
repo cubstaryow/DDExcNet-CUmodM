@@ -42,8 +42,5 @@
 | 挖块修复 | 血量不再「掉一截又弹回」、挖掉的方块不再重生 | `联机修正 / SyncBlockBreak`（开）· `联机修正 / BlockDamageRatio`（6 倍）· `联机修正 / BlockBreakMinFraction`（0.5） |
 | 商人商品表对齐 | 打开交易界面时重新对齐一次商品表，避免「付了钱不发货」 | `联机修正 / TraderSnapshotOnOpen`（开） |
 | 掉线后的掉帧 | 把掉线遗留、一直下坠的异常物品原地停下（不移动、不删除），不再持续拖垮物理 | `联机修正 / FreezeGhostItems`（开）· `联机修正 / FreezeGhostItemsMaxPerSession`（400） |
-| 巡检开销 | 周期巡检共用一份附近角色列表、错峰执行，扫描变贵会自动放宽间隔，不会把帧数拖低 | `性能 / ItemSnapScanSeconds`（2 秒）· `性能 / WearableVisualScanSeconds`（2 秒） |
 
-另外几个开关是**可选保险**，不影响上面的修复，想关就关：
-`物品物理 / SnapWornItems`（物品贴合）、`联机修正 / CleanStaleWearableVisuals`（贴图清理）、
-`联机修正 / FixOrphanItems`（物品归位）、`娱乐 / 道生一 一生二`（联机买东西多送一件，默认**关**）。
+另有一个纯娱乐开关，不影响上面任何修复：`娱乐 / 道生一 一生二`（联机在商人那儿买东西多送一件，默认**关**）。
