@@ -180,6 +180,13 @@ namespace DDEN.MPfix
 
             Log = DDEN.Shared.Log.For(LogSource, "MPfix", CfgVerbose.Value);
 
+            // 用户口径（2026-11）：改完配置立即生效，不要重启游戏。
+            // 绝大多数开关本来就在“每次用到时读配置”，这里只额外处理两件必须在改动瞬间重算的事：
+            //   ① 详细日志（Log 通道的 verbose 是缓存值）；② 独立面板热键（缓存在 _standaloneKey）。
+            // 另外把“无芯片”那组改动直接触发一次同步，免得等下一个 watchdog 周期。
+            try { Config.SettingChanged += (sender, args) => OnSettingChanged(args.ChangedSetting); }
+            catch (Exception ex) { Logger.LogWarning("订阅配置变更失败（改配置后需重启才生效）：" + ex.Message); }
+
             Harmony harmony = new Harmony(Guid);
             TryPatch(harmony, typeof(WorldGeneration_SetUnchipped_Patch), "无芯片变更广播");
             TryPatch(harmony, typeof(Utils_Create_ModItemPatch), "联机合成/物品生成兜底");
@@ -188,18 +195,13 @@ namespace DDEN.MPfix
             TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropWearable_GuardPatch), "物品掉落物理保险（卸下）");
             ItemPhysicsGuard.InstallHeldQuietRepair(harmony);
             TryPatch(harmony, typeof(TraderSnapshotFix.ToggleTradeMenu_Postfix), "打开商人时索要商品表");
-            if (CfgQuietTraderUIModItems.Value) TraderUIQuietFix.Install(harmony);
-            if (CfgBlockBreakSync.Value)
-            {
-                TryPatch(harmony, typeof(BlockDamageSyncFix.DamageBlock_Patch), "客机挖块伤害收敛（上报）");
-                BlockDamageRelax.Install(harmony);
-            }
-            else
-            {
-                Log.Info("挖块收敛与比例放宽未启用（联机修正/SyncBlockBreak = false）。");
-            }
-            // 打单位（箱子/植物/动物）与挖块同一根因，独立开关
-            if (CfgSyncBuildingDamage.Value) BuildingDamageRelax.Install(harmony);
+
+            // 下面这几个补丁**一律装上**，由补丁内部每次调用时读配置 —— 这样在管理器里改开关立即生效，
+            // 不需要重启游戏（用户口径 2026-11：所有行为改完配置立刻可用）。
+            TraderUIQuietFix.Install(harmony);
+            TryPatch(harmony, typeof(BlockDamageSyncFix.DamageBlock_Patch), "客机挖块伤害收敛（上报）");
+            BlockDamageRelax.Install(harmony);
+            BuildingDamageRelax.Install(harmony);
 
             MigrateOldWatchdog();
 
@@ -549,6 +551,45 @@ namespace DDEN.MPfix
             _hasHostValue = true;
             _lastHostValue = value;
             _forcePushNextTick = true;
+        }
+
+        /// <summary>配置改动即时生效：重算缓存值，必要时立刻触发一次同步。</summary>
+        private static void OnSettingChanged(ConfigEntryBase entry)
+        {
+            try
+            {
+                if (entry == null) return;
+
+                if (ReferenceEquals(entry, CfgVerbose))
+                {
+                    Log.Verbose = CfgVerbose.Value;
+                    Log.Info($"详细日志已{(CfgVerbose.Value ? "打开" : "关闭")}（立即生效）。");
+                    return;
+                }
+
+                if (ReferenceEquals(entry, CfgStandaloneKey))
+                {
+                    MPfixPlugin p = Instance;
+                    if (p != null) p._standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, false);
+                    Log.Info($"独立面板热键已改为 {CfgStandaloneKey.Value.MainKey}（立即生效）。");
+                    return;
+                }
+
+                // 无芯片那组：立刻推一次，不用等 watchdog
+                if (entry.Definition != null && entry.Definition.Section == "无芯片同步")
+                {
+                    MPfixPlugin p = Instance;
+                    if (p != null) { p._forcePushNextTick = true; p._nextWatchdog = 0f; }
+                    Log.Info($"无芯片设置已更新：{entry.Definition.Key}（立即应用）。");
+                    return;
+                }
+
+                Log.Debug($"配置已更新：{entry.Definition?.Section}/{entry.Definition?.Key}（立即生效）。");
+            }
+            catch (Exception ex)
+            {
+                Log.Debug("应用配置变更失败：" + ex.Message);
+            }
         }
 
         private void Update()

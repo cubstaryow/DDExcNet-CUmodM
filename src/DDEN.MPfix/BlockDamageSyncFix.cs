@@ -291,6 +291,8 @@ namespace DDEN.MPfix
         {
             try
             {
+                // 运行时读配置：管理器里关掉「修挖方块」后立即回到原版行为，不用重启
+                if (!MPfixPlugin.CfgBlockBreakSync.Value) return true;
                 float ratio = Mathf.Max(VanillaRatio, MPfixPlugin.CfgBlockDamageRatio.Value);
                 float mult = AttackDamageMultiplier();
                 float host = hostOwnDamage * mult;
