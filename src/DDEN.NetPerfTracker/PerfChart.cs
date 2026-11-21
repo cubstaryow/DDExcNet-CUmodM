@@ -110,7 +110,7 @@ namespace DDEN.NetPerfTracker
             }
             for (int i = begin; i < count; i++)
             {
-                if ((events[i] & 27) == 0) continue; // players/world/connection/manual marker; not every low-FPS point.
+                if ((events[i] & 155) == 0) continue; // players/world/connection/manual/anomaly marker.
                 int x = (int)((times[i] - _start) / Math.Max(0.001f, _end - _start) * (_width - 1));
                 if (x >= 0 && x < _width) for (int y = 0; y < _height; y += 3) Dot(x, y, new Color32(255, 180, 70, 160));
             }

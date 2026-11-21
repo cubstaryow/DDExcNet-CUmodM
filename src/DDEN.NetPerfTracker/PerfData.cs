@@ -67,11 +67,26 @@ namespace DDEN.NetPerfTracker
         internal float T, Fps, MeanMs, WorstMs, Cpu, PhysicsMs, PhysicsPeakMs, SelfMs, SelfPeakMs;
         internal float StepsPerFrame, StepsPerSecond, ExpectedStepsPerSecond, Scale, FixedDt, HeapMb;
         internal float WindowSeconds, CensusBudgetMs, LastCensusSliceMs, SampleInterval, CensusInterval;
+        internal float ReferenceFps, WarningFps, SpikeRatio, SpikeMinMs, SpikeCooldown;
+        internal int SpikeCount;
         internal int Target, VSync, Players, GC0, GC1, GC2, LongFrames, Sync;
         internal int Frames, FixedSteps, PhysicsFrames;
         internal bool Detailed, Collision;
+        internal bool Focused;
         internal byte Event;
         internal ObjectCounts Objects;
         internal SceneCounts Scene;
+        internal StageTimings Stages;
+    }
+    internal struct TimingValue
+    {
+        internal float Mean, Peak;
+        internal int Frames;
+        internal static TimingValue Unknown => new TimingValue { Mean = -1, Peak = -1 };
+    }
+    internal struct StageTimings
+    {
+        internal TimingValue Total, Main, Render, Gpu, Present, Limit, Loop;
+        internal bool Enabled, Warming;
     }
 }
