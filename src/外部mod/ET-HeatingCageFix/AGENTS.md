@@ -43,6 +43,6 @@ dotnet run --no-build --project tests/HeatingCageFixTests/HeatingCageFixTests.cs
 
 77项离线检查覆盖真实业务逻辑及改名后的程序集／插件身份，但Unity、传输与反射边界使用模拟，不能当作Unity/Mono实际补丁执行或双机验收。游戏内检查开关、灯光/温度/腐坏、热源合成、两只不同状态笼子、存取、连续切换、晚加入、换层和重连。
 
-本轮整理文档与改名，不部署、不启动/停止游戏、不改真实配置或存档；用户已授权验证后提交并推送dev。将来部署遵守用户当次授权；仅处理准确列出的自有文件，不造插件备份，不碰其他模组。
+本文件保留独立模组的技术约束。协作方式见 [根目录agent.md](../../../agent.md)，个人工作约定按协作者身份选择 `agent/` 中的对应文件。部署、推送等操作遵守用户授权；仅处理准确列出的自有文件，不造插件备份，不碰其他模组。
 
 改名必须保留原GUID／cfg／存档键／频道，旧CageFix.dll与新ET-HeatingCageFix.dll不能同时安装；namespace为HeatingCageFix，配置桥全名为HeatingCageFix.DdenBridge。

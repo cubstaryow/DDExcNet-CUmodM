@@ -5,7 +5,9 @@
 ```text
 README.md                         玩家入口
 CHANGE.md                         当前版本修改与验证
-AGENTS.md                         维护操作边界
+agent.md                          多协作者公共协作说明
+AGENTS.md                         工具发现入口与简短索引
+agent/agent-<协作者标识>.md         不同协作者的agent工作说明
 src/DDEN.Shared/                  DDEN公共层
 src/DDExcNet.CUmodM/               管理器
 src/DDEN.MPfix/                    多人修复

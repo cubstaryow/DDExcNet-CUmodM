@@ -15,10 +15,11 @@
 | 本轮发现了哪些描述错误、如何统一 | [描述核对清单](description-audit.md) |
 | 后续中英文切换方案（未实现） | [双语计划](localization-plan.md) |
 | 当前变更与验证记录 | [CHANGE.md](../CHANGE.md) |
+| 多协作者与各agent工作说明 | [协作入口](../agent.md) |
 | 历史对话记录，仅供追溯 | [v1.5.0阶段记录](history/conversation-v1.5.0.md) |
 | 独立ET加热笼修复 | [ET-HeatingCageFix](../src/外部mod/ET-HeatingCageFix/README.md) |
 
-维护人员另读根目录 [AGENTS.md](../AGENTS.md) 与各源码目录的局部维护约束。
+维护人员先读根目录 [agent.md](../agent.md)，选择 `agent/` 中对应协作者的工作说明，并阅读各源码目录的局部技术约束。根目录 [AGENTS.md](../AGENTS.md) 保留为简短索引。
 
 ## 统一口径
 
