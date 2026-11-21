@@ -14,6 +14,7 @@ src/DDEN.MPfix/                    多人修复
 src/DDEN.SaveEditor/               存档编辑器
 src/DDEN.NetPerfTracker/           性能跟踪器
 src/外部mod/ET-Fix/      独立外部模组，含自身文档／检查／许可
+src/外部mod/JDI-DDEN/    独立工具撬石果模组，含自身文档／许可
 tools/                            跨模块及DDEN组件的离线检查
 scripts/                          本机构建部署和整合发布脚本
 docs/                             当前说明、接入协议、计划与历史索引
@@ -26,7 +27,7 @@ docs/history/                     明确过时的历史记录
 
 - 游戏：`L:\SteamLibrary\steamapps\common\Casualties Unknown`；路径可通过 `Directory.Build.props`或 `-p:GameDir=...`覆盖。
 - Unity 2022.3.62f3／Mono是引擎与运行时信息，不是游戏产品版本号。目标netstandard2.1，BepInEx 5、游戏自带HarmonyX和Newtonsoft.Json。
-- .NET SDK 10使用 `CUmod.slnx`。Shared以外的插件不得硬引用Together或QoL；ET-Fix还不得硬引用DDEN公共层、ET或CCL。
+- .NET SDK 10使用 `CUmod.slnx`。Shared以外的插件不得硬引用Together或QoL；ET-Fix、JDI-DDEN还不得硬引用DDEN公共层；JDI-DDEN对Together/CCL使用软依赖。
 - 当前联机核对目标为Together 5.5.4、CUCoreLib 1.1。只有对本机安装文件及明确测试过的接口作结论，更新后重新检查。
 
 ## 只构建
@@ -48,7 +49,7 @@ dotnet build CUmod.slnx -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=false
 ./scripts/build.sh Release --no-saveeditor
 ```
 
-默认部署五个DDEN产物及ET-Fix；`--no-saveeditor`只撤下已知的自有编辑器文件。**等待用户游戏退出后再部署，不为部署强制结束进程**，不造插件备份，不操作其它作者插件。部署目录为 `BepInEx/plugins/DDEN/`，只准按自有准确文件名处理。
+默认部署五个DDEN产物、ET-Fix及JDI-DDEN；`--no-saveeditor`只撤下已知的自有编辑器文件。**等待用户游戏退出后再部署，不为部署强制结束进程**，不造插件备份，不操作其它作者插件。部署目录为 `BepInEx/plugins/DDEN/`，只准按自有准确文件名处理。
 
 CageFix现名 `ET-Fix.dll`。原GUID `com.dden.heatingcagefix`、cfg、存档键与网络频道保留。部署脚本在DDEN目录移除已知旧名 `CageFix.dll`；若曾在plugins其它位置独立安装，用户需关闭游戏后移除那里那份旧文件。不全场扫描后删除未知DLL。
 

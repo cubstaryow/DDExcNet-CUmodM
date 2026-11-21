@@ -50,6 +50,8 @@
 
 **ET-Fix（ET 加热笼修复）**是包内独立可选模组：需要 Enhanced Tools 与 CUCoreLib，可不安装DDEN。它尝试修正关闭后仍腐坏、仍可作为合成热源的问题，并支持记住开关、联机确认。升级时先移除旧 `CageFix.dll`，只保留新 `ET-Fix.dll`；原配置继续使用。见 [独立说明](src/外部mod/ET-Fix/README.md)。
 
+**JDI-DDEN（工具撬石果）**：把带 `tool` 标签的物品拖到封闭石果上即可打开；单机/主机本地执行，客机通过 Together 请求主机，替代原版 StonefruitOpener。需 Together / CasualtiesMP（软依赖），见 [独立说明](src/外部mod/JDI-DDEN/README.md)。
+
 ## 文档与反馈
 
 [文档目录](docs/README.md) · [当前功能与边界](docs/features.md) · [构建与检查](docs/development.md) · [性能读数](docs/perf-tracker.md) · [外部模组接入](docs/cumodm-integration.md) · [变更记录](CHANGE.md)
