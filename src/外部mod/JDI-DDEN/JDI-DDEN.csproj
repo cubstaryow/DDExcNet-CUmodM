@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>JDI-DDEN</AssemblyName>
+    <RootNamespace>JustDragAToolOnIt</RootNamespace>
+    <Version>1.4.0</Version>
+    <Company>MornJor</Company>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="CasualtiesMP">
+      <HintPath>$(BepInExPluginsDir)\Together\CasualtiesMP.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="LiteNetLib">
+      <HintPath>$(BepInExPluginsDir)\Together\LiteNetLib.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="LiteEntitySystem">
+      <HintPath>$(BepInExPluginsDir)\Together\LiteEntitySystem.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>$(ManagedDir)\UnityEngine.AudioModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(ManagedDir)\UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

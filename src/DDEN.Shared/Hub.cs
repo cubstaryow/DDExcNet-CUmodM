@@ -40,6 +40,11 @@ namespace DDEN.Shared
         string ConfigNotice { get; }
     }
 
+    public interface IDdenConfigAvailability
+    {
+        string ConfigUnavailableReason(ConfigEntryBase entry);
+    }
+
     public interface IDdenModule
     {
         /// <summary>短 id（小写，唯一），用于导航与 URL 式跳转。</summary>

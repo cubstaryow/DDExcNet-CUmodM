@@ -1,142 +1,37 @@
-# 分支与发布流程
+# 提交、推送与本地发布 · v1.6.0
 
-一句话：**dev 上干活 → 你验收 → 合进 master → 打 tag 发包**。
-master 永远是可用的，dev 允许是半成品。
+## 分支和授权
 
-```
-            agent 每次会话                    你验收 + 合并                 打发布包
-本地 dev  ──────────────►  origin/dev  ──────────────►  origin/master  ──────────────►  GitHub Releases
-```
+`dev`用于当前开发，`master`用于已验收内容。当前远端为 `origin`；每次操作前核对实际状态，不把文档当作实时分支状态。
 
-## 一、分支模型
+用户本次已授权整理完成后push：检查改动、运行适当验证、仅暂存本次文件并提交，然后普通推送 `origin/dev`。不要把此授权延伸为自动合并master、force push、改远端、创建tag或发布Release。遇到远端新增提交先检查差异，不能覆盖它。
 
-| 分支 | 角色 | 规矩 |
-| --- | --- | --- |
-| `master` | **发布分支**（默认分支） | 只放验收过的代码；每次合并后同步 push |
-| `dev` | **日常工作分支** | agent 的所有改动先提交到这里；允许中间状态 |
+不要默认 `git add -A`收进全部内容，也不用 `reset --hard/clean`解决工作区冲突。文档、代码、资源与生成产物分清；反编译、依赖、bin/obj/dist与真实存档不进提交。
 
-> 只有两个长期分支，不做 `feature/*`——这个项目改动集中在几个模块，两条线足够，少一层合并就少一类事故。
+## 本地构建与验收
 
-### agent 每次会话的固定动作
+先按 [development.md](development.md)只构建并执行相关离线检查，再按需要在获得授权的游戏实例内验收。`build.sh`用Bash运行，不用PowerShell解释脚本内容。默认部署全部五个DDEN产物和独立ET-Fix；只想不带编辑器用 `--no-saveeditor`。
 
-```powershell
-git checkout dev
-git add -A
-git commit -m "<一句话说明这次改了什么>"
-git push origin dev          # ← “先上传这个分支”
-```
+原生／Harmony执行、视觉效果与真实双机联机需独立记录。主机开启无芯片后客机规则一致、不同角色近战与x3倍率、退出／重连物品、缺依赖禁用、主机配置恢复等均不能靠菜单自检替代。
 
-### 你验收 → 合进 master
+## 打包与发布
 
-验收先跑三件套（见 AGENTS.md §4）：`cumod.selftest` / `cumod.uitest` / `cumod.cfgtest`，
-再实际进一局游戏看那几条修复。确认没问题：
+版本基准是 `Directory.Build.props`中的DdenVersion；同步各BepInPlugin版本与文档。当前1.6.0，不能用旧包文件名或旧哈希代表本次构建。
+
+从仓库根目录执行：
 
 ```powershell
-# 方式 A：本地合并（推荐，历史干净）
-git checkout master
-git merge --no-ff dev -m "合并 dev：<本次内容>"
-git push origin master
-
-# 方式 B：GitHub 上开 PR（dev → master），审完点 Merge
+pwsh scripts/release.ps1
 ```
 
-出问题就**别合**：在 dev 上继续修，或 `git revert <提交>` 掉那一条。
+默认构建Release，组装 `dist/DDEN-v1.6.0.zip`与发布说明；不上传。包内是五个DDEN产物、`ET-Fix.dll`及README／LICENSE／LICENSE-ASSETS／NOTICE，不含游戏依赖、配置和存档。发布正文来自 [release-page.md](release-page.md)。
 
-### 合并前的最小自检
+脚本需要本地git历史生成变更说明；`-Upload`才会创建线上Release并上传，`-OpenPage`打开发布页面。它们是独立动作，本次push授权不自动包含线上发布。桌面工具能力可能变化，不用它的限制推断发布已经发生。
 
-```powershell
-pwsh scripts/build.sh          # 编译 + 部署（不带存档编辑器）
-# 游戏里按 F11 开管理器，翻一遍「全部配置」「兼容性」「关于」
-# 日志看：Select-String LogOutput.log -Pattern 'Exception|\[MPCOMPAT\]|\[CraftFix\]'
-```
+本地构建需要商业游戏及已安装前置的程序集；不能把这些依赖上传到仓库或公共CI。完整包应在本地检查文件名、版本、依赖和SHA-256。不要承诺固定包大小。
 
-## 二、发布
+## 改名升级
 
-### 为什么不能交给 GitHub Actions 自动构建
+CageFix改为 **ET-Fix**，旧cfg的GUID仍为 `com.dden.heatingcagefix`，原存档键和频道不变。安装时删除旧 `CageFix.dll`，只保留新DLL；脚本只清理DDEN目录内已知旧名，其他独立安装位置手动核对。改名不意味着改变修复算法。
 
-这个项目**编译期就要游戏本体的托管程序集**（`Assembly-CSharp.dll`、`UnityEngine.*.dll`）
-和 BepInEx 的 `0Harmony.dll` —— 它们是商业游戏的安装文件，既不能进仓库、也不能传到 CI。
-所以：**本地构建，上传产物**。这不是懒，是版权约束下的唯一做法。
-
-### 一条命令发版
-
-```powershell
-pwsh scripts/release.ps1                 # 打包到 dist/（不上传）
-pwsh scripts/release.ps1 -Upload         # 打包 + 创建 GitHub Release 并上传
-pwsh scripts/release.ps1 -Version 1.2.1 -Notes "顺手修了什么" -Upload
-```
-
-脚本做的事：
-
-1. 读 `Directory.Build.props` 的 `<DdenVersion>` 作为版本号（**改版本只改这一行**）；
-2. `dotnet build -c Release`；
-3. 组装 `dist/DDEN-v<版本>/`：**全部五个 dll**（共享层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器）
-   + `README.md` + `LICENSE` + `LICENSE-ASSETS` + `NOTICE`；
-4. 压成 `dist/DDEN-v<版本>.zip`，打印 **SHA256**；
-5. 生成 `dist/RELEASE-v<版本>.md`（安装步骤 + **`docs/release-page.md` 的模块说明** + 上次 tag 以来的提交 + 校验值 + 授权说明）；
-   想改发布页文案只改 `docs/release-page.md`，不用动脚本；
-6. 加 `-Upload` 时创建 tag `v<版本>` 的 Release 并挂上 zip。
-
-上传需要三选一：
-
-- **gh CLI**（最省事）：`winget install GitHub.cli` → `gh auth login` → 之后脚本自动用 `gh release create`；
-- **Token**：设 `$env:GITHUB_TOKEN`（`repo` 权限），脚本走 REST API 直接建 Release + 传附件；
-- **网页手动**（不需要装任何东西，见下）。
-
-### 用 GitHub 桌面版发版？—— 桌面版做不了，用网页
-
-GitHub Desktop **只能**做提交、推送、切分支、合并、开 PR；它**没有** Releases 页面，也**不能建 tag**。
-发版要回网页（桌面版里 `Repository → View on GitHub` 就是跳过去）：
-
-```powershell
-pwsh scripts/release.ps1 -OpenPage    # 打包 + 发布说明复制到剪贴板 + 自动打开新建 Release 页
-```
-
-然后在网页上：
-
-1. **Choose a tag** 填 `v1.2.0`（点 “Create new tag: v1.2.0 on publish”—— tag 会在发布时自动创建）；
-2. **Release title** 填 `DDEN v1.2.0`；
-3. 正文框 `Ctrl+V`（发布说明已在剪贴板，里面带安装步骤、本次改动、SHA256）；
-4. 把 `dist/DDEN-v1.2.0.zip` **拖进附件框**（“Attach binaries by dropping them here”），等它上传完；
-5. 点 **Publish release**。
-
-> 只有 84 KB 左右，网页上传很快。发完顺手核对一下正文里的 SHA256 和本地 `Get-FileHash` 结果一致。
-
-### 版本号怎么走
-
-- 单套发布版本：三个 dll 共用 `Directory.Build.props` 的 `<DdenVersion>`，
-  Release 页上看到的就是同一个版本号，不会出现「管理器 1.0.0 / 修复 1.2.0」的混乱。
-- 规则建议：**改了行为 → 次版本 +1**（1.2.0 → 1.3.0）；**只修 bug → 修订号 +1**（1.2.0 → 1.2.1）；
-  破坏性调整（配置键改名、目录结构变化）→ 主版本 +1 并在 Release 说明里写清迁移方式。
-- 发版顺序：合并到 master → 确认 master 是你要发的那份 → 跑 `release.ps1 -Upload`。
-
-### 发布包里有什么
-
-```
-DDEN-v1.2.0.zip
-├── DDEN.Shared.dll          ← 公共层，必须有
-├── DDExcNet-CUmodM.dll      ← 管理器
-├── DDEN.MPfix.dll           ← 多人修复
-├── README.md                ← 安装与功能说明
-├── LICENSE                  ← 代码：MPL-2.0
-├── LICENSE-ASSETS           ← 图标/世界观：保留所有权利
-└── NOTICE                   ← 第三方归属
-```
-
-存档编辑器（`DDEN.SaveEditor.dll`）**不进发布包**：它是可选组件，需要的人自己构建时带上
-（`scripts/build.sh --with-saveeditor`）。
-
-### 发完要做的三件事
-
-1. 把 zip 的 SHA256 贴到发布帖（脚本已经写进 Release 说明里）；
-2. 在 README 顶部/简介里更新「当前版本」；
-3. 有人反馈问题时，先看日志里 `[MPCOMPAT]` 打出的联机框架版本是否在已校对范围内。
-
-## 三、出事了怎么办
-
-| 情况 | 做法 |
-| --- | --- |
-| 刚合并到 master 就发现坏了 | `git revert <合并提交>` → push → 立刻发一个修订版本 |
-| 已经发出去的版本有严重问题 | 不要删 Release（会让人以为被攻击），在其描述里加一行「已知问题，请用 vX.Y.Z」，然后发新版 |
-| dev 上改乱了 | `git reset --hard origin/dev`（丢掉本地未提交的）或从 master 重新拉一条 dev |
-| 忘记改版本号就发了 | 重新构建会覆盖同名 zip；Release 上的 tag 已经用完这个号，那就把版本号加一下重发 |
+旧包可保留追溯，但它们包含旧名、旧文档和旧版本，不能直接更名后宣称为新包。历史记录见 [history](history/conversation-v1.5.0.md)。

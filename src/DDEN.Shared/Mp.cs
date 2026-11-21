@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Reflection;
 using Newtonsoft.Json.Linq;
 
 namespace DDEN.Shared
@@ -9,11 +11,37 @@ namespace DDEN.Shared
     /// </summary>
     public static class Mp
     {
+        private static Func<bool> _running, _client, _server, _bridgeReady, _coreAvailable;
+        private static readonly Dictionary<string, MethodInfo> Methods = new Dictionary<string, MethodInfo>();
+        private static bool Flag(ref Func<bool> read, string typeName, string name)
+        {
+            if (read == null)
+            {
+                var getter = Reflect.Type(typeName)?.GetProperty(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)?.GetGetMethod(true);
+                if (getter == null) return false; // No negative cache: dependencies can still be loading.
+                read = (Func<bool>)Delegate.CreateDelegate(typeof(Func<bool>), getter);
+            }
+            try { return read(); } catch { return false; }
+        }
+        private static object Bridge(string method, Type[] types, params object[] args)
+        {
+            string key = method + "/" + types.Length;
+            if (!Methods.TryGetValue(key, out var call))
+            {
+                var type = Reflect.Type("CUCoreLib.Networking.MultiplayerBridge");
+                call = type?.GetMethod(method, BindingFlags.Static | BindingFlags.Public, null, types, null);
+                if (call == null) return null;
+                Methods[key] = call;
+            }
+            object result = call.Invoke(null, args);
+            return call.ReturnType == typeof(void) ? (object)true : result;
+        }
+        public static bool BridgeReady => Flag(ref _bridgeReady, "CUCoreLib.Networking.MultiplayerApi", "BridgeReceiversInstalled");
         public static bool CoreAvailable
         {
             get
             {
-                try { return CUCoreLib.Networking.MultiplayerApi.IsAvailable; }
+                try { return Compat.PluginLoaded("net.cucorelib") && Flag(ref _coreAvailable, "CUCoreLib.Networking.MultiplayerApi", "IsAvailable"); }
                 catch (Exception ex) { Log.Debug("Mp.CoreAvailable: " + ex.Message); return false; }
             }
         }
@@ -22,7 +50,7 @@ namespace DDEN.Shared
         {
             get
             {
-                try { return CUCoreLib.Networking.MultiplayerApi.IsRunning; }
+                try { return Flag(ref _running, "Together.Net", "IsRunning"); }
                 catch { return false; }
             }
         }
@@ -31,7 +59,7 @@ namespace DDEN.Shared
         {
             get
             {
-                try { return CUCoreLib.Networking.MultiplayerApi.IsServer; }
+                try { return Flag(ref _server, "Together.Net", "IsServer"); }
                 catch { return false; }
             }
         }
@@ -40,7 +68,7 @@ namespace DDEN.Shared
         {
             get
             {
-                try { return CUCoreLib.Networking.MultiplayerApi.IsClient; }
+                try { return Flag(ref _client, "Together.Net", "IsClient"); }
                 catch { return false; }
             }
         }
@@ -50,7 +78,10 @@ namespace DDEN.Shared
         {
             try
             {
-                CUCoreLib.Networking.MultiplayerSyncRegistry.RegisterModule(key, capture, apply);
+                var type = Reflect.Type("CUCoreLib.Networking.MultiplayerSyncRegistry");
+                var method = type?.GetMethod("RegisterModule", new[] { typeof(string), typeof(Func<JObject>), typeof(Action<JObject>) });
+                if (method == null) return false;
+                method.Invoke(null, new object[] { key, capture, apply });
                 return true;
             }
             catch (Exception ex)
@@ -64,8 +95,8 @@ namespace DDEN.Shared
         {
             try
             {
-                CUCoreLib.Networking.MultiplayerBridge.RegisterClientHandler(channel, handler);
-                return true;
+                if (Reflect.Type("CUCoreLib.Networking.MultiplayerBridge") == null) return false;
+                return Bridge("RegisterClientHandler", new[] { typeof(string), typeof(Action<JToken>) }, channel, handler) is bool ok && ok;
             }
             catch (Exception ex)
             {
@@ -78,8 +109,8 @@ namespace DDEN.Shared
         {
             try
             {
-                CUCoreLib.Networking.MultiplayerBridge.RegisterServerHandler(channel, handler);
-                return true;
+                if (Reflect.Type("CUCoreLib.Networking.MultiplayerBridge") == null) return false;
+                return Bridge("RegisterServerHandler", new[] { typeof(string), typeof(Func<JToken, JToken>) }, channel, handler) is bool ok && ok;
             }
             catch (Exception ex)
             {
@@ -90,19 +121,19 @@ namespace DDEN.Shared
 
         public static bool Broadcast(string channel, object payload, bool includeHost = false)
         {
-            try { return CUCoreLib.Networking.MultiplayerBridge.Broadcast(channel, payload, includeHost); }
+            try { return Bridge("Broadcast", new[] { typeof(string), typeof(object), typeof(bool), typeof(bool) }, channel, payload, includeHost, true) is bool sent && sent; }
             catch (Exception ex) { Log.Debug($"Broadcast('{channel}') 失败：{ex.Message}"); return false; }
         }
 
         public static bool SendToServer(string channel, object payload)
         {
-            try { return CUCoreLib.Networking.MultiplayerBridge.SendToServer(channel, payload); }
+            try { return Bridge("SendToServer", new[] { typeof(string), typeof(object), typeof(bool) }, channel, payload, true) is bool sent && sent; }
             catch (Exception ex) { Log.Debug($"SendToServer('{channel}') 失败：{ex.Message}"); return false; }
         }
 
         public static bool RequestServer(string channel, object payload, Action<JToken> onResponse)
         {
-            try { return CUCoreLib.Networking.MultiplayerBridge.RequestServer(channel, payload, onResponse); }
+            try { return Bridge("RequestServer", new[] { typeof(string), typeof(object), typeof(Action<JToken>), typeof(bool) }, channel, payload, onResponse, true) is bool sent && sent; }
             catch (Exception ex) { Log.Debug($"RequestServer('{channel}') 失败：{ex.Message}"); return false; }
         }
 

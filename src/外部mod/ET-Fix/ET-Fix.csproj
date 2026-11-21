@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>ET-Fix</AssemblyName><RootNamespace>HeatingCageFix</RootNamespace><Version>1.7.0</Version></PropertyGroup>
+  <ItemGroup>
+    <Reference Remove="CUCoreLib" />
+    <Compile Remove="tests/**/*.cs" />
+  </ItemGroup>
+  <Target Name="DeployPlugin" AfterTargets="Build" Condition="'$(DeployOnBuild)' == 'true'">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(DdenPluginsDir)" />
+    <Delete Files="$(DdenPluginsDir)\CageFix.dll" Condition="Exists('$(DdenPluginsDir)\CageFix.dll')" />
+  </Target>
+</Project>

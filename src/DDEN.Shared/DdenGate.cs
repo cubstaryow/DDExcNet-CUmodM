@@ -8,7 +8,7 @@ namespace DDEN.Shared
     /// 版本对不上时不能装作没事继续跑 —— 那会变成"看起来修好了，其实在跟别的代码对打"。
     ///
     /// 规则：
-    ///   · `GameVersion` / `MpVersion` 与本文件里的预期值一致 → 放行；
+    ///   · `MpVersion` 与预期联机版本一致 → 放行，GameVersion只作展示参考；
     ///   · 不一致时，必须由用户在管理器「总览」里显式打开「忽略核对环境版本」才放行；
     ///   · 没放行时，依赖版本核对的模块（目前是 MPfix）主开关视为关闭，并在主界面挂一条醒目提示。
     /// </summary>
@@ -56,13 +56,13 @@ namespace DDEN.Shared
 
             try
             {
-                Version v = CUCoreLib.Networking.MultiplayerApi.KrokMpVersion;
+                Version v = Compat.PluginVersion("CasualtiesMP");
                 MpVersion = v == null ? "未安装联机组件" : v.ToString();
             }
             catch { MpVersion = "未知"; }
         }
 
-        /// <summary>两边的版本都和本版 DDEN 核对过的一致。</summary>
+        /// <summary>当前仅核对联机组件版本；游戏版本用于参考展示。</summary>
         public static bool VersionOk
         {
             get
@@ -73,7 +73,7 @@ namespace DDEN.Shared
         }
 
         /// <summary>被闸门拦住：版本不一致，且用户没有打开「忽略核对环境版本」。</summary>
-        public static bool Blocked => !IgnoreEnv && !VersionOk;
+        public static bool Blocked => Compat.PluginLoaded("CasualtiesMP") && !IgnoreEnv && !VersionOk;
 
         /// <summary>给玩家看的一句话说明（不含任何内部术语以外的实现细节）。</summary>
         public static string Reason =>

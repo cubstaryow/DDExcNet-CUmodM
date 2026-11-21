@@ -6,7 +6,7 @@ using UnityEngine;
 namespace DDEN.Shared
 {
     /// <summary>DDEN 统一外观：皮肤、图标、常用控件、配置项通用渲染器。</summary>
-    public static class DdenUI
+    public static partial class DdenUI
     {
         // ===== 配色 =====
         public static readonly Color Bg = new Color(0.07f, 0.08f, 0.10f, 0.96f);
@@ -124,6 +124,8 @@ namespace DDEN.Shared
 
         private static readonly Dictionary<string, Sprite> IconCache = new Dictionary<string, Sprite>(StringComparer.Ordinal);
         private static readonly HashSet<string> IconMissing = new HashSet<string>(StringComparer.Ordinal);
+        private delegate bool TryModIcon(string id, out Sprite sprite);
+        private static TryModIcon _tryModIcon;
 
         /// <summary>取物品图标：先 CUCoreLib 注册表（含模组注册的图标），再退回 Resources。</summary>
         public static Sprite ItemIcon(string id)
@@ -134,7 +136,12 @@ namespace DDEN.Shared
             Sprite sprite = null;
             try
             {
-                if (!CUCoreLib.Registries.ItemRegistry.TryGetIcon(id, out sprite)) sprite = null;
+                if (_tryModIcon == null)
+                {
+                    var method = Reflect.Type("CUCoreLib.Registries.ItemRegistry")?.GetMethod("TryGetIcon", new[] { typeof(string), typeof(Sprite).MakeByRefType() });
+                    if (method != null) _tryModIcon = (TryModIcon)Delegate.CreateDelegate(typeof(TryModIcon), method);
+                }
+                if (_tryModIcon != null && !_tryModIcon(id, out sprite)) sprite = null;
             }
             catch (Exception ex)
             {
@@ -165,12 +172,21 @@ namespace DDEN.Shared
         public static bool DrawTextureUv(Rect r, Texture tex, Rect uv, Color? tint = null, bool mirrorX = false)
         {
             if (tex == null) return false;
-            if (mirrorX) uv = new Rect(1f - uv.x - uv.width, uv.y, uv.width, uv.height);
+            if (mirrorX) uv = new Rect(uv.x + uv.width, uv.y, -uv.width, uv.height);
             Color old = GUI.color;
             GUI.color = tint ?? Color.white;
             GUI.DrawTextureWithTexCoords(r, tex, uv, true);
             GUI.color = old;
             return true;
+        }
+
+        public static bool DrawItemIcon(Rect box, string id)
+        {
+            var sprite = ItemIcon(id);
+            if (sprite == null) return false;
+            var source = sprite.textureRect;
+            var fit = new ImageFit(box.width, box.height, source.width, source.height);
+            return DrawSprite(new Rect(box.x + fit.X, box.y + fit.Y, fit.Width, fit.Height), sprite);
         }
 
         /// <summary>带边框的图标格；返回是否被点击。tooltip 用 Hover 登记，由 DrawTooltip 统一画在窗口内。</summary>
@@ -180,7 +196,7 @@ namespace DDEN.Shared
             Frame(r, border, selected ? 2f : 1f);
             sprite = ItemIcon(id);
             Rect inner = new Rect(r.x + 4f, r.y + 4f, r.width - 8f, r.height - 8f);
-            if (!DrawSprite(inner, sprite))
+            if (!DrawItemIcon(inner, id))
             {
                 GUI.Label(inner, "?", TabStyle);
             }
@@ -193,14 +209,14 @@ namespace DDEN.Shared
         private static string _tip;
 
         /// <summary>每帧开始清一次，避免上一帧的提示粘在鼠标上。</summary>
-        public static void BeginFrame() => _tip = null;
+        public static void BeginFrame() { _tip = null; ScrollFrames.Clear(); }
 
         public static void Hover(Rect r, string text)
         {
             if (string.IsNullOrEmpty(text)) return;
             try
             {
-                if (r.Contains(Event.current.mousePosition)) _tip = text;
+                if (ScrollPointerVisible() && r.Contains(Event.current.mousePosition)) _tip = text;
             }
             catch { /* ignored */ }
         }
@@ -433,6 +449,7 @@ namespace DDEN.Shared
 
             bool normal = interactive;
             interactive = policy?.CanEditConfig(entry, interactive) ?? interactive;
+            string unavailable = (policy as IDdenConfigAvailability)?.ConfigUnavailableReason(entry);
             object value = policy?.ConfigDisplayValue(entry) ?? entry.BoxedValue;
             bool isOn = value is bool b0 && b0;
             bool experimental = DdenDocs.TryGet(entry, out DdenDocs.Doc doc)
@@ -501,7 +518,7 @@ namespace DDEN.Shared
                 GUI.Label(field, "无法编辑：" + ex.Message, Sub);
             }
 
-            string desc = entry.Description?.Description;
+            string desc = string.IsNullOrEmpty(unavailable) ? entry.Description?.Description : unavailable;
             if (!string.IsNullOrEmpty(desc))
             {
                 desc = desc.Replace("\r", " ").Replace("\n", " ");
@@ -511,7 +528,8 @@ namespace DDEN.Shared
             }
 
             // 整行悬停：提示框展开完整五项
-            Hover(r, (policy != null && normal && !interactive ? "（主机权威模式）由主机统一配置。\n" : "") + DdenDocs.Format(entry));
+            Hover(r, (!string.IsNullOrEmpty(unavailable) ? unavailable + "\n"
+                : policy != null && normal && !interactive ? "（主机权威模式）由主机统一配置。\n" : "") + DdenDocs.Format(entry));
 
             Fill(new Rect(r.x, r.yMax - 1f, r.width, 1f), new Color(1f, 1f, 1f, 0.06f));
             return ConfigRowHeight;
@@ -553,15 +571,15 @@ namespace DDEN.Shared
         public static float ConfigListHeight(IEnumerable<ConfigEntryBase> entries)
         {
             if (entries == null) return 0f;
-            var sections = new HashSet<string>(StringComparer.Ordinal);
-            int n = 0;
+            string section = null;
+            float h = 8f;
             foreach (ConfigEntryBase e in entries)
             {
-                n++;
-                sections.Add(e.Definition?.Section ?? "General");
+                string next = e.Definition?.Section ?? "General";
+                if (next != section) { h += 26f; section = next; }
+                h += RowHeight(e, 600f);
             }
-            float h = 0f; foreach (ConfigEntryBase e in entries ?? Array.Empty<ConfigEntryBase>()) h += RowHeight(e, 600f);
-            return h + sections.Count * 26f + 8f;
+            return h;
         }
 
         private static string Truncate(string s, int max)
@@ -580,8 +598,11 @@ namespace DDEN.Shared
             Rect body = new Rect(12, 34, window.width - 24, window.height - 46);
             try
             {
-                scroll = GUI.BeginScrollView(body, scroll, new Rect(0, 0, body.width - 20, Mathf.Max(body.height, 1200f)));
-                Rect inner = new Rect(0, 0, body.width - 20, Mathf.Max(body.height, 1200f));
+                float contentHeight = Mathf.Max(body.height, drawSettings ? ConfigListHeight(module.ConfigEntries) : 1200f);
+                scroll = DdenUI.BeginScrollView(body, scroll, new Rect(0, 0, body.width - 20, contentHeight));
+                try
+                {
+                Rect inner = new Rect(0, 0, body.width - 20, contentHeight);
                 if (drawSettings && !module.DrawSettings(inner))
                 {
                     var gate = module as IDdenModuleGate;
@@ -592,7 +613,8 @@ namespace DDEN.Shared
                 {
                     module.DrawPage(inner);
                 }
-                GUI.EndScrollView();
+                }
+                finally { DdenUI.EndScrollView(); }
             }
             catch (Exception ex)
             {

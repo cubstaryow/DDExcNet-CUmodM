@@ -6,4 +6,8 @@
     <Project Path="src/DDEN.Shared/DDEN.Shared.csproj" />
     <Project Path="src/DDExcNet.CUmodM/DDExcNet.CUmodM.csproj" />
   </Folder>
+  <Folder Name="/src/外部mod/">
+    <Project Path="src/外部mod/ET-Fix/ET-Fix.csproj" />
+    <Project Path="src/外部mod/JDI-DDEN/JDI-DDEN.csproj" />
+  </Folder>
 </Solution>

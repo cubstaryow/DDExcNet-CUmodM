@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace DDEN.SaveEditor
 {
-    [BepInPlugin(Guid, "DDEN Save Editor", "1.5.0")]
+    [BepInPlugin(Guid, "DDEN Save Editor", "1.6.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("org.bepinex.plugins.qol_unknown", BepInDependency.DependencyFlags.SoftDependency)]
     public class SaveEditorPlugin : BaseUnityPlugin, IDdenModule
@@ -84,14 +84,34 @@ namespace DDEN.SaveEditor
         {
             try
             {
-                if (Reflect.Type("CUCoreLib.Registries.ConsoleCommandRegistry") == null) return;
+                Type registry = Reflect.Type("CUCoreLib.Registries.ConsoleCommandRegistry");
+                if (registry == null) return;
                 if (Compat.ConsoleHasCommand("saveedit")) return;
-                CUCoreLib.Registries.ConsoleCommandRegistry.Register("saveedit",
-                    "打开 DDEN 存档编辑器（有管理器就跳管理器页）。", (string[] args) =>
+                Action<string[]> command = args =>
+                {
+                    if (DdenHub.ManagerLoaded) DdenHub.OpenModule(Id);
+                    else _standaloneVisible = true;
+                };
+                foreach (var method in registry.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static))
+                {
+                    var parameters = method.GetParameters();
+                    if (method.Name != "Register" || parameters.Length < 3 || parameters[0].ParameterType != typeof(string)
+                        || parameters[1].ParameterType != typeof(string) || !typeof(Delegate).IsAssignableFrom(parameters[2].ParameterType)) continue;
+                    var invoke = parameters[2].ParameterType.GetMethod("Invoke");
+                    if (invoke == null || invoke.ReturnType != typeof(void) || invoke.GetParameters().Length != 1
+                        || invoke.GetParameters()[0].ParameterType != typeof(string[])) continue;
+                    var arguments = new object[parameters.Length];
+                    arguments[0] = "saveedit"; arguments[1] = "打开存档编辑器。";
+                    arguments[2] = Delegate.CreateDelegate(parameters[2].ParameterType, command.Target, command.Method);
+                    for (int i = 3; i < parameters.Length; i++)
                     {
-                        if (DdenHub.ManagerLoaded) DdenHub.OpenModule(Id);
-                        else _standaloneVisible = true;
-                    });
+                        var parameter = parameters[i];
+                        arguments[i] = parameter.HasDefaultValue ? parameter.DefaultValue
+                            : parameter.ParameterType.IsArray ? Array.CreateInstance(parameter.ParameterType.GetElementType(), 0) : null;
+                    }
+                    method.Invoke(null, arguments);
+                    break;
+                }
             }
             catch (Exception ex)
             {

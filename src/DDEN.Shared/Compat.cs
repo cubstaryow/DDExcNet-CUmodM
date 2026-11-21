@@ -47,6 +47,18 @@ namespace DDEN.Shared
     /// </summary>
     public static class Compat
     {
+        /// <summary>Loaded instances, not files or merely advertised metadata, satisfy a dependency.</summary>
+        public static bool PluginLoaded(string guid)
+        {
+            try { return Chainloader.PluginInfos.TryGetValue(guid, out var info) && info?.Instance != null; }
+            catch { return false; }
+        }
+        public static Version PluginVersion(string guid)
+        {
+            try { return PluginLoaded(guid) ? Chainloader.PluginInfos[guid].Metadata.Version : null; }
+            catch { return null; }
+        }
+
         // 认识的邻居（按 GUID 精确 + 名称关键词兜底）
         private static readonly Dictionary<string, string> KnownByGuid = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {

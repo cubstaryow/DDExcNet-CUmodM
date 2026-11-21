@@ -12,8 +12,8 @@
     <DebugSymbols>true</DebugSymbols>
     <NoWarn>$(NoWarn);CS0436;MSB3277;CS0618;MSB3246</NoWarn>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <!-- 整套 DDEN 的发布版本号：只改这一行。三个 dll 共用它，发布脚本也从这里读。 -->
-    <DdenVersion>1.5.0</DdenVersion>
+    <!-- 五个DDEN产物及独立ET修复的构建版本；插件BepInPlugin字面版本也需同步。 -->
+    <DdenVersion>1.6.0</DdenVersion>
   </PropertyGroup>
 
   <!-- ===== 本机路径（换机器只改这里或传 -p:GameDir=...） ===== -->

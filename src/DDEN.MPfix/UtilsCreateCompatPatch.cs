@@ -23,14 +23,12 @@ namespace DDEN.MPfix
     ///   4) Together 会把这次失败按 attempt 缓存成 receipt，同一会话里重试仍然是失败，
     ///      直到换层/重连换了 session —— 这就是“过一层又能合成”的观感。
     ///
-    /// 修法：给 <c>Utils.Create</c> 加前缀 —— Resources 里找不到、但 CUCoreLib 能解析出预制体时，
-    /// 用 <c>CustomInstantiate.InstantiateReturn</c> 生成。这样所有走 Utils.Create 的路径
-    /// （联机合成、掉落、世界生成）对模组物品都正常。
+    /// Let CCL and the original function finish first. Only a missing result within the
+    /// native server craft transaction may be repaired. Entertainment remains independent.
     /// </summary>
     [HarmonyPatch]
     internal static class Utils_Create_ModItemPatch
     {
-        private static readonly HashSet<string> VanillaIds = new HashSet<string>(StringComparer.Ordinal);
         private static readonly Dictionary<string, float> WarnedAt = new Dictionary<string, float>(StringComparer.Ordinal);
         private static float _lastLogAt = -99f;
 
@@ -40,71 +38,9 @@ namespace DDEN.MPfix
                 new[] { typeof(string), typeof(Vector2), typeof(float) });
         }
 
-        private static bool Prefix(string id, Vector2 pos, float rot, ref GameObject __result)
-        {
-            try
-            {
-                // 商人购买窗口内记一下生成过什么 id，供「道生一 一生二」复制（不影响正常流程）
-                DoublePurchase.NoteId(id);
-
-                if (!MPfixPlugin.Active) return true;                  // 总开关/环境版本闸门
-                if (!MPfixPlugin.CfgFixModItemCraftSpawn.Value) return true;
-                if (string.IsNullOrEmpty(id)) return true;
-                if (VanillaIds.Contains(id)) return true;
-
-                // ★ 客机不本地生成：物品生成一律以主机为权威。
-                //   商人购买 / 合成 / 水晶掉落这些流程在客机上也会跑一遍“本地预测”，
-                //   一旦我们让客机的 Utils.Create 成功造出模组物品，客机自己那份 + 主机同步来的那份
-                //   就变成两份（“客机买商人东西买两份”）。客机保持原版行为（造不出来 → 交给主机同步）。
-                if (Mp.IsRunning && !Mp.IsServer)
-                {
-                    return true;
-                }
-
-                // 与原版一致：用非泛型 Resources.Load（泛型 GameObject 可能漏掉非 GameObject 资源）
-                UnityEngine.Object raw = Resources.Load(id);
-                if (raw != null)
-                {
-                    if (VanillaIds.Count < 4096) VanillaIds.Add(id);
-                    return true;
-                }
-
-                Quaternion quat = Quaternion.Euler(0f, 0f, rot);
-                string reason;
-                GameObject made = Resolve(id, pos, quat, out reason);
-
-                if (made == null)
-                {
-                    // 失败只记一条可诊断的日志（同一个 id 30 秒内不重复刷），并交回原逻辑保持原版表现
-                    WarnOnce(id, $"[CraftFix] 生成失败 '{id}'：不在 Resources，模组侧也解析不出来（{reason}）。" +
-                                  "该配方在本局仍会报“无法生成物品”。");
-                    return true;
-                }
-
-                Item item = made.GetComponent<Item>();
-                if (item == null)
-                {
-                    // Resolve 已经做过校验，正常不会走到这里；万一走到，也只记录、不销毁任何对象。
-                    WarnOnce(id, $"[CraftFix] 生成失败 '{id}'：拿到的对象没有 Item 组件（{reason}），已跳过兜底。");
-                    return true;
-                }
-
-                __result = made;
-                RegisterOnHost(made);   // 强制登记（没有开关：不登记联机就不认这件物品）
-
-                if (Time.unscaledTime - _lastLogAt > 0.5f)
-                {
-                    _lastLogAt = Time.unscaledTime;
-                    MPfixPlugin.Log.Info($"[CraftFix] 物品 '{id}' 不在 Resources，已用模组资源生成（{reason}）");
-                }
-                return false;
-            }
-            catch (Exception ex)
-            {
-                MPfixPlugin.Log.Debug("Utils.Create 前缀异常：" + ex.Message);
-                return true;
-            }
-        }
+        // HarmonyX runs every prefix, including after another prefix returned false.
+        // Never instantiate here: CCL may already have produced the authoritative result.
+        private static void Prefix(string id) => DoublePurchase.NoteId(id);
 
         private static bool _duplicating;
 
@@ -113,12 +49,33 @@ namespace DDEN.MPfix
         /// 商人购买不走这里（购买那条由 <see cref="DoublePurchase"/> 保证“必定两个”，用时间窗区分）。
         /// 只在主机做，且带递归保护（多出来的那件自己不会再触发一次）。
         /// </summary>
-        private static void Postfix(string id, Vector2 pos, float rot, GameObject __result)
+        [HarmonyPriority(Priority.Last)]
+        private static void Postfix(string id, Vector2 pos, float rot, ref GameObject __result)
+        {
+            TryFailedSpawn(id, pos, rot, ref __result);
+            ApplyEntertainment(id, pos, rot, __result);
+        }
+
+        // Resources.Instantiate(null) throws instead of returning null. Recover only this
+        // precise failure, inside a server crafting call; keep all other exceptions intact.
+        private static Exception Finalizer(string id, Vector2 pos, float rot, ref GameObject __result, bool __runOriginal, Exception __exception)
+        {
+            if (__exception is ArgumentException missing && missing.Message == "The Object you want to instantiate is null." && __runOriginal
+                && __result == null && TryFailedSpawn(id, pos, rot, ref __result))
+            {
+                ApplyEntertainment(id, pos, rot, __result);
+                return null;
+            }
+            return __exception;
+        }
+
+        private static void ApplyEntertainment(string id, Vector2 pos, float rot, GameObject __result)
         {
             try
             {
                 if (!MPfixPlugin.Active) return;
                 if (__result == null) return;
+                if (__result.GetComponent<Item>() == null) return;
                 if (!MPfixPlugin.CfgDoublePurchase.Value) return;
                 if (!Mp.IsRunning || !Mp.IsServer) return;
                 if (_duplicating) return;                       // 防递归：复制出来的那件不再复制
@@ -151,78 +108,41 @@ namespace DDEN.MPfix
         }
 
         /// <summary>
-        /// 三级兜底：CUCoreLib 模板 →预制体直接实例化 →**克隆场上/背包里同 id 的现成物品**。
-        /// 最后一级专治“修理类配方”：玩家手里必然有一件同 id 的破损物品（它就是材料），
-        /// 拿它的外壳克隆一份，比任何注册表都可靠。
+        /// Only a failed server crafting creation is eligible. Use CCL's complete
+        /// construction/activation path once; never retry after a partially failed construction.
         /// </summary>
-        /// <summary>
-        /// 只走 CUCoreLib 的两条正路，**不克隆、不销毁**任何物品：
-        ///  ① 先 `ResolvePrefab` 拿到预制体并确认它带 Item 组件，再 `Instantiate`（不产生“造出来又不能用的残次品”）；
-        ///  ② 退一步直接用 CCL 的 `InstantiateReturn`（它内部会建模板 + 实例化）。
-        /// 两条都不行 → 放弃兜底，交回原版逻辑（该配方在这局仍会失败，但与我们无关，也不会留下副作用）。
-        /// </summary>
-        private static GameObject Resolve(string id, Vector2 pos, Quaternion quat, out string reason)
+        private static bool TryFailedSpawn(string id, Vector2 pos, float rot, ref GameObject result)
         {
-            var notes = new List<string>();
-            Vector3 at = new Vector3(pos.x, pos.y, 0f);
-
-            // ① 预制体路径：先验证，再实例化
+            if (result != null || !CraftSpawnScope.ActiveFor(id) || _duplicating || DoublePurchase.SuppressCraftDuplicate || !MPfixPlugin.Active
+                || !MPfixPlugin.CfgFixModItemCraftSpawn.Value || !Mp.IsRunning || !Mp.IsServer
+                || string.IsNullOrWhiteSpace(id)) return false;
             try
             {
-                GameObject prefab = CUCoreLib.Helpers.CustomInstantiate.ResolvePrefab(id);
-                if (prefab != null)
+                if (Resources.Load(id) != null) return false;
+                GameObject prefab = ModItemFactory.ResolvePrefab(id);
+                if (prefab == null || prefab.GetComponent<Item>() == null)
                 {
-                    if (prefab.GetComponent<Item>() == null)
-                    {
-                        notes.Add("ResolvePrefab 有对象但没有 Item 组件");
-                    }
-                    else
-                    {
-                        GameObject made = UnityEngine.Object.Instantiate(prefab, at, quat);
-                        if (made != null)
-                        {
-                            reason = "ResolvePrefab+Instantiate";
-                            return made;
-                        }
-                        notes.Add("Instantiate(prefab)=null");
-                    }
+                    WarnOnce(id, $"[CraftFix] 生成失败 '{id}'：没有可用的物品预制体；注册表查询：{RegistryInfo(id)}");
+                    return false;
                 }
-                else
+                GameObject made = ModItemFactory.Create(id, pos, Quaternion.Euler(0f, 0f, rot));
+                if (made == null)
                 {
-                    notes.Add("ResolvePrefab=null");
+                    WarnOnce(id, $"[CraftFix] 生成失败 '{id}'：模组生成入口未返回对象；注册表查询：{RegistryInfo(id)}");
+                    return false;
                 }
+                // Assign immediately: even a diagnostic/registration failure must not cause another spawn.
+                result = made;
+                RegisterOnHost(made);
+                if (Time.unscaledTime - _lastLogAt > 0.5f)
+                { _lastLogAt = Time.unscaledTime; MPfixPlugin.Log.Info($"[CraftFix] 合成生成失败后已补救 '{id}'。"); }
+                return true;
             }
             catch (Exception ex)
             {
-                notes.Add("ResolvePrefab 异常：" + ex.Message);
+                WarnOnce(id, $"[CraftFix] 生成失败 '{id}'：{ex.Message}；注册表查询：{RegistryInfo(id)}");
+                return result != null;
             }
-
-            // ② CCL 自带模板构建
-            try
-            {
-                GameObject made = CUCoreLib.Helpers.CustomInstantiate.InstantiateReturn(id, pos, quat);
-                if (made != null)
-                {
-                    if (made.GetComponent<Item>() != null)
-                    {
-                        reason = "CustomInstantiate";
-                        return made;
-                    }
-                    // 造出来但不是物品：不销毁（避免任何“删东西”的行为），只记录并放弃兜底。
-                    notes.Add("CustomInstantiate 产出的对象没有 Item 组件（已忽略，未做销毁）");
-                }
-                else
-                {
-                    notes.Add("CustomInstantiate=null");
-                }
-            }
-            catch (Exception ex)
-            {
-                notes.Add("CustomInstantiate 异常：" + ex.Message);
-            }
-
-            reason = string.Join("；", notes) + "；注册表查询：" + RegistryInfo(id);
-            return null;
         }
 
         /// <summary>日志里带上注册表信息，方便判断到底是“没注册”还是“注册了但造不出来”。</summary>
@@ -259,14 +179,9 @@ namespace DDEN.MPfix
         /// 主机侧把模组物品登记进联机的网络对象表。**幂等**：同一件物品无论被我们调还是被
         /// Together 的 <c>TryGetSyncInfoOrRegister</c> 调，都只会产生一个实体。
         ///
-        /// 为什么必须幂等（2026-11 修「客机买一件变两份」）：
-        /// `NetObjectRegistry.Server_EnsureItemIsNetworkRegistered`（反编译 140755）只有在
-        /// **`SyncRegistry` 里已有该对象**时才提前返回；否则它会 `ServerEntityManager.AddEntity` 建**新实体**，
-        /// 而把这个 `go` 写回 `SyncRegistry` 的那一步**只在“对象是水晶”的分支里**做。
-        /// 也就是说：普通物品第一次调用建了实体却没进表 → 下一次调用又建一个。
-        /// 而 `TraderCommit.RunBuy`（142460）在我们之后还会调一次 `TryGetSyncInfoOrRegister`，
-        /// 于是同一件物品出现两个实体 → 客机收到两份。
-        /// 所以这里补上 Together 漏掉的"写回表"，让第二次调用命中去重。
+        /// Defensive table/tracker reconciliation for recovered items and entertainment bonuses.
+        /// Current MP also writes the table from SyncInfo.CreateObject. Object identity deduplication
+        /// cannot prevent two different instances created by competing prefixes; that is fixed above.
         /// </summary>
         internal static void RegisterOnHost(GameObject go)
         {
@@ -274,13 +189,13 @@ namespace DDEN.MPfix
             {
                 if (go == null || !Mp.IsRunning || !Mp.IsServer) return;
 
-                Type regType = CUCoreLib.Networking.MultiplayerApi.ResolveKrokMpType("NetObjectRegistry");
+                Type regType = Reflect.Type("Together.NetObjectRegistry");
                 if (regType == null) return;
 
                 IDictionary registry = SyncRegistry(regType);
                 if (registry == null) return;
 
-                // ① 表里已经有这个对象 → 已登记，直接返回（这是"重复实体"的根因所在）
+                // ① A live binding for this exact object is already sufficient.
                 try
                 {
                     if (registry.Contains(go))
@@ -300,8 +215,7 @@ namespace DDEN.MPfix
                 }
 
                 // ③ 真正登记一次，并把结果写回 SyncRegistry（Together 只给水晶做这一步）
-                System.Reflection.MethodInfo mi = CUCoreLib.Networking.MultiplayerApi.FindKrokMpMethod(
-                    regType, "Server_EnsureItemIsNetworkRegistered", new[] { typeof(GameObject) });
+                System.Reflection.MethodInfo mi = AccessTools.Method(regType, "Server_EnsureItemIsNetworkRegistered", new[] { typeof(GameObject) });
                 if (mi == null) return;
 
                 object made = mi.Invoke(null, new object[] { go });
@@ -346,7 +260,7 @@ namespace DDEN.MPfix
         {
             try
             {
-                Type trackerType = CUCoreLib.Networking.MultiplayerApi.ResolveKrokMpType("SyncInfoGameObjectTracker");
+                Type trackerType = Reflect.Type("Together.SyncInfoGameObjectTracker");
                 if (trackerType == null) return null;
                 Component tracker = go.GetComponent(trackerType);
                 if (tracker == null) return null;
@@ -393,11 +307,10 @@ namespace DDEN.MPfix
             {
                 if (go == null || !Mp.IsRunning || !Mp.IsServer) return;
 
-                Type regType = CUCoreLib.Networking.MultiplayerApi.ResolveKrokMpType("NetObjectRegistry");
+                Type regType = Reflect.Type("Together.NetObjectRegistry");
                 if (regType == null) return;
 
-                System.Reflection.MethodInfo mi = CUCoreLib.Networking.MultiplayerApi.FindKrokMpMethod(
-                    regType, "SafeNewGO", new[] { typeof(GameObject) });
+                System.Reflection.MethodInfo mi = AccessTools.Method(regType, "SafeNewGO", new[] { typeof(GameObject) });
                 if (mi == null) return;
 
                 mi.Invoke(null, new object[] { go });

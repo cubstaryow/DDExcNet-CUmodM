@@ -21,10 +21,10 @@ namespace DDEN.MPfix
     ///  ⑦ 娱乐：道生一 一生二（商人购买多给一份，只在主机生效）。
     /// 界面与配置统一交给 DDExcNet-CUmodM 显示（模块 id = mpfix）。
     /// </summary>
-    [BepInPlugin(Guid, "DDEN MP Fix", "1.5.0")]
+    [BepInPlugin(Guid, "DDEN MP Fix", "1.6.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
-    public class MPfixPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleGate, IDdenModuleHealth, IDdenConfigPolicy
+    public class MPfixPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleGate, IDdenModuleHealth, IDdenConfigPolicy, IDdenConfigAvailability
     {
         public const string Guid = "com.dden.mpfix";
         public const string Title = "多人修复";
@@ -44,6 +44,9 @@ namespace DDEN.MPfix
 
         // ===== 联机物品/合成 =====
         internal static AuthoritySetting<bool> CfgFixModItemCraftSpawn;
+
+        // ===== 玩家名称（只改显示，不改变连接和存档身份） =====
+        internal static AuthoritySetting<bool> CfgFixPlayerNames;
 
         // ===== 穿戴兜底 =====
         internal static AuthoritySetting<bool> CfgWearFix;
@@ -70,6 +73,7 @@ namespace DDEN.MPfix
         internal static AuthoritySetting<bool> CfgVerbose;
         private AuthorityOverlay _configOverlay;
         private HostConfigSync _authority;
+        private FeatureDependencies _dependencies;
 
         private const float PushCooldown = 0.35f;
 
@@ -103,15 +107,19 @@ namespace DDEN.MPfix
 
         /// <summary>主开关行：模块被闸门关掉时它仍然可点（否则再也打不开）。</summary>
         public string MasterKey => "总开关/启用本模块（MasterEnabled）";
-        public string ConfigNotice => _authority?.Notice ?? "";
+        public string ConfigNotice => !string.IsNullOrEmpty(_authority?.Notice) ? _authority.Notice
+            : _dependencies?.BlockedCount > 0 ? "部分功能缺少前置，已停用" : "";
         public bool CanEditConfig(ConfigEntryBase entry, bool normallyInteractive)
-            => ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgUseHostAuthority)
-                || (normallyInteractive && !(_authority?.Locked ?? false));
-        public object ConfigDisplayValue(ConfigEntryBase entry) => _configOverlay?.Display(entry) ?? entry.BoxedValue;
+            => (_dependencies?.Available(entry) ?? true) && (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgUseHostAuthority)
+                || (normallyInteractive && !(_authority?.Locked ?? false)));
+        public object ConfigDisplayValue(ConfigEntryBase entry) => entry.SettingType == typeof(bool) && !(_dependencies?.Available(entry) ?? true)
+            ? false : _configOverlay?.Display(entry) ?? entry.BoxedValue;
+        public string ConfigUnavailableReason(ConfigEntryBase entry) => _dependencies?.Reason(entry);
 
         private void InitializeAuthority()
         {
             _configOverlay = new AuthorityOverlay(AuthoritySettings.All, ApplyEffectiveSettingChange);
+            if (!Compat.PluginLoaded("net.cucorelib") || !Compat.PluginLoaded("CasualtiesMP")) return;
             _authority = new HostConfigSync(_configOverlay, () => CfgUseHostAuthority.Value, AuthorityConnection.Read,
                 () => Time.realtimeSinceStartup, token => Mp.Broadcast(HostConfigSync.NoticeChannel, token, false),
                 (token, response) => Mp.RequestServer(HostConfigSync.RequestChannel, token, response),
@@ -216,7 +224,8 @@ namespace DDEN.MPfix
 
         /// <summary>给界面用的一句话状态。</summary>
         internal static string GateText =>
-            DdenGate.Blocked
+            !Compat.PluginLoaded("CasualtiesMP") ? "未安装多人联机组件，相关功能已停用"
+            : DdenGate.Blocked
                 ? DdenGate.NoticeText + "（" + DdenGate.Reason + "）"
                 : "版本核对通过：" + DdenGate.GameVersion + " / 联机 " + DdenGate.MpVersion;
 
@@ -232,29 +241,34 @@ namespace DDEN.MPfix
                 "否", "按需发送，不定时重复下发；默认关闭");
 
             DdenDocs.Add("无芯片同步", "启用（Enabled）",
-                "让本机的“无芯片模式”跟随主机。",
+                "同步主机无芯片规则，修正主机无芯片而客机仍有芯片。",
                 "联机时主机开了无芯片，自己这边却没跟着变（或反过来）。",
-                "每次进局和主机设置变化时，把主机的值写进本地显示与规则。", "否", "无");
+                "应用主机的实际规则与本地玩家状态；进局、主机变更和主动请求均可同步。", "否", "无");
             DdenDocs.Add("无芯片同步", "强制跟随主机（ForceHostUnchipped）",
-                "主机切换无芯片时，本机自动跟着切换。",
-                "主机关掉无芯片后，本机还停在上一次的状态。",
-                "监听主机设置变化并立即重放一次本地应用。", "否", "无");
+                "按已收到的主机状态持续纠正本地无芯片规则。",
+                "主机已开无芯片，客机规则仍被本地状态覆盖。",
+                "收到主机值时应用，并按核对间隔纠正本地漂移；关闭后仍会接受首次、变化和请求结果。", "否", "无");
             DdenDocs.Add("无芯片同步", "全员显示一致（OverrideIndividualRule）",
-                "名牌、附近语音、状态栏也按主机设置显示。",
-                "世界里已经是无芯片，但名牌、语音还按有芯片显示。",
-                "把这几个显示项一起按主机设置覆盖。", "否", "无");
+                "关闭各自选择模式的规则，让无芯片设置统一跟随主机。",
+                "个人无芯片选项使客机与主机的实际规则不同。",
+                "将联机组件的个人无芯片规则关闭，再统一世界与本地玩家状态。", "否", "无");
             DdenDocs.Add("无芯片同步", "核对间隔秒（WatchdogSeconds）",
-                "每隔多少秒核对一次主机设置；0 = 不自动核对。",
-                "中途主机改设置而没能及时同步。",
-                "按这个间隔做一次轻量核对（只读，不动世界）。", "否", "极低");
+                "本地规则与最近主机状态的核对间隔；0关闭此项纠正。",
+                "本地无芯片规则在同步后又发生漂移。",
+                "按间隔对照已缓存的主机状态，发现不同则纠正；不是按此间隔发网络请求。", "否", "极低");
             DdenDocs.Add("无芯片同步", "纠正时提示（AnnounceToOtherPlayers）",
                 "被自动纠正时在控制台提示一行。",
                 "排查时不知道有没有触发纠正。", "只在纠正发生时打印一行说明。", "否", "无");
 
             DdenDocs.Add("联机合成", "修“无法生成物品”（FixModItemCraftSpawn）",
-                "让模组加的物品在联机时也能正常生成。",
+                "合成结果生成失败时尝试补救。",
                 "联机合成模组加的配方时提示“无法生成物品”，东西出不来。",
-                "生成时改用模组自己的资源解析路径，并在主机侧登记，其他人也看得见。", "否", "无");
+                "先沿用正常生成结果；只有主机合成未生成结果时才尝试补救。", "否", "仅失败时尝试");
+            DdenDocs.Add("玩家名称", "尝试修复名称显示（FixPlayerNames）",
+                "尝试恢复中文名字，修正空名字、问号和数字名字。",
+                "中文名字被截掉、变成问号或长串数字，主机名字为空。",
+                "从玩家资料恢复显示名称，只使用游戏现有字体，缺少的字显示为 ?；只改变本机显示，不改变存档身份。",
+                "是 · 需要多人实测", "缓存名称与字体；不会逐帧扫描场景");
 
             DdenDocs.Add("穿戴兜底", "启用穿戴兜底（Enabled）",
                 "客机穿上装备但主机没认时，请主机把装备正确穿给这名玩家。",
@@ -276,23 +290,23 @@ namespace DDEN.MPfix
                 "看到的商品和主机不一样，付了钱却拿不到东西。",
                 "打开界面时请主机重发一次完整商品表。", "否", "极低（只在开界面时一次）");
             DdenDocs.Add("联机修正", "修“挖方块”-伤害重算（SyncBlockBreak）",
-                "主机结算客机挖方块时，按世界伤害倍率重算这一下。",
+                "默认补齐主机挖块漏算的世界伤害倍率；激进时还校验碎块报告。",
                 "挖方块时血量掉一截又弹回去，或者挖掉的方块过一会儿又长回来。",
                 "主机替客机结算时漏了一个世界伤害倍率，这里把它补上再交给联机框架原本的判定。",
-                "否", "无（只做一次乘法）");
+                "否", "极低（主机攻击时补算，保留原判定）");
             DdenDocs.Add("联机修正", "修“打箱子/植物/动物”-伤害重算（SyncBuildingDamage）",
-                "主机结算客机打箱子、植物、动物时，按世界伤害倍率重算这一下。",
+                "默认补齐主机近战漏算的世界伤害倍率；激进时校验客机结果。",
                 "打储物箱、植物、动物时血量掉一下又弹回去。",
-                "通常只补齐主机漏算的世界伤害倍率；激进模式下按客机上报重新核对这一下。", "否", "低（只在攻击时执行）");
+                "主机使用该客机的远端角色状态补齐倍率，保留原结算；激进时仅在校验通过后使用客机报告。", "否", "低（只在攻击时执行）");
             DdenDocs.Add("联机修正", "修“打角色/肢体”-伤害重算（SyncBodyDamage）",
-                "主机结算客机近战打角色、肢体类敌人时，重新核对伤害。",
+                "默认补齐角色肢体近战的世界伤害倍率；激进时校验客机结果。",
                 "客机近战打中角色或肢体类敌人，血量先减少又回升。",
-                "通常只补齐主机漏算的世界伤害倍率；激进模式下按客机上报重新核对这一下。",
+                "主机使用该客机的远端角色状态补齐倍率，保留原结算；激进时仅在校验通过后使用客机报告。",
                 "否", "低（只在攻击时执行）");
             DdenDocs.Add("联机修正", "挖掘修复-激进（实验性 · ⚠帧数影响）（AggressiveConverge）",
-                "对已开启的伤害修复使用客机上报重算；大量挖块时分批处理。",
+                "对已开启分支校验客机上报；方块分批补差，单位随原攻击结算。",
                 "只补世界伤害倍率后，两边的攻击伤害仍然不一致。",
-                "方块碎掉后分批上报并分帧补齐；单位和角色的伤害随原有攻击消息上报，由主机核对。",
+                "方块挖碎后由主机检查并补差；单位和角色附加报告到原攻击，校验后只结算一次，拒绝则回退基础补算。",
                 "是", "大量挖掘仍有开销；已减少消息数量并分散处理，实际影响需联机测试");
             DdenDocs.Add("联机修正", "挖块判定门槛-仅激进时生效（BlockBreakMinFraction）",
                 "激进模式下，主机账上这块至少掉这么多才接受“已挖穿”。",
@@ -346,19 +360,21 @@ namespace DDEN.MPfix
                 "主机统一下发设置；客机临时采用，退出联机后恢复本机配置。");
 
             CfgChipEnabled = Config.Bind("无芯片同步", "启用（Enabled）", true,
-                "让本机的“无芯片模式”跟随主机。");
+                "同步主机无芯片规则，修正主机无芯片而客机仍有芯片。");
             CfgForceHost = Config.Bind("无芯片同步", "强制跟随主机（ForceHostUnchipped）", true,
-                "主机切换无芯片时，本机自动跟着切换。");
+                "按已收到的主机状态持续纠正本地无芯片规则。");
             CfgOverrideIndividualRule = Config.Bind("无芯片同步", "全员显示一致（OverrideIndividualRule）", true,
-                "名牌、附近语音、状态栏也按主机设置显示。");
+                "关闭各自选择模式的规则，让无芯片设置统一跟随主机。");
             CfgWatchdogSeconds = Config.Bind("无芯片同步", "核对间隔秒（WatchdogSeconds）", 30f,
-                new ConfigDescription("每隔多少秒核对一次主机设置；0 = 不自动核对。",
+                new ConfigDescription("本地规则与最近主机状态的核对间隔；0关闭此项纠正。",
                     new AcceptableValueRange<float>(0f, 600f)));
             CfgAnnounce = Config.Bind("无芯片同步", "纠正时提示（AnnounceToOtherPlayers）", false,
                 "被自动纠正时在控制台提示一行。");
 
             CfgFixModItemCraftSpawn = Config.Bind("联机合成", "修“无法生成物品”（FixModItemCraftSpawn）", true,
-                "让模组加的物品在联机时也能正常生成。");
+                "合成结果生成失败时尝试补救，正常生成时不额外发放。");
+            CfgFixPlayerNames = Config.Bind("玩家名称", "尝试修复名称显示（FixPlayerNames）", false,
+                "尝试恢复中文名字，修正空名字、问号和数字名字；只改变本机显示。");
 
             CfgWearFix = Config.Bind("穿戴兜底", "启用穿戴兜底（Enabled）", false,
                 "客机穿上装备但主机没认时，请主机把装备正确穿给这名玩家。");
@@ -371,13 +387,13 @@ namespace DDEN.MPfix
             CfgTraderSnapshot = Config.Bind("联机修正", "打开商人时对齐商品表（TraderSnapshotOnOpen）", true,
                 "每次打开商人界面，向主机要一份最新的商品表。");
             CfgBlockBreakSync = Config.Bind("联机修正", "修“挖方块”-伤害重算（SyncBlockBreak）", true,
-                "主机结算客机挖方块时，按世界伤害倍率重算这一下。");
+                "默认补齐主机挖块漏算的世界伤害倍率；激进时还校验碎块报告。");
             CfgSyncBuildingDamage = Config.Bind("联机修正", "修“打箱子/植物/动物”-伤害重算（SyncBuildingDamage）", true,
-                "主机结算客机打箱子、植物、动物时，按世界伤害倍率重算这一下。");
+                "默认补齐主机近战漏算的世界伤害倍率；激进时校验客机结果。");
             CfgSyncBodyDamage = Config.Bind("联机修正", "修“打角色/肢体”-伤害重算（SyncBodyDamage）", true,
-                "主机结算客机近战打角色、肢体类敌人时，重新核对伤害。");
+                "默认补齐角色肢体近战的世界伤害倍率；激进时校验客机结果。");
             CfgAggressiveConverge = Config.Bind("联机修正", "挖掘修复-激进（实验性 · ⚠帧数影响）（AggressiveConverge）", false,
-                "对已开启的伤害修复使用客机上报重算；大量挖块时分批处理。");
+                "对已开启分支校验客机上报；方块分批补差，单位随原攻击结算。");
             CfgBlockBreakMinFraction = Config.Bind("联机修正", "挖块判定门槛-仅激进时生效（BlockBreakMinFraction）", 0.5f,
                 new ConfigDescription("激进模式下，主机账上这块至少掉这么多才接受“已挖穿”。",
                     new AcceptableValueRange<float>(0f, 0.95f)));
@@ -393,12 +409,24 @@ namespace DDEN.MPfix
 
             Log = DDEN.Shared.Log.For(LogSource, "MPfix", CfgVerbose.Value);
             RegisterDocs();
+            _dependencies = new FeatureDependencies(Config.Entries(), Compat.PluginLoaded);
+            foreach (var setting in AuthoritySettings.All)
+            {
+                var captured = setting;
+                setting.Available = () => _dependencies.Available(captured.Entry);
+            }
+            _dependencies.EnforceAll();
+            if (_dependencies.BlockedCount > 0) Log.Info("[前置检查] 缺少所需模组的功能已关闭，相应配置不可用。");
 
             // 环境版本核对（用户口径 2026-11）：对不上且用户没在管理器「总览」打开「忽略核对环境版本」时，
             // 本模块整体不动手（主开关出口 Active 会返回 false），并在主界面挂醒目提示。
             DdenGate.RegisterParticipant(Guid);   // 本模块的修复依赖环境版本核对
             DdenGate.Probe(force: true);
-            if (DdenGate.Blocked)
+            if (!Compat.PluginLoaded("CasualtiesMP"))
+            {
+                Log.Info("[前置检查] 未安装多人联机组件，修复与娱乐功能均已停用。");
+            }
+            else if (DdenGate.Blocked)
             {
                 Log.Warn($"[版本核对] {DdenGate.Reason}");
                 Log.Warn("[版本核对] 本模块暂不动手。到管理器「总览 → 忽略核对环境版本」打开它才会生效。");
@@ -417,31 +445,36 @@ namespace DDEN.MPfix
             catch (Exception ex) { Logger.LogWarning("订阅配置变更失败（改配置后需重启才生效）：" + ex.Message); }
 
             Harmony harmony = new Harmony(Guid);
-            TryPatch(harmony, typeof(WorldGeneration_SetUnchipped_Patch), "无芯片变更广播");
-            TryPatch(harmony, typeof(Utils_Create_ModItemPatch), "联机合成/物品生成兜底");
-            TryPatch(harmony, typeof(WearGhostFix.Body_WearWearable_RecordPatch), "穿戴兜底（幽灵装备）");
-            TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropItem_GuardPatch), "物品掉落物理保险（丢出）");
-            TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropWearable_GuardPatch), "物品掉落物理保险（卸下）");
-            // 物品物理保险只挂「玩家亲手丢出」两个时机；被动恢复（HeldQuiet）已按用户口径删除
-            TryPatch(harmony, typeof(TraderSnapshotFix.ToggleTradeMenu_Postfix), "打开商人时索要商品表");
+            bool hasMp = Compat.PluginLoaded("CasualtiesMP"), hasCore = Compat.PluginLoaded("net.cucorelib");
+            if (hasMp)
+            {
+                TryPatch(harmony, typeof(WorldGeneration_SetUnchipped_Patch), "无芯片变更广播");
+                TryPatch(harmony, typeof(Utils_Create_ModItemPatch), "联机合成/物品生成兜底");
+                if (hasCore && !CraftSpawnScope.Install(harmony)) NotePatchError("联机合成/物品生成兜底", "合成入口不可用");
+                if (!PlayerNameRepair.Install(harmony)) NotePatchError("玩家名称", "名称显示入口不可用");
+                TryPatch(harmony, typeof(WearGhostFix.Body_WearWearable_RecordPatch), "穿戴兜底（幽灵装备）");
+                TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropItem_GuardPatch), "物品掉落物理保险（丢出）");
+                TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropWearable_GuardPatch), "物品掉落物理保险（卸下）");
+                TryPatch(harmony, typeof(TraderSnapshotFix.ToggleTradeMenu_Postfix), "打开商人时索要商品表");
 
-            // 下面这几个补丁**一律装上**，由补丁内部每次调用时读配置 —— 这样在管理器里改开关立即生效，
-            // 不需要重启游戏（用户口径 2026-11：所有行为改完配置立刻可用）。
-            TraderUIQuietFix.Install(harmony);
-            TryPatch(harmony, typeof(BlockDamageSyncFix.DamageBlock_Patch), "客机挖块伤害收敛（上报）");
-            TryPatch(harmony, typeof(BlockDamageSyncFix.WorldReset_Patch), "换层清理挖掘上报");
-            BlockDamageRelax.Install(harmony);
-            BuildingDamageRelax.Install(harmony);
-            UnitDamageRepair.Install(harmony);
-
-            MigrateOldWatchdog();
-
-            RegisterChannels();
-            WearGhostFix.RegisterHostHandlers();
-            TraderSnapshotFix.RegisterHost();
-            BlockDamageSyncFix.RegisterHost();
-            DoublePurchase.Install(harmony);
-            GhostItemRelay.Install(harmony);
+                // Install when prerequisites exist; runtime settings still take effect immediately.
+                if (hasCore) TraderUIQuietFix.Install(harmony);
+                TryPatch(harmony, typeof(BlockDamageSyncFix.DamageBlock_Patch), "客机挖块伤害收敛（上报）");
+                TryPatch(harmony, typeof(BlockDamageSyncFix.WorldReset_Patch), "换层清理挖掘上报");
+                BlockDamageRelax.Install(harmony);
+                BuildingDamageRelax.Install(harmony);
+                UnitDamageRepair.Install(harmony);
+                MigrateOldWatchdog();
+                if (hasCore)
+                {
+                    RegisterChannels();
+                    WearGhostFix.RegisterHostHandlers();
+                    TraderSnapshotFix.RegisterHost();
+                    BlockDamageSyncFix.RegisterHost();
+                }
+                DoublePurchase.Install(harmony);
+                if (hasCore) GhostItemRelay.Install(harmony);
+            }
             _warmupUntil = Time.realtimeSinceStartup + 6f;      // 巡检耗时统计跳过冷启动
             DdenHub.Register(this);
             _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
@@ -461,7 +494,7 @@ namespace DDEN.MPfix
             string ver = "未知";
             try
             {
-                Version v = CUCoreLib.Networking.MultiplayerApi.KrokMpVersion;
+                Version v = Compat.PluginVersion("CasualtiesMP");
                 if (v != null) ver = v.ToString();
             }
             catch { /* ignored */ }
@@ -477,8 +510,7 @@ namespace DDEN.MPfix
 
             Log.Info("[MPCOMPAT] ① 无芯片：ApplyRunSettings 仍只写 runSettings，不写 world.unchippedMode；" +
                      "RunUnchippedLock 结构未变 → 同步仍需启用");
-            Log.Info("[MPCOMPAT] ② 联机合成：RecipeResult_SpawnResult 仍用 Utils.Create → Resources.Load；" +
-                     "只有 glassshards/水晶生成的跳过补丁 → 模组物品仍需要兜底");
+            Log.Info("[MPCOMPAT] ② 联机合成：优先沿用正常生成结果，仅在主机合成生成失败时兜底；不在前缀重复实例化");
             Log.Info("[MPCOMPAT] ③ 穿戴同步：ServerReceiver__ItemWearing 仍以 TryGetItem(登记表) 为门控；" +
                      "未登记的物品仍会被 decline → 网络登记仍需启用");
         }
@@ -524,7 +556,7 @@ namespace DDEN.MPfix
         /// <summary>按当前配置 + 联机状态算出一行的状态。</summary>
         private FixState StateOf(bool switchOn, bool needsMp = true, string patch = null)
         {
-            if (DdenGate.Blocked || (CfgMasterEnabled != null && !CfgMasterEnabled.Value)) return FixState.Off;
+            if (!Compat.PluginLoaded("CasualtiesMP") || DdenGate.Blocked || (CfgMasterEnabled != null && !CfgMasterEnabled.Value)) return FixState.Off;
             if (!switchOn) return FixState.Off;
             if (patch != null && _patchErrors.ContainsKey(patch)) return FixState.Error;
             if (needsMp && !Mp.IsRunning) return FixState.Watching;
@@ -595,6 +627,7 @@ namespace DDEN.MPfix
             {
                 ("无芯片同步", StateOf(CfgChipEnabled.Value), null),
                 ("联机生成（模组物品）", StateOf(CfgFixModItemCraftSpawn.Value, true, "联机合成/物品生成兜底"), null),
+                ("玩家名称显示", StateOf(CfgFixPlayerNames.Value, true, "玩家名称"), null),
                 ("物品网络登记", StateOf(true, false), null),
                 ("穿戴兜底", CfgWearFix.Value && Active ? FixState.Watching : FixState.Off, null),
                 ("物品物理保险", StateOf(CfgPhysicsGuard.Value, false, "物品掉落物理保险（丢出）"), null),
@@ -607,7 +640,7 @@ namespace DDEN.MPfix
                 ("商人界面静音", StateOf(CfgQuietTraderUIModItems.Value, false), null),
                 ("离场物品清理", StateOf(CfgRelayGhostItems.Value), null),
                 ("娱乐：一生二", StateOf(CfgDoublePurchase.Value, false), null),
-                ("环境版本核对", DdenGate.Blocked ? FixState.Error : FixState.Running,
+                ("环境版本核对", !Compat.PluginLoaded("CasualtiesMP") ? FixState.Off : DdenGate.Blocked ? FixState.Error : FixState.Running,
                     DdenGate.Blocked ? DdenGate.Reason : null)
             };
 
@@ -935,6 +968,7 @@ namespace DDEN.MPfix
             {
                 if (entry == null) return;
                 var p = Instance;
+                if (p?._dependencies?.Enforce(entry) == true) return;
                 if (p?._authority != null)
                 {
                     p._authority.LocalChanged();
@@ -951,6 +985,7 @@ namespace DDEN.MPfix
             try
             {
                 if (entry == null) return;
+                if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgFixPlayerNames.Local)) PlayerNameRepair.Invalidate();
                 if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgRelayGhostItems.Local))
                     GhostItemRelay.Reset();
                 if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgWearFix.Local))
@@ -996,6 +1031,7 @@ namespace DDEN.MPfix
             try
             {
                 _authority?.Tick(); // Must run even when the repair master switch or a repair branch is disabled.
+                PlayerNameRepair.Tick();
                 // 闸门联动（用户口径 2026-11）：版本对不上 → 自动把总开关关掉；核对通过/被忽略 → 自动恢复。
                 if (CfgMasterEnabled != null)
                 {
@@ -1190,6 +1226,7 @@ namespace DDEN.MPfix
         private void OnDestroy()
         {
             try { _authority?.Stop(); } catch (Exception ex) { Log.Debug("恢复本机配置失败：" + ex.Message); }
+            PlayerNameRepair.Stop();
             GhostItemRelay.Reset();
             try { new Harmony(Guid).UnpatchSelf(); }
             catch { /* ignored */ }
