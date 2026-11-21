@@ -1,21 +1,28 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
-using BepInEx.Logging;
 using HarmonyLib;
 using UnityEngine;
 
 namespace HeatingCageFix
 {
     /// <summary>
-    /// 原 ET-NoBatteryFix 的修复逻辑，并入 CageFix：
+    /// 原 ET-NoBatteryFix 的修复逻辑，并入 ET-Fix：
     ///  - 增强钛砍刀/钛镐没有电池时也能攻击（不改 condition，仍显示 0%）；
-    ///  - 装上电池后重新点亮工具灯。
+    ///  - 装上电池后重新点亮工具灯（含客机：恢复耐久 + 短窗口内多次校正，抵消主机同步覆盖）。
     /// </summary>
     internal static class ETBattery
     {
+        private const float RestoreCondition = 0.001f;   // 能点亮的最小耐久
+        private const float ReenableWindow = 2f;         // 装电池后的校正窗口（秒）
+        private const float ReenableStep = 0.25f;        // 窗口内检查间隔
+
         private static readonly HashSet<string> TargetIds = new HashSet<string>();
         private static readonly HashSet<string> Reported = new HashSet<string>();
+        private static readonly HashSet<int> Reenabling = new HashSet<int>();
+        private static readonly Dictionary<Type, MethodInfo> SetLightCache = new Dictionary<Type, MethodInfo>();
+        private static readonly Dictionary<Type, MethodInfo> EnableLightCache = new Dictionary<Type, MethodInfo>();
 
         internal static void Install(Harmony harmony)
         {
@@ -62,6 +69,7 @@ namespace HeatingCageFix
             if (item == null || !TargetIds.Contains(item.id)) return true;
             ItemInfo stats = item.Stats;
             if (stats == null) return true;
+            // 每个物品只记一次，避免每次攻击拼字符串
             if (Reported.Add(item.id))
                 Plugin.LogInfo($"[ET-Fix] [无电池] {item.id} condition={item.condition:0.###} usable={stats.usable} usableLMB={stats.usableWithLMB} useAction={(object)stats.useAction != null}");
             if ((object)stats.useAction != null && stats.usableWithLMB)
@@ -82,19 +90,79 @@ namespace HeatingCageFix
             Item item = __instance.GetComponent<Item>();
             if (item == null || !TargetIds.Contains(item.id)) return;
             if (!__instance.hasBattery) return;
-            MonoBehaviour[] comps = item.GetComponents<MonoBehaviour>();
+
+            // condition 为 0 时 EnhancedTools 的 EnableLight/Update 会拒绝点亮：装电池后先恢复一个可点亮的最小耐久。
+            if (item.condition <= 0f)
+            {
+                item.condition = RestoreCondition;
+                Plugin.LogInfo($"[ET-Fix] [无电池] {item.id}: condition restored to {RestoreCondition:0.###} before enabling light.");
+            }
+
+            if (Reenable(item))
+                Plugin.LogInfo($"[ET-Fix] [无电池] {item.id}: light re-enabled after battery load.");
+
+            // 客机：主机同步可能覆盖本地 lightOn；在短窗口内多次校正，而不是只补一次。
+            int id = item.GetInstanceID();
+            if (Plugin.Instance != null && Reenabling.Add(id))
+                Plugin.Instance.StartCoroutine(ReenableWindowRoutine(item, id));
+        }
+
+        /// <summary>窗口内每 0.25 秒检查一次（最多 2 秒）；只在“有电池且耐久可点亮”时校正，避免强制常亮。</summary>
+        private static IEnumerator ReenableWindowRoutine(Item item, int id)
+        {
+            float until = Time.unscaledTime + ReenableWindow;
+            int applied = 0;
+            try
+            {
+                while (Time.unscaledTime < until)
+                {
+                    yield return new WaitForSecondsRealtime(ReenableStep);
+                    if (item == null || item.battery == null || !item.battery.hasBattery) yield break;
+                    if (item.condition <= 0f) continue;
+                    if (Reenable(item)) applied++;
+                }
+            }
+            finally
+            {
+                Reenabling.Remove(id);
+            }
+            if (applied > 0)
+                Plugin.Debug($"[ET-Fix] [无电池] {item?.id}: light re-enabled in window (x{applied}).");
+        }
+
+        /// <summary>找到 CustomLightControl 并点亮；优先绕过 condition 检查的 SetLightState(true)，反射结果按类型缓存。</summary>
+        internal static bool Reenable(Item item)
+        {
+            if (item == null) return false;
+            var comps = item.GetComponents<MonoBehaviour>();
             for (int i = 0; i < comps.Length; i++)
             {
-                MonoBehaviour c = comps[i];
+                var c = comps[i];
                 if (c == null || c.GetType().Name != "CustomLightControl") continue;
-                MethodInfo m = c.GetType().GetMethod("EnableLight", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                if (m != null)
+                var type = c.GetType();
+                if (!SetLightCache.TryGetValue(type, out var set))
                 {
-                    m.Invoke(c, null);
-                    Plugin.LogInfo($"[ET-Fix] [无电池] {item.id}: light re-enabled after battery load.");
+                    set = type.GetMethod("SetLightState", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    SetLightCache[type] = set;
                 }
-                break;
+                if (set != null)
+                {
+                    set.Invoke(c, new object[] { true });
+                    return true;
+                }
+                if (!EnableLightCache.TryGetValue(type, out var enable))
+                {
+                    enable = type.GetMethod("EnableLight", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    EnableLightCache[type] = enable;
+                }
+                if (enable != null)
+                {
+                    enable.Invoke(c, null);
+                    return true;
+                }
+                return false;
             }
+            return false;
         }
     }
 }
