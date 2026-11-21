@@ -1,4 +1,4 @@
-# ET-Fix · ET 加热笼修复 + 无电池修复 v1.7.1
+# ET-Fix · ET 加热笼修复 + 无电池修复 v1.7.2
 
 尝试修正 Enhanced Tools 加热笼的开关行为：
 

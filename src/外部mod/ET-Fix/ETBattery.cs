@@ -10,13 +10,14 @@ namespace HeatingCageFix
     /// <summary>
     /// 原 ET-NoBatteryFix 的修复逻辑，并入 ET-Fix：
     ///  - 增强钛砍刀/钛镐没有电池时也能攻击（不改 condition，仍显示 0%）；
-    ///  - 装上电池后重新点亮工具灯（含客机：恢复耐久 + 短窗口内多次校正，抵消主机同步覆盖）。
+    ///  - 装上电池后重新点亮工具灯（只处理本地玩家的物品，避免同步到所有端都跑检测）。
     /// </summary>
     internal static class ETBattery
     {
         private const float RestoreCondition = 0.001f;   // 能点亮的最小耐久
-        private const float ReenableWindow = 2f;         // 装电池后的校正窗口（秒）
-        private const float ReenableStep = 0.25f;        // 窗口内检查间隔
+        private const float ReenableWindow = 1.8f;       // 装电池后的校正窗口（秒）
+        private const float ReenableStep = 0.3f;         // 窗口内检查间隔
+        private const int MaxSteps = 6;
 
         private static readonly HashSet<string> TargetIds = new HashSet<string>();
         private static readonly HashSet<string> Reported = new HashSet<string>();
@@ -91,6 +92,10 @@ namespace HeatingCageFix
             if (item == null || !TargetIds.Contains(item.id)) return;
             if (!__instance.hasBattery) return;
 
+            // 联机时 BatteryItem.LoadBattery 会在主机/各端被同步调用；只处理“本地玩家自己的物品”，
+            // 避免一个人装电池、所有端都起身跑点灯检测。
+            if (!IsLocalPlayerItem(item)) return;
+
             // condition 为 0 时 EnhancedTools 的 EnableLight/Update 会拒绝点亮：装电池后先恢复一个可点亮的最小耐久。
             if (item.condition <= 0f)
             {
@@ -107,19 +112,38 @@ namespace HeatingCageFix
                 Plugin.Instance.StartCoroutine(ReenableWindowRoutine(item, id));
         }
 
-        /// <summary>窗口内每 0.25 秒检查一次（最多 2 秒）；只在“有电池且耐久可点亮”时校正，避免强制常亮。</summary>
+        /// <summary>物品是否属于本地玩家（手/背包/装备）。单机或无法判断时按 true 处理。</summary>
+        private static bool IsLocalPlayerItem(Item item)
+        {
+            try
+            {
+                Body local = PlayerCamera.main != null ? PlayerCamera.main.body : null;
+                if (local == null) return true;
+                Body owner = item.transform.GetComponentInParent<Body>();
+                return owner == null || owner == local;
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
+        /// <summary>窗口内每 0.3 秒检查一次（最多 6 次）；只在“有电池且耐久可点亮”时校正，避免强制常亮。</summary>
         private static IEnumerator ReenableWindowRoutine(Item item, int id)
         {
-            float until = Time.unscaledTime + ReenableWindow;
             int applied = 0;
             try
             {
-                while (Time.unscaledTime < until)
+                // 组件只查一次，后续复用；避免每步 GetComponents 分配。
+                MonoBehaviour cage = FindLightControl(item);
+                if (cage == null) yield break;
+                for (int step = 0; step < MaxSteps; step++)
                 {
                     yield return new WaitForSecondsRealtime(ReenableStep);
                     if (item == null || item.battery == null || !item.battery.hasBattery) yield break;
                     if (item.condition <= 0f) continue;
-                    if (Reenable(item)) applied++;
+                    if (cage == null) { cage = FindLightControl(item); if (cage == null) break; }
+                    if (ApplyLightOn(cage)) applied++;
                 }
             }
             finally
@@ -130,37 +154,48 @@ namespace HeatingCageFix
                 Plugin.Debug($"[ET-Fix] [无电池] {item?.id}: light re-enabled in window (x{applied}).");
         }
 
-        /// <summary>找到 CustomLightControl 并点亮；优先绕过 condition 检查的 SetLightState(true)，反射结果按类型缓存。</summary>
-        internal static bool Reenable(Item item)
+        private static MonoBehaviour FindLightControl(Item item)
         {
-            if (item == null) return false;
+            if (item == null) return null;
             var comps = item.GetComponents<MonoBehaviour>();
             for (int i = 0; i < comps.Length; i++)
             {
                 var c = comps[i];
-                if (c == null || c.GetType().Name != "CustomLightControl") continue;
-                var type = c.GetType();
-                if (!SetLightCache.TryGetValue(type, out var set))
-                {
-                    set = type.GetMethod("SetLightState", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                    SetLightCache[type] = set;
-                }
-                if (set != null)
-                {
-                    set.Invoke(c, new object[] { true });
-                    return true;
-                }
-                if (!EnableLightCache.TryGetValue(type, out var enable))
-                {
-                    enable = type.GetMethod("EnableLight", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                    EnableLightCache[type] = enable;
-                }
-                if (enable != null)
-                {
-                    enable.Invoke(c, null);
-                    return true;
-                }
-                return false;
+                if (c != null && c.GetType().Name == "CustomLightControl") return c;
+            }
+            return null;
+        }
+
+        /// <summary>找到 CustomLightControl 并点亮；优先绕过 condition 检查的 SetLightState(true)，反射结果按类型缓存。</summary>
+        internal static bool Reenable(Item item)
+        {
+            var cage = FindLightControl(item);
+            return cage != null && ApplyLightOn(cage);
+        }
+
+        private static bool ApplyLightOn(MonoBehaviour c)
+        {
+            if (c == null) return false;
+            var type = c.GetType();
+            if (!SetLightCache.TryGetValue(type, out var set))
+            {
+                set = type.GetMethod("SetLightState", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                SetLightCache[type] = set;
+            }
+            if (set != null)
+            {
+                set.Invoke(c, new object[] { true });
+                return true;
+            }
+            if (!EnableLightCache.TryGetValue(type, out var enable))
+            {
+                enable = type.GetMethod("EnableLight", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                EnableLightCache[type] = enable;
+            }
+            if (enable != null)
+            {
+                enable.Invoke(c, null);
+                return true;
             }
             return false;
         }

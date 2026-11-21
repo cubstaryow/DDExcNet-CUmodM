@@ -7,7 +7,7 @@ using HarmonyLib;
 
 namespace HeatingCageFix
 {
-    [BepInPlugin(Guid, "ET-Fix", "1.7.1")]
+    [BepInPlugin(Guid, "ET-Fix", "1.7.2")]
     [BepInDependency("com.a4kk.enhancedtools", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
