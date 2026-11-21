@@ -82,7 +82,9 @@ namespace DDEN.MPfix
                     if (_curRelayed) return;            // 主机中继过来的伤害：不再回声
                     if (_curBlock == 0) return;         // 打之前就是空的
                     if (__instance.GetBlock(pos) != 0) return;   // 还没碎
-                    if (!MPfixPlugin.CfgBlockBreakSync.Value) return;
+                    if (!MPfixPlugin.Active) return;
+                    if (!MPfixPlugin.CfgBlockBreakSync.Value) return;              // 伤害重算开关
+                    if (!MPfixPlugin.CfgAggressiveConverge.Value) return;          // 激进（上报收敛）开关
                     if (!Mp.IsRunning || !Mp.IsClient) return;
 
                     BlockInfo info = __instance.GetBlockInfo(_curBlock);
@@ -96,6 +98,18 @@ namespace DDEN.MPfix
             }
         }
 
+        // ===== 客机：攒批上报（A：把“每块一个包”压成“每 0.35 秒一个包”）=====
+
+        /// <summary>攒批窗口（秒）。0.35 秒内的碎块合成一个包发出去。</summary>
+        private const float BatchInterval = 0.35f;
+
+        /// <summary>一包最多带几块（再多就立即发，避免一个包过大）。</summary>
+        private const int BatchMax = 24;
+
+        private static readonly List<JObject> Pending = new List<JObject>(BatchMax);
+        private static float _nextFlush = -1f;
+        private static int _batched;      // 统计用：攒批后实际发出的包数
+
         private static void Report(Vector2Int pos, ushort block, float total)
         {
             if (_count >= MaxPerSession) return;
@@ -107,13 +121,59 @@ namespace DDEN.MPfix
             Sent[pos] = now;
 
             _count++;
-            Mp.SendToServer(Channel, new JObject
+            Pending.Add(new JObject
             {
                 ["x"] = pos.x,
                 ["y"] = pos.y,
                 ["block"] = (int)block,
                 ["total"] = total
             });
+
+            if (Pending.Count >= BatchMax) { Flush(); return; }
+            if (_nextFlush < 0f) _nextFlush = now + BatchInterval;
+        }
+
+        /// <summary>每帧调用：到点就把攒下的碎块一起发出去（一个包带多块）。</summary>
+        internal static void Tick()
+        {
+            if (!MPfixPlugin.Active) { Pending.Clear(); _nextFlush = -1f; return; }
+            if (Pending.Count == 0) return;
+            if (!MPfixPlugin.CfgAggressiveConverge.Value) { Pending.Clear(); _nextFlush = -1f; return; }
+            if (_nextFlush >= 0f && Time.unscaledTime < _nextFlush) return;
+            Flush();
+        }
+
+        private static void Flush()
+        {
+            _nextFlush = -1f;
+            if (Pending.Count == 0) return;
+
+            try
+            {
+                if (!Mp.IsRunning || !Mp.IsClient) { Pending.Clear(); return; }
+
+                // 只有一块时仍按单条格式发（与旧版主机处理器完全兼容）
+                if (Pending.Count == 1)
+                {
+                    Mp.SendToServer(Channel, Pending[0]);
+                }
+                else
+                {
+                    JArray arr = new JArray();
+                    for (int i = 0; i < Pending.Count; i++) arr.Add(Pending[i]);
+                    Mp.SendToServer(Channel, new JObject { ["items"] = arr });
+                    _batched++;
+                    MPfixPlugin.Log.Debug($"[挖块] 攒批发送 {arr.Count} 块（第 {_batched} 个批量包）");
+                }
+            }
+            catch (Exception ex)
+            {
+                MPfixPlugin.Log.Debug("[挖块] 攒批发送失败：" + ex.Message);
+            }
+            finally
+            {
+                Pending.Clear();
+            }
         }
 
         /// <summary>主机正在应用“中继伤害”时为 true —— 那一路不需要再上报（会回声）。</summary>
@@ -150,32 +210,65 @@ namespace DDEN.MPfix
             }
         }
 
+        /// <summary>兼容两种形状：单条 `{x,y,block,total}` 与攒批 `{items:[…]}`（A：客机攒批上报）。</summary>
         private static JToken Handle(uint sender, JToken token)
         {
             try
             {
+                if (!MPfixPlugin.Active) return Fail("disabled");
                 if (!Mp.IsServer || token == null) return Fail("not-host");
                 if (!MPfixPlugin.CfgBlockBreakSync.Value) return Fail("disabled");
+                if (!MPfixPlugin.CfgAggressiveConverge.Value) return Fail("aggressive-off");
 
+                JArray items = token["items"] as JArray;
+                if (items != null)
+                {
+                    int applied = 0, skipped = 0;
+                    for (int i = 0; i < items.Count; i++)
+                    {
+                        JToken entry = items[i];
+                        if (entry == null) { skipped++; continue; }
+                        string r = ApplyOne(sender, entry);
+                        if (r == "broke" || r == "damaged" || r == "already" || r == "no-delta") applied++;
+                        else skipped++;
+                    }
+                    return new JObject { ["ok"] = true, ["batch"] = items.Count, ["applied"] = applied, ["skipped"] = skipped };
+                }
+
+                string res = ApplyOne(sender, token);
+                return res == "broke" || res == "damaged" ? Ok(res) : Fail(res);
+            }
+            catch (Exception ex)
+            {
+                MPfixPlugin.Log.Debug("[挖块] 主机处理失败：" + ex.Message);
+                return Fail("exception");
+            }
+        }
+
+        /// <summary>处理一块：返回 "broke" / "damaged" / "already" / "no-delta" 或失败原因。</summary>
+        private static string ApplyOne(uint sender, JToken token)
+        {
+            try
+            {
                 int x = token["x"]?.Value<int>() ?? int.MinValue;
                 int y = token["y"]?.Value<int>() ?? int.MinValue;
                 int block = token["block"]?.Value<int>() ?? 0;
                 float total = token["total"]?.Value<float>() ?? 0f;
-                if (x == int.MinValue || y == int.MinValue) return Fail("bad-pos");
+                if (x == int.MinValue || y == int.MinValue) return "bad-pos";
 
                 WorldGeneration world = WorldGeneration.world;
-                if (world == null) return Fail("no-world");
+                if (world == null) return "no-world";
 
                 var pos = new Vector2Int(x, y);
                 int current = world.GetBlock(pos);
-                if (current == 0) return Ok("already");
-                if (block <= 0 || current != block) return Fail("block-changed");
+                if (current == 0) return "already";
+                if (block <= 0 || current != block) return "block-changed";
 
                 Body body = MpChannels.BodyForClient(sender);
-                if (body == null) return Fail("no-body");
+                if (body == null) return "no-body";
 
                 float dist = Vector2.Distance(body.transform.position, world.BlockToWorldPos(pos));
-                if (dist > MaxReportDistance) return Fail($"far({dist:0.0}m)");
+                if (dist > MaxReportDistance) return "far";
 
                 BlockInfo info = world.GetBlockInfo((ushort)current);
                 float health = info != null && info.health > 0f ? info.health : 100f;
@@ -190,21 +283,21 @@ namespace DDEN.MPfix
                 {
                     HostLog($"[挖块] 拒绝收敛：{pos} 客机称已碎，但主机账上只掉了 " +
                             $"{already:0.#}/{health:0.#}（<{minFraction:P0}）。多数情况下放宽比例后不该走到这一步。");
-                    return Fail("not-credible");
+                    return "not-credible";
                 }
 
                 float target = Mathf.Clamp(total, already, health);
                 float delta = target - already;
-                if (delta <= 0f) return Ok("no-delta");
+                if (delta <= 0f) return "no-delta";
 
                 // 走原版流程：掉落 / 音效 / SetBlock 广播都是原版的
                 world.DamageBlock(pos, delta, true, false, false);
-                return Ok(world.GetBlock(pos) == 0 ? "broke" : "damaged");
+                return world.GetBlock(pos) == 0 ? "broke" : "damaged";
             }
             catch (Exception ex)
             {
                 MPfixPlugin.Log.Debug("[挖块] 主机处理失败：" + ex.Message);
-                return Fail("exception");
+                return "exception";
             }
         }
 
@@ -243,12 +336,16 @@ namespace DDEN.MPfix
     /// </summary>
     internal static class BlockDamageRelax
     {
-        private const float VanillaRatio = 3f;
-        private const float MaxBlockDamage = 2000f;
 
-        private static float _lastSalvageLogAt = -99f;
         private static float _lastMultLogAt = -99f;
-        private static int _salvaged;
+
+        // D：attackdamage 缓存（世界实例 id + 1 秒 TTL）
+        /// <summary>缓存有效期（秒）。改世界伤害倍率最多这么久后生效。</summary>
+        private const float MultCacheSeconds = 1f;
+        private static bool _multCached;
+        private static float _multValue = 1f;
+        private static float _multAt = -99f;
+        private static int _multWorldId;
 
         internal static void Install(Harmony harmony)
         {
@@ -263,8 +360,8 @@ namespace DDEN.MPfix
                 }
 
                 harmony.Patch(m, prefix: new HarmonyMethod(typeof(BlockDamageRelax), nameof(Prefix)));
-                MPfixPlugin.Log.Info($"已启用补丁：主机挖块伤害（补乘世界伤害倍率 attackdamage；" +
-                                     $"比例上限 {VanillaRatio:0.#}× → {Mathf.Max(VanillaRatio, MPfixPlugin.CfgBlockDamageRatio.Value):0.#}×）");
+                
+                MPfixPlugin.Log.Info("已启用补丁：主机挖块/打单位伤害补乘世界倍率 attackdamage（判定仍走 MP 原逻辑）");
             }
             catch (Exception ex)
             {
@@ -272,14 +369,37 @@ namespace DDEN.MPfix
             }
         }
 
-        /// <summary>世界设置里的攻击伤害倍率（原版 Body.Attack:3547 用的就是它）。读不到 / 非法值按 1。</summary>
-        private static float AttackDamageMultiplier()
+        /// <summary>
+        /// 世界设置里的攻击伤害倍率（原版 Body.Attack:3547 用的就是它）。读不到 / 非法值按 1。
+        ///
+        /// **D：缓存**（2026-11）—— 这个值在主机每次命中都要取一次，而 `GetRunSettingFloat` 是字典/反射查找；
+        /// 快速挖矿时一秒几十次命中，纯属白花。现在按「世界实例 id + 1 秒 TTL」缓存：
+        /// 世界重开立刻失效；玩家在设置里改了倍率，最多 1 秒后生效。
+        /// </summary>
+        internal static float AttackDamageMultiplier()
         {
             try
             {
+                WorldGeneration world = WorldGeneration.world;
+                int worldId = world == null ? 0 : world.GetInstanceID();
+                float now = Time.unscaledTime;
+
+                if (_multCached
+                    && worldId == _multWorldId
+                    && now - _multAt < MultCacheSeconds)
+                {
+                    return _multValue;
+                }
+
                 float v = WorldGeneration.GetRunSettingFloat("attackdamage");
-                if (float.IsNaN(v) || float.IsInfinity(v) || v <= 0f) return 1f;
-                return Mathf.Clamp(v, 0.05f, 50f);
+                if (float.IsNaN(v) || float.IsInfinity(v) || v <= 0f) v = 1f;
+                v = Mathf.Clamp(v, 0.05f, 50f);
+
+                _multValue = v;
+                _multWorldId = worldId;
+                _multAt = now;
+                _multCached = true;
+                return v;
             }
             catch
             {
@@ -287,48 +407,35 @@ namespace DDEN.MPfix
             }
         }
 
-        private static bool Prefix(float hostOwnDamage, float clientReportedDamage, ref float __result)
+        /// <summary>
+        /// **最小侵入**：只把主机算出来的那份伤害补乘它漏掉的世界倍率（原版 `Body.Attack:3546-3547` 在主机从没执行），
+        /// 然后把判定**原封不动交回 Together** —— 有限性检查、2000 硬上限、`clientReported ≤ hostOwn×3` 比例、
+        /// 被拒绝时退回 hostOwn，全都是 MP 自己的代码，这里一行都不重写。
+        ///
+        /// 为什么这样就够：主机那份数字变正确之后，客机的诚实上报天然落在 3× 以内 → MP 采纳；
+        /// 被拒绝时退回的 hostOwn 也已含倍率 → 裂纹前进量与客机一致，不再“掉一截又回升”。
+        /// </summary>
+        private static bool Prefix(ref float hostOwnDamage)
         {
             try
             {
-                float ratio = Mathf.Max(VanillaRatio, MPfixPlugin.CfgBlockDamageRatio.Value);
+                if (!MPfixPlugin.Active) return true;                     // 闸门：完全等于原版 MP
+                if (!MPfixPlugin.CfgBlockBreakSync.Value) return true;
+
                 float mult = AttackDamageMultiplier();
-                float host = hostOwnDamage * mult;
-
-                bool clientOk = !float.IsNaN(clientReportedDamage) && !float.IsInfinity(clientReportedDamage)
-                                && clientReportedDamage > 0f
-                                && clientReportedDamage <= MaxBlockDamage
-                                && clientReportedDamage <= host * ratio;
-
-                __result = clientOk ? clientReportedDamage : host;
-
-                if (mult > 1.0001f && Time.unscaledTime - _lastMultLogAt > 60f)
+                if (mult > 1.0001f)
                 {
-                    _lastMultLogAt = Time.unscaledTime;
-                    MPfixPlugin.Log.Info($"[挖块] 世界伤害倍率 attackdamage={mult:0.##}：主机侧自己那份伤害已按它补乘" +
-                                         "（原版漏乘 → 每次挖掘掉血再回升 / 挖了又长回来）。");
-                }
+                    hostOwnDamage *= mult;
 
-                if (clientOk && hostOwnDamage > 0f && clientReportedDamage > hostOwnDamage * VanillaRatio)
-                {
-                    _salvaged++;
-                    if (Time.unscaledTime - _lastSalvageLogAt > 10f)
+                    if (Time.unscaledTime - _lastMultLogAt > 60f)
                     {
-                        _lastSalvageLogAt = Time.unscaledTime;
-                        MPfixPlugin.Log.Info($"[挖块] 采纳客机伤害：客机 {clientReportedDamage:0.#} / " +
-                                             $"主机(已补倍率) {host:0.#} = {clientReportedDamage / host:0.0}×" +
-                                             $"（累计救回 {_salvaged} 次）");
+                        _lastMultLogAt = Time.unscaledTime;
+                        MPfixPlugin.Log.Info($"[挖块] 世界伤害倍率 attackdamage={mult:0.##}：主机侧那份伤害已补乘" +
+                                             "（原版在主机漏乘 → 血量掉一截又回升）；判定仍走 MP 原逻辑。");
                     }
                 }
-                else if (!clientOk && hostOwnDamage > 0f && Time.unscaledTime - _lastSalvageLogAt > 10f)
-                {
-                    _lastSalvageLogAt = Time.unscaledTime;
-                    MPfixPlugin.Log.Info($"[挖块] 客机数字仍不可信，用主机自己的：客机 {clientReportedDamage:0.#} / " +
-                                         $"主机(已补倍率) {host:0.#} = {(host > 0f ? clientReportedDamage / host : 0f):0.0}× " +
-                                         $"(上限 {ratio:0.#}×、硬上限 {MaxBlockDamage:0})");
-                }
 
-                return false;
+                return true;    // ★ 交给 Together.BlockDamageAuthority.ChooseBlockDamage 原码
             }
             catch (Exception ex)
             {

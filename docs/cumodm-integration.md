@@ -64,11 +64,31 @@ namespace MyMod
 
 ### 1.3 渲染规则（你不需要适配，但值得知道）
 
-- 一条配置 = **两行**：上行「键 + 控件」，下行说明（`ConfigEntry.Description`）；说明过长会省略，鼠标悬停看全文；
+- 一条配置 = **两行**：上行「键 + 右侧固定控件」，下行**单行**说明（`ConfigEntry.Description`）；说明只写“这个开关做什么”，放不下就截断；
+- 最左一道状态条：开 = 亮蓝、关 = 暗灰、实验性 = 橙；关掉的键用暗色 —— 便于快速分辨；
+- 完整说明（功能 / 修复的问题 / 解决方案 / 实验性 / 性能影响）由 `DdenDocs` 提供，**鼠标移到整行**时提示框展开；
 - 按 `ConfigEntry` 的 **Section** 自动分组（`▸ 无芯片同步` 这种小节标题）；
 - 控件：`bool` → 开关；`int/float` → 输入框；`KeyboardShortcut` → 点一下然后按键；
 - 改值直接写 `ConfigEntryBase.BoxedValue` → BepInEx 立刻落盘到你的 cfg；
 - **热重载类配置（需要重建对象的）请自己在 `SettingChanged` 里处理**，管理器只负责改值。
+- ⚠ **配置改完不能立即生效的，必须在说明里写明“需要重启游戏”**，并在 `DdenDocs` 里给 `needsRestart: true`，
+  管理器会给这一行挂 `⟳ 重启生效` 橙色小标 —— 别让玩家改完以为没反应。
+
+### 1.3.1 可选：交一份完整说明给提示框（`DdenDocs`，零引用也能用）
+
+管理器不会替你编说明。想让它显示完整五项，就在自己程序集里任意 public 类型上放一个 `public static void DdenDocs()`：
+
+```csharp
+public static void DdenDocs()
+{
+    // 用反射调 DDEN.Shared 的 DdenDocs.Add? 更简单：直接引用 Shared（L2）后调用：
+    // DDEN.Shared.DdenDocs.Add(section, key, what, fixes, how, experimental, perf, needsRestart);
+}
+```
+
+- 参数顺序：`功能` / `修复的问题` / `解决方案` / `实验性`（默认 `"否"`）/ `性能影响`（默认 `"无"`）/ `needsRestart`（默认 `false`）；
+- 键 = `ConfigEntry` 的 `Section + "/" + Key`，**必须与配置项完全一致**；
+- 没登记的项：提示框只显示那一行说明，不编造内容。
 
 ### 1.4 注意
 
@@ -132,7 +152,56 @@ public class MyPlugin : BaseUnityPlugin, IDdenModule
 | `DrawSettings(Rect)` → `bool` | ✅ | 返回 `true` 表示已自绘；`false` 交给管理器渲染 `ConfigEntries` |
 | `ConfigEntries` | ✅ | 参与「全部配置」页的条目，一般 `Config.Entries()` |
 
-### 2.4 管理器缺席时
+### 2.4 模块总开关（可选，`IDdenModuleGate`）
+
+想让管理器把你的配置**整体置灰**（比如总开关关掉、或环境版本对不上时），再实现一个接口：
+
+```csharp
+public class MyPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleGate
+{
+    internal static ConfigEntry<bool> MasterEnabled;   // 你自己的“总开关”配置项
+
+    // 管理器每帧问一次：false → 你的所有配置行变灰、不可编辑（值仍在，不会丢）
+    public bool ModuleEnabled => MasterEnabled != null && MasterEnabled.Value;
+}
+```
+
+- `false` 时：该模块的配置行文字/控件全部变灰、**不接受点击**；「全部配置」页与单模块配置页都生效；
+- 建议把总开关放在第一个 Section（DDEN 自己叫 `总开关/启用本模块（MasterEnabled）`），玩家一眼能看到；
+- 置灰只是“不许改”，不会改你的值，也不会替你关掉任何东西 —— 行为上的停手请你自己在代码里判断。
+
+### 2.5 参与环境版本校对（可选，`DdenGate`）
+
+DDEN 的修复是针对**特定游戏 + 联机框架版本**逐行核对出来的。模块想跟着这套规则走：
+
+```csharp
+// 启动时读一次环境（幂等，读一次就缓存）
+DdenGate.Probe();
+if (DdenGate.Blocked)            // 版本不符 且 用户没在管理器「总览」打开「忽略核对环境版本」
+{
+    // 你的模块应当停手：不清世界、不发包、不改配置
+    return;
+}
+```
+
+- `DdenGate.VersionOk`：本机联机组件版本 == 本版 DDEN 核对过的版本（当前 **5.5.4**）；
+- `DdenGate.Blocked`：`!VersionOk && !IgnoreEnv`；
+- `DdenGate.IgnoreEnv`：由管理器「总览 → 忽略核对环境版本（IgnoreEnvVersion）」写入，**默认关**；
+- 拦住时管理器会在**主界面常驻一条红色提示**：`DDEN未校对此环境版本兼容性，需要打开面板处理！`
+  并在总览里给出红色卡片与一键开关 —— 你的模块只要尊重 `DdenGate.Blocked` 就已经对齐这套体验；
+- 建议同时实现 `IDdenModuleGate.ModuleEnabled => 开关 && !DdenGate.Blocked`，配置项就会跟着变灰。
+- **必须显式声明才参与**：在 `Awake` 里调 `DdenGate.RegisterParticipant("你的模块id")`。
+  没有任何模块声明时，**主界面不会挂那条红色提示**（面板里的状态照旧显示，不做任何隐藏）；
+  声明过的模块才会让提示条出现 —— 免得没人在乎版本的游戏被一条常驻红条糊住。
+
+### 2.6 配置热生效与重启提醒（**硬要求**）
+
+- 配置改完**必须立即生效**：在补丁/前缀/`Update` 里**每次读 `ConfigEntry.Value`**，不要在 `Awake` 里读一次就缓存；
+  必须在 `Awake` 里做的判断（装不装补丁之类），就**总是装上补丁、在补丁内部读配置**。
+- 确实只能重启才生效的项：在说明里写明「需要重启游戏」，并在 `DdenDocs` 里 `needsRestart: true`，
+  管理器会给这一行挂 `⟳ 重启生效` 小标（`DdenUI` 自带）—— 这条是给玩家看的，不许省。
+
+### 2.7 管理器缺席时
 
 - `DdenHub.ManagerLoaded == false` → 你应当降级成自己的小窗；
 - 共享层已经提供了这套兜底：

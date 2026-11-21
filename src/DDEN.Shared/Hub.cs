@@ -8,6 +8,30 @@ namespace DDEN.Shared
     /// DDEN 系列模组的统一模块契约：每个插件实现一份，注册进 <see cref="DdenHub"/>，
     /// 由 DDExcNet-CUmodM 统一渲染“功能界面 + 配置界面”。
     /// </summary>
+    /// <summary>模块可选实现：返回 false 时管理器把它的配置项整体置灰、不可编辑（例：总开关关闭 / 环境版本闸门拦住）。
+    /// <summary>模块健康度：管理器据此给侧边栏/总览上色（黄=有错误、红=严重错误/已终止）。</summary>
+    public enum DdenHealth
+    {
+        Ok = 0,
+        Warn = 1,
+        Severe = 2
+    }
+
+    /// <summary>模块可选实现：报告自己的健康度与原因（例：功能崩溃、版本核对未通过）。</summary>
+    public interface IDdenModuleHealth
+    {
+        DdenHealth Health { get; }
+        string HealthNote { get; }
+    }
+
+    public interface IDdenModuleGate
+    {
+        bool ModuleEnabled { get; }
+
+        /// <summary>主开关的完整键名（`分区/键名`）。模块关闭时这一行**仍然可点** —— 否则关掉就再也打不开。</summary>
+        string MasterKey { get; }
+    }
+
     public interface IDdenModule
     {
         /// <summary>短 id（小写，唯一），用于导航与 URL 式跳转。</summary>

@@ -13,7 +13,7 @@
 | 产物 | 源码 | 作用 |
 | --- | --- | --- |
 | `DDExcNet-CUmodM.dll` | `src/DDExcNet.CUmodM/` | **管理器**：统一功能界面 + 全部配置界面 + **兼容性总控** |
-| `DDEN.MPfix.dll` | `src/DDEN.MPfix/` | 多人修复合集：无芯片同步 + 联机合成/物品生成兜底 + 物品网络登记 + 穿戴兜底 + 物品物理保险 + 挖块收敛 + 商人快照 + 掉线遗留物品冻结 + 娱乐（道生一 一生二） |
+| `DDEN.MPfix.dll` | `src/DDEN.MPfix/` | 多人修复合集：无芯片同步 + 联机合成/物品生成兜底 + 物品网络登记 + 穿戴兜底 + 物品物理保险 + 挖块收敛 + 商人快照 + 掉线遗留物品清理 + 娱乐（道生一 一生二） |
 | `DDEN.SaveEditor.dll` | `src/DDEN.SaveEditor/` | 可视化存档编辑器（图标/血条点选，QoL 多存档位） |
 | `DDEN.NetPerfTracker.dll` | `src/DDEN.NetPerfTracker/` | **性能跟踪器**（正式名 NetPerfTracker，调试/观测工具）：管理器里单独一页，帧数/CPU/物理压力曲线 + 世界对象与网络状态的文字读数；同时写 `BepInEx/config/DDEN/perf-*.log`。**不打任何补丁**，随发布包一起发（玩家不用也不会影响游戏，排查掉帧时让他开着就能抓现场） |
 | `DDEN.Shared.dll` | `src/DDEN.Shared/` | 公共层：反射、日志、联机桥、存档编解码、**IDdenModule / DdenHub / Compat / DdenUI** |
@@ -105,16 +105,18 @@ dotnet build CUmod.slnx -v m                  # 只编译
 - **性能跟踪器（`DDEN.NetPerfTracker`，正式名 NetPerfTracker）**：调试用的子 mod，管理器侧边栏单独一页「性能分析」。
   **零补丁**（一个 MonoBehaviour，不装 Harmony，最坏情况只是自己不采样），所以线上排查可以放心让它跑着。
   - 采样两档：轻采样（帧数/最差帧/CPU%/物理步每帧数，默认 1 秒）与重采样（数 `Item`/`Body`/`Rigidbody2D`/`Collider2D`、
-    反射读 `NetObjectRegistry.SyncRegistry` 与 `ScavPlayer.ClientIdToPlayerDict`，默认 5 秒）；
-    **重采样耗时超过 8ms 自动关掉碰撞体计数**（观察者不许成为元凶），每次耗时都写进日志的 `costMs`。
+    反射读 `NetObjectRegistry.SyncRegistry` 与 `ScavPlayer.ClientIdToPlayerDict`，默认 **15** 秒、且**只在页面被打开过之后**才跑）；
+    **重采样耗时超过 8ms 自动关掉碰撞体计数**（观察者不许成为元凶），每次耗时记在 `costMs`。
   - 页面：4 张曲线（帧数 / CPU / 物理压力 / 世界对象）+ 文字读数（物品·无主·无主且物理开着、刚体、碰撞体、
     网络对象·已销毁条目、玩家数、targetFrameRate、vSync、timeScale、fixedDt）+ 暂停/清空/写日志/打开目录。
     曲线按像素列降采样，攒几千个点也不会把这一页画卡。
-  - 日志：`BepInEx/config/DDEN/perf-<时间戳>.log`，一行一个快照 `key=value`（不走 BepInEx 主日志，那边会被新实例截断）。
+  - 日志：**只在点「导出日志」按钮时写文件**（`BepInEx/config/DDEN/perf-<时间戳>.log`，一次把内存里全部采样写出来）；
+    平时只存内存，不写盘（用户口径 2026-11）。重采样（数世界对象）默认 15 秒一次，**且只在这一页被打开过之后才跑**，
+    没打开过就一直不跑 —— 观察者不许给正常玩家制造周期性卡顿。
   - 用途：抓「一台客机掉线 → 另一台客机巨卡」这类现场 —— 看 `sim`（无主且物理开着）、`deadsync`、`players` 的台阶。
   - 它**随发布包一起发**（用户 2026-11 明确要求：本地输出要包含全部模块，含存档编辑器与性能跟踪器）；
     它不打任何补丁，装不装都不影响游戏，只是排查掉帧时能直接抓现场。
-  - ⚠️ `[BepInPlugin(..., "1.2.0")]` 里的版本号读不了 MSBuild 属性：**改 `<DdenVersion>` 时顺手改各插件的 `[BepInPlugin]`**。
+  - ⚠️ `[BepInPlugin(..., "1.3.0")]` 里的版本号读不了 MSBuild 属性：**改 `<DdenVersion>` 时顺手改各插件的 `[BepInPlugin]`**。
 - **窗口必须用无皮肤模式**：`GUI.Window(id, rect, Draw, GUIContent.none, GUIStyle.none)` + 自己画标题栏。
   用默认窗框时它会把 y<20 的第一行内容盖住（表现为“文字上下被切掉”）。
 - **输入隔离（关键：这游戏的菜单按钮不走 uGUI）**：
@@ -142,7 +144,7 @@ dotnet build CUmod.slnx -v m                  # 只编译
   在客机上也会跑一遍“本地预测”，让客机成功造出模组物品就会和主机同步来的那份重复
   （典型症状：**客机买商人东西买两份**）。客机保持原版行为，生成物一律由主机权威下发。
   生成后在主机侧补 `NetObjectRegistry.Server_EnsureItemIsNetworkRegistered`
-  （开关 `联机合成/FixModItemCraftSpawn`、`联机合成/RegisterSpawnedItemsOnHost`）。
+  （开关只剩 `联机合成/修“无法生成物品”（FixModItemCraftSpawn）`；登记已改为无条件且幂等，不再有开关）。
   **两条都不行就放弃兜底**（交回原版，该配方该失败就失败）——**绝不克隆现存物品、绝不做任何 Destroy**：
   克隆容器会把内容物一起复制（凭空刷物品），清理子物品又是一次删除，风险远大于收益。
   **失败必须留痕**：会打一条 `[CraftFix] 生成失败 '<id>'：…（含注册表是否命中）`（同 id 30s 去重）。
@@ -158,14 +160,15 @@ dotnet build CUmod.slnx -v m                  # 只编译
   **铁律：绝不把“解析不到发送者”回落成 `Game.LocalBody`** —— 那会把客机的物品穿到主机自己身上；
   解析不到就 `Fail("no-body")`。发送者通道注册失败 → 本会话整块停手并 Warn（宁可不修，不猜人）。
   记录类异常只记 Debug，**不因此禁用整个兜底**；只有频道/`Body_ForceWearWearable` 找不到才停。
-  只有 `RebuildIfHostLacksItem`（默认 false）开启且主机真的找不到时才走“掉地+重建”。
+  **没有“重建”这条路了**（`RebuildIfHostLacksItem` 与 `wearrespawn` 频道已删除）：主机找不到就保持现状，绝不复制。
   无芯片 watchdog 默认 **30s**（旧配置 0.5 会自动迁移）。
 - **物品穿墙掉落（联机）**：真凶是 Together 的 `HeldQuiet`（`Internal/HeldQuiet`）——
   `Awake` 里把物品所有 `Collider2D` 关掉并记下当时状态，`Restore()` 再写回；
   若挂上那一刻碰撞体本来就是关的（物品在背包里 / 模组物品后加的碰撞体不在名单里），写回后仍然是关的，
   而 `HeldSeat` 已经把 `rb.simulated = true` → **无碰撞 + 有物理 = 穿过墙块往下掉**。
-  修复在 `DDEN.MPfix.ItemPhysicsGuard`：① Harmony postfix 到 `HeldQuiet.Restore`（反射按名字找类型）恢复后**只补碰撞体**；
-  ② 只在 `Body.DropItem` / `Body.DropWearable`（真正的丢出动作）后**补开碰撞体 / 打开物理**，**绝不移动物品**。
+  修复在 `DDEN.MPfix.ItemPhysicsGuard`：**只挂 `Body.DropItem` / `Body.DropWearable`（真正的丢出动作）**，
+  之后补开碰撞体。**被动恢复（`HeldQuiet.Restore` 那条）与 `GuardRadius` 已整体删除**（用户口径 2026-11：
+  「被动恢复范围检测去掉，只处理玩家丢弃的物品」）——它盯着一堆没被丢的物品反复开关碰撞体，是抖动来源。
   **三条铁律**（2026-11 因“主机物品一直掉落/浮空”两次收紧）：只处理 `IsFree` 的自由物品（无父级、不在 Container 里）；
   只“打开”不“改写”；任何位移副作用一律删除（早期版本会上移 0.5~3m，位移会残留在局部坐标 →
   表现为“还穿在身上却浮在角色上方”）。
@@ -178,8 +181,27 @@ dotnet build CUmod.slnx -v m                  # 只编译
   （重复修复导致的错位/残留/孤儿），而且“贴图残留”从未被证实存在——是上一个 agent 的推测。
   **不要再加回来**：它们会去改物品的父级与 localPosition，一旦判断错就是"身上物品乱飞/被挪走"，
   比它想解决的问题更糟。真出现“装备浮空/贴图残留”，先查是谁改了父级，别用巡检去猜。
-- **现在只剩两个周期巡检**：`WearGhostFix.Tick()` 与 `StaleItemFreezer.Tick()`，
-  逐帧计时后每 60 秒汇总一条 `[巡检]`（平均 ≥0.5ms 或峰值 ≥2ms 才写），状态页常驻显示 `巡检开销`。
+- **掉线后另一台客机掉帧（`GhostItemRelay` 主机点名，2026-11 第五版）**：
+  **先读 MP 自己的退场流程**（decomp/mp554）：主机 `ScavPlayer.OnDestroy` → `PlayerCheckpoint.WriteOne` →
+  `new PlayerSavedState(body)`：物品 `SetParent` 到 `SAVESTATE_<nb>` → `NetObjectRegistry.DetachSyncKeepMesh(go)` → 容器 `SetActive(false)`。
+  **`DetachSyncKeepMesh` 是 `if (!Net.IsServer) return;`，只改主机注册表、不给客机发任何消息** ——
+  客机那份副本于是没人管：`HeldSeat.Detach/Release` 把它 `SetParent(null)` 并设回 Dynamic + `simulated = true`，
+  碰撞体却停在"被抓时"的关闭状态 → 一路下坠、永远 sleep 不了（实测 82 件 / 336 刚体 / 2.55 步每帧 / 19fps）。
+  注意客机自己的 `SyncRegistry` 仍有这些条目 → `IsRegistered` 为真，所以"按注册状态判断"的写法会全部放过它们。
+  - **主修 `GhostItemRelay`**（按用户口径：主机点名、客机执行）：Harmony postfix 到
+    `Together.NetObjectRegistry.DetachSyncKeepMesh(GameObject)`（反射挂，因为 Together 不能硬引用），
+    记下 `{item.id, 坐标}`，1.2 秒攒批后用 CUCoreLib `MultiplayerBridge.Broadcast("ddn.mp.ghostitems", …)` 广播；
+    客机 `RegisterClientHandler` 收到后按 **id + 1.5m 内** 精确命中本地"无主副本"，调
+    `NetObjectRegistry.SafeDestroyObject`（MP 自己的销毁通道：先卸容器内容物 → 摘注册表 → Destroy）删掉。
+    **不用任何"是不是在下坠/还登不登记"的猜测**；开关 `联机修正/RelayGhostItems`（默认开）。
+  - **启发式已删除**（用户口径 2026-11）：`GhostItemCleaner` 连同 `CleanGhostItems` / `CleanGhostItemsMaxPerSession`
+    一起删掉。理由：判据不稳（物品可能真的掉很久、还有浮空机制），不靠猜。
+  - **卡顿应急已删除**（用户口径 2026-11）：`PerfRescue` 连同 `卡顿应急/*` 四个开关一并删掉。
+    原因：它把无主物品冻成运动学并关掉碰撞体，客机侧看起来就是**物品往天上飘**（很诡异），
+    而且它只是在掩盖症状。**别再恢复**：卡顿要么靠"主机点名清理"根治，要么不动。
+  - `NetPerfTracker` 的「活跃刚体」只数 `Dynamic`（运动学/静态刚体不算压力），指标才反映真实开销。
+- **现在的周期节拍**：`WearGhostFix.Tick()`、`GhostItemRelay.Tick()`（主机攒批广播）；
+  `[巡检]` 每 60 秒汇总一次（平均 ≥0.5ms 或峰值 ≥2ms 才写），状态页常驻显示 `巡检开销`。
 - **“一生二”重复物品（重要）**：合成 / 购买 / 生成在客机上**也会跑一遍本地预测**。
   只要客机的 `Utils.Create` 成功造出模组物品，它自己那份 + 主机同步来的那份就是两份。
   所以 `Utils_Create_ModItemPatch` 的第一道闸是 `if (Mp.IsRunning && !Mp.IsServer) return true;`
@@ -230,9 +252,11 @@ dotnet build CUmod.slnx -v m                  # 只编译
   **不要再加回来**：它要同时猜“主机重跑有没有扣过”，双扣/漏扣都比原版更难调。
 - **删幽灵物品必须先保内容物**：`WearGhostFix.TryRetireGhost` 先把子物品逐个脱离落地，
   含液体（`WaterContainerItem.stack`）或取不干净就**保留不删**，只有空壳才 Destroy。
-- **配置界面必须是两行一条**：上行「键 + 控件」，下行说明（`DdenUI.ConfigRow`，行高 44）。
-  “全部配置”页必须把**所有模块的配置**都列出来（按模块分块、按 Section 分组），不能要求先选模块才看得到。
-  说明放不下时用 `DdenUI.Hover` 让鼠标悬停看全文。
+- **配置界面版式（2026-11 定稿）**：上行「键 + 右侧固定控件（120×18）」，下行**单行**说明。
+  行高固定 `ConfigRowHeight = 46`；最左 3px 状态条（开=亮蓝 / 关=暗灰 / 实验性=橙），关掉的键用暗色 —— 扫一眼就知道哪行是哪个功能、什么状态。
+  **说明只写「这个开关做什么」**，不写修过什么、不写怎么修；完整五项（功能 / 修复的问题 / 解决方案 / 实验性 / 性能影响）
+  由 `DdenDocs`（`DDEN.Shared/DdenDocs.cs`）维护，鼠标移到整行时提示框展开。新增开关必须同时 `DdenDocs.Add(...)`，
+  否则提示框只剩那一行说明。
 - **外部模组接入（给别人用）**：`DDEN.Shared.DdenExternal` 在管理器 `Start()` 扫描所有已加载插件程序集，
   认出约定成员（`DdenConfig` / `DdenTitle` / `DdenSummary` / `DdenDraw(Rect)`）后收进管理器。
   **对方不需要引用 `DDEN.Shared.dll`**。文档：[docs/cumodm-integration.md](docs/cumodm-integration.md)；
@@ -250,6 +274,9 @@ dotnet build CUmod.slnx -v m                  # 只编译
 - **不要在模块里重复造兼容判断**，也别各自写自己的弹窗系统。
 - **存档编辑红线**：只改用户点过的字段；`cheatedSave`（禁用成就）**绝不自动写入**，仅由“进度/成就”页手动切换；
   写盘只走 `SaveCodec.Write` + `SyncMeta`（原子 + `.cumod.bak`），写前查 `Compat.IsQolAutosaveBusy()`。
+- **环境版本闸门（2026-11 定）**：`DDEN.Shared/DdenGate.cs`；本版针对联机组件 **5.5.4**。版本对不上且管理器「总览」里的
+  `兼容性/忽略核对环境版本（IgnoreEnvVersion）`（默认关）没打开时：`MPfixPlugin.Active` 恒 false（各入口都查它），
+  管理器在**主界面常驻红色提示条** `DDEN未校对此环境版本兼容性，需要打开面板处理！`，总览里是红色卡片 + 一键开关。
 - 不碰别人放在 plugins 下的 dll；不 git push（本地仓库由用户自行建远端）。
 
 ## 4. 验证流程（三件套，全部真实运行）
@@ -318,7 +345,8 @@ ilspycmd -o decomp/qol  --nested-directories "<plugins>/QoL Unknown 1.1.5 - 实�
 **已 `git init` 并有远端：`origin = https://github.com/cubstaryow/DDExcNet-CUmodM.git`，默认分支 `master`。**
 
 - **分支模型（2026-11 定）**：`master` = 发布分支（只放验收过的），`dev` = 日常工作分支。
-  **agent 每次会话的改动先提交并 push 到 `dev`**；用户验收通过后再由用户合并到 `master`。
+  **agent 每次会话的改动在 `dev` 上做本地提交即可，不要 push** —— 用户校园网很差，`git push` 会长时间卡死
+  （实测 20s~300s 超时 / Connection reset）。推送由用户自己用 GitHub Desktop 完成，或他明确说“推一下”再推。
   详见 [docs/workflow.md](docs/workflow.md)。
 - **不要直接往 master 提交功能改动**，也不要替用户做合并/打 tag；`git push origin dev` 是例行动作，
   但**不要** force push、不要改 remote、不要删别人的分支。
@@ -329,3 +357,10 @@ ilspycmd -o decomp/qol  --nested-directories "<plugins>/QoL Unknown 1.1.5 - 实�
 - **CI 构建不了**，别尝试加 Actions：编译需要游戏本体的 `Assembly-CSharp.dll` / `UnityEngine.*` 与
   `0Harmony.dll`，这些是商业游戏安装文件，不能进仓库也不能传 CI —— 只能本地构建再上传产物。
 - 不提交 `decomp/`、`bin/`、`obj/`、`dist/`、`backup/`、`artifacts/`。
+
+- **挖块=伤害重算（最小侵入，2026-11 定）**：BlockDamageRelax 只做一件事 —— 前缀里 `ref float hostOwnDamage *= attackdamage`
+  然后 `return true`，**判定/比例/上限/拒绝退路全部交回 Together 原码**。不要再去重写 ChooseBlockDamage 的规则
+  （那是上一版的做法，已删）；BlockDamageRatio 开关也随之删除。单位同构：BuildingDamageRelax 只乘 armstrength。
+- **上报收敛=激进开关**：联机修正/挖掘修复-激进（实验性 · ⚠帧数影响）（AggressiveConverge） 默认 **关**，
+  打开后才启用 `ddn.mp.blockdmg` 上报（0.35 秒攒批）+ 主机校验收敛；只对已打开的“伤害重算”项生效。
+  平时不需要它 —— 倍率补上之后两边数字本来就一致。
