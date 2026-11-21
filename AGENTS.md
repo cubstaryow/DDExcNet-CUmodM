@@ -360,7 +360,10 @@ ilspycmd -o decomp/qol  --nested-directories "<plugins>/QoL Unknown 1.1.5 - 实�
 
 - **挖块=伤害重算（最小侵入，2026-11 定）**：BlockDamageRelax 只做一件事 —— 前缀里 `ref float hostOwnDamage *= attackdamage`
   然后 `return true`，**判定/比例/上限/拒绝退路全部交回 Together 原码**。不要再去重写 ChooseBlockDamage 的规则
-  （那是上一版的做法，已删）；BlockDamageRatio 开关也随之删除。单位同构：BuildingDamageRelax 只乘 armstrength。
+  （那是上一版的做法，已删）；BlockDamageRatio 开关也随之删除。合法的低倍率也须修正。
+  单位和角色/肢体走 UnitDamageRepair：复制 AttackInfo，只补伤害字段，不再乘 armstrength 放大击退。
 - **上报收敛=激进开关**：联机修正/挖掘修复-激进（实验性 · ⚠帧数影响）（AggressiveConverge） 默认 **关**，
-  打开后才启用 `ddn.mp.blockdmg` 上报（0.35 秒攒批）+ 主机校验收敛；只对已打开的“伤害重算”项生效。
-  平时不需要它 —— 倍率补上之后两边数字本来就一致。
+  只对已打开的“伤害重算”分支生效。方块沿用 `ddn.mp.blockdmg`（0.35 秒/64块攒批，主机16块/1.5ms分帧）；
+  单位和 Body/Limb 在原生可靠攻击消息附加24字节上报，主机在同一次攻击里校验重算，绝不另补第二次伤害。
+  原有 `SyncBlockBreak`/`SyncBuildingDamage` 保留，新增 `SyncBodyDamage`；主客机均须开启对应分支与激进模式。
+  基础倍率修正不能保证消除身体状态差异与预测覆盖；不得再写“补倍率就必定一致”。详细协议与验收见 docs/features.md 2.6。

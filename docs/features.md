@@ -149,36 +149,48 @@ Together 还会按 attempt 缓存失败回执，同一会话重试仍然失败 �
 **为什么删**：这三件"病"本来就是早期修复自己造成的（重复修复改了物品父级与 localPosition 导致错位/残留/孤儿），
 其中"贴图残留"从未被证实存在（是上一轮 agent 的推测）。用巡检去猜谁改了父级，风险大于收益 ——
 真出现浮空先查是谁改了父级，别再叠一套会动物品的修复。
-### 2.6 挖块：血量掉一截又回升、挖掉了又长回来
+### 2.6 挖块与近战：基础伤害重算 / 激进上报
 
-**现象**：客机挖方块，先掉一段血，紧接着血量回涨一部分；客机那边方块消失了，主机判定没挖掉，
-chunk 同步把原 tile 推回来 → “挖了又出现”。
+三个分支开关分别控制方块、箱子/植物/动物（BuildingEntity）与角色/肢体（Body/Limb，含同路径的敌人与 PVP）。
+`AggressiveConverge` 是总的激进模式开关，只对两端均已开启的对应分支生效；默认关闭。
 
-**原因（三条叠加）**：
+| 分支开关 | 激进关闭 | 激进开启 |
+| --- | --- | --- |
+| SyncBlockBreak | 主机估算补乘世界伤害倍率，再走 MP 原判定 | 同左，另保留客机碎块上报、主机校验补齐的兜底 |
+| SyncBuildingDamage | 主机代理客机时，复制攻击参数补乘伤害字段 | 随原攻击消息上报客机伤害与力量，主机校验后在原攻击中结算一次 |
+| SyncBodyDamage | 同上，覆盖 DoPVPMeleeDamage | 同上，原来的目标、距离、阵营与攻击频率校验继续执行 |
 
-1. **主机那份伤害天生少了世界伤害倍率**（真凶）。原版 `Body.Attack` 第一件事就是
-   `atk.damage / atk.structuralDamage *= WorldGeneration.GetRunSettingFloat("attackdamage")`
-   （Assembly-CSharp 3546-3547）。客机那次 Attack 真跑完整流程，所以上报值**含倍率**；
-   而主机在 `ServerReceiver_PlayerBodyAttack` 里先把 `ForceOnlyRetrieveAttackInfo` 置真再走
-   `ItemSync.BetterUseItem`，Together 的 `Body.Attack` 前缀抓到 `LastAttackInfo` 就直接 `return false` ——
-   **3546/3547 在主机从没执行过**。于是 `BlockDamageAuthority.ChooseBlockDamage(hostOwn, …)` 的 `hostOwn`
-   少一个 `attackdamage`（`CalculateAttackPower` 里也没有它，只算 armPowerMult/bonusStrength/STR/爪）。
-2. **比例门槛**：原版 `ChooseBlockDamage`（126046）只接受 `clientReported ≤ hostOwn * 3`，
-   倍率或模组工具一放大就整段被丢，主机用自己那份小值落地 → 客机看到“掉一截又回升”，累不到 0 就永远挖不穿。
-3. **中继把裂纹掰回去**：`ClientReceiver__PlayerDamageBlockRelay`（43901）拿 `主机累计 - 本地累计` 当差值
-   喂 `DamageBlock`，可能是负数 → 裂纹往回跳。
+**代码证据与边界**：MP 取得远端攻击参数时通过 `ForceOnlyRetrieveAttackInfo` 跳过游戏 `Body.Attack`，
+因此缺少 `attackdamage` 乘法。基础修复覆盖合法的低于 1 倍与高于 1 倍设置，不改客机/主机自己的攻击。
+这只能消除倍率遗漏；工具、身体状态与预测同步时序的其他差异仍可能造成回弹，不能承诺全修。
+`AttackInfo` 为引用类型，复制后改 `damage/structuralDamage`，不污染共享模板，也不让世界伤害倍率放大击退。
 
-**修法（先治根再兜底）**：
+**激进方块路径**：
 
-- `BlockDamageRelax`：给 `ChooseBlockDamage` 加**全程接管**的前缀（不能 `return true` 交回原版，
-  否则“被拒绝”那条路仍用没乘倍率的 hostOwn 落地）：`hostOwn *= attackdamage`（读不到/非法值按 1，绝不猜）
-  之后再做原版那套有限性 + 2000 硬上限 + 比例判定；比例上限可配 `联机修正/BlockDamageRatio`（默认 6，
-  有效下限 3 = 原版）。有倍率时打一条 `[挖块] 世界伤害倍率 attackdamage=…`。
-- `BlockDamageSyncFix`：客机本地把方块打到 0 时发 `ddn.mp.blockdmg {x,y,block,total}`；
-  主机**先校验**（同一格同一方块 / 发送者 12 格内 / 主机账上这块已掉 ≥ `BlockBreakMinFraction`（默认 50%）血量），
-  再**收敛**（`delta = total - 已损失`，只加不减）而不是无脑打满 —— 一镐敲穿钢墙这条路是死的。
-  同坐标 5 秒去重、每局 3000 次上限；中继伤害（`ApplyingRelayedDamage`）不回发。
-  被拒绝时打 `[挖块] 拒绝收敛：… 主机账上只掉了 …`，按这条日志调门槛。
+- 命中时只捕获块编号，碎掉后记录轻量值；不在命中回调中创建 JSON 或发送消息。
+- 0.35 秒攒批，每批最多 64 块，每帧最多发送一批；满批只通知调度器，不在同一帧连续发送。
+- 消息仍兼容旧的单条 `{x,y,block,total}` 与 `{items:[...]}`；底层保持可靠发送，发送失败保留队列等待重试。
+- 主机每批只解析一次发送者，在收到时校验 12 格距离；执行时再次检查块编号和原伤害记录身份。
+- 真正补伤害按 FIFO 分帧处理，每帧最多 16 块，累计达到 1.5ms 后暂停。单块原版破坏流程不能中途抢占。
+- 仍要求主机已有对应伤害记录，且已损失血量达到 `BlockBreakMinFraction`（默认 50%）；只补差值。
+- 主机已经破坏的方块直接跳过；保留原版掉落/破坏/地图广播。不扫描全地图、不直接删块。
+- 删除进程累计 3000 次后永久停报的限制。重复坐标保留 5 秒去重，过期自动清理；换层、断联或关闭开关清空待处理状态。
+- 排队预算耗尽只延后处理，不丢弃已接纳任务。持续生产速度高于消费速度会增加队列和确认延迟，需实测。
+
+**激进单位/身体路径**：
+
+- 目前 MP 5.5.4 的可靠攻击包附加 24 字节版本化二进制尾部（分支、伤害、结构伤害、力量）。
+  不增加独立包，不走 JSON/GZip/Base64，也不另补一次单位伤害，因此没有两条通道先后顺序导致的双扣。
+- 同一次原生服务端攻击在完成目标与距离校验后，消费对应分支上报一次；检查有限值、范围与主机估算的可信比例。
+  非法/不可信/没有尾部时退回基础重算，不让一次坏报告影响后续攻击。
+- 两端对应分支开关与激进开关均须开启。旧客机没有尾部时使用基础重算；旧主机忽略尾部但不会获得新修复。
+- 保留原 MP 的阵营规则、护甲与附加伤害逻辑。它不是“禁止回血”；真实回血继续有效。
+- `BuildingEntity` 的原版近战动物 BoxCast 独立分支仍由 MP 原有重跑流程处理，并非所有生物都必经 `DamageBuilding`。
+  本次不能据此宣称所有敌人的所有攻击类型均已覆盖。
+
+**验证与限制**：`dotnet run --project tools/DamageRepairTests -c Release` 验证格式、无效数据、可信边界、
+一万条队列任务的顺序/不丢失、时间预算与清空。`cumod.selftest` 还检查实际安装的传输类读写以及读指针不变。
+启动与界面检查不能替代双端联机验收；帧率收益、身体血量预测覆盖和高速连续挖掘需在两端安装新版后实测。
 
 ### 2.7 客机付钱，商人却不给货
 

@@ -61,6 +61,9 @@ namespace DDEN.MPfix
 
                 r.Add($"WorldGeneration 可读 = {Game.InWorld}（world={(WorldGeneration.world != null ? "非空" : "null")}）");
                 r.Add($"主机裁决读取 = {Mp.HostUnchipped()}");
+                bool attackOk = UnitDamageRepair.SelfTest();
+                r.Add("攻击上报真实传输读写 = " + (attackOk ? "PASS" : "FAIL"));
+                if (!attackOk) pass = false;
 
                 log.Info("[SELFTEST] " + string.Join(" | ", r) + (pass ? " | 结论 PASS" : " | 结论 FAIL"));
             }

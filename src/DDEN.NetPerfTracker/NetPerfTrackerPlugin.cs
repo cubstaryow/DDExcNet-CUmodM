@@ -26,7 +26,7 @@ namespace DDEN.NetPerfTracker
     ///  · 图表只画窗口内可见的列数（宽 600px 最多 600 次 Fill），不会因为攒了几千个点而变卡。
     ///  · 同时把数据写进 `BepInEx/config/DDEN/perf-*.log`（一行一个快照，key=value），方便事后 diff / 发给我。
     /// </summary>
-    [BepInPlugin(Guid, "DDEN NetPerfTracker", "1.4.0")]
+    [BepInPlugin(Guid, "DDEN NetPerfTracker", "1.5.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     public class NetPerfTrackerPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleGate
     {

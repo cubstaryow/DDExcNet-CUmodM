@@ -21,7 +21,7 @@ namespace DDEN.MPfix
     ///  ⑦ 娱乐：道生一 一生二（商人购买多给一份，只在主机生效）。
     /// 界面与配置统一交给 DDExcNet-CUmodM 显示（模块 id = mpfix）。
     /// </summary>
-    [BepInPlugin(Guid, "DDEN MP Fix", "1.4.0")]
+    [BepInPlugin(Guid, "DDEN MP Fix", "1.5.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
     public class MPfixPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleGate, IDdenModuleHealth
@@ -56,6 +56,7 @@ namespace DDEN.MPfix
         internal static ConfigEntry<bool> CfgBlockBreakSync;
         internal static ConfigEntry<float> CfgBlockBreakMinFraction;
         internal static ConfigEntry<bool> CfgSyncBuildingDamage;
+        internal static ConfigEntry<bool> CfgSyncBodyDamage;
         internal static ConfigEntry<bool> CfgAggressiveConverge;
         internal static ConfigEntry<bool> CfgQuietTraderUIModItems;
         internal static ConfigEntry<bool> CfgRelayGhostItems;
@@ -213,12 +214,17 @@ namespace DDEN.MPfix
             DdenDocs.Add("联机修正", "修“打箱子/植物/动物”-伤害重算（SyncBuildingDamage）",
                 "主机结算客机打箱子、植物、动物时，按世界伤害倍率重算这一下。",
                 "打储物箱、植物、动物时血量掉一下又弹回去。",
-                "和挖方块同一个原因：把主机漏掉的世界伤害倍率补上。", "否", "无（只做一次乘法）");
+                "通常只补齐主机漏算的世界伤害倍率；激进模式下按客机上报重新核对这一下。", "否", "低（只在攻击时执行）");
+            DdenDocs.Add("联机修正", "修“打角色/肢体”-伤害重算（SyncBodyDamage）",
+                "主机结算客机近战打角色、肢体类敌人时，重新核对伤害。",
+                "客机近战打中角色或肢体类敌人，血量先减少又回升。",
+                "通常只补齐主机漏算的世界伤害倍率；激进模式下按客机上报重新核对这一下。",
+                "否", "低（只在攻击时执行）");
             DdenDocs.Add("联机修正", "挖掘修复-激进（实验性 · ⚠帧数影响）（AggressiveConverge）",
-                "客机碎块后向主机上报，由主机校验收敛血量。",
-                "伤害重算之后仍有极少数情况主机和客机的裂纹对不上。",
-                "客机把“这块已经碎了”攒批上报，主机校验后收敛血量。",
-                "是", "有：挖得越快上报越多（已按 0.35 秒攒批），多人同时挖时可能掉帧");
+                "对已开启的伤害修复使用客机上报重算；大量挖块时分批处理。",
+                "只补世界伤害倍率后，两边的攻击伤害仍然不一致。",
+                "方块碎掉后分批上报并分帧补齐；单位和角色的伤害随原有攻击消息上报，由主机核对。",
+                "是", "大量挖掘仍有开销；已减少消息数量并分散处理，实际影响需联机测试");
             DdenDocs.Add("联机修正", "挖块判定门槛-仅激进时生效（BlockBreakMinFraction）",
                 "激进模式下，主机账上这块至少掉这么多才接受“已挖穿”。",
                 "激进模式被拿来一镐敲穿硬墙。", "按比例做一次可信度门槛判断。",
@@ -296,8 +302,10 @@ namespace DDEN.MPfix
                 "主机结算客机挖方块时，按世界伤害倍率重算这一下。");
             CfgSyncBuildingDamage = Config.Bind("联机修正", "修“打箱子/植物/动物”-伤害重算（SyncBuildingDamage）", true,
                 "主机结算客机打箱子、植物、动物时，按世界伤害倍率重算这一下。");
+            CfgSyncBodyDamage = Config.Bind("联机修正", "修“打角色/肢体”-伤害重算（SyncBodyDamage）", true,
+                "主机结算客机近战打角色、肢体类敌人时，重新核对伤害。");
             CfgAggressiveConverge = Config.Bind("联机修正", "挖掘修复-激进（实验性 · ⚠帧数影响）（AggressiveConverge）", false,
-                "客机碎块后向主机上报，由主机校验收敛血量。");
+                "对已开启的伤害修复使用客机上报重算；大量挖块时分批处理。");
             CfgBlockBreakMinFraction = Config.Bind("联机修正", "挖块判定门槛-仅激进时生效（BlockBreakMinFraction）", 0.5f,
                 new ConfigDescription("激进模式下，主机账上这块至少掉这么多才接受“已挖穿”。",
                     new AcceptableValueRange<float>(0f, 0.95f)));
@@ -349,8 +357,10 @@ namespace DDEN.MPfix
             // 不需要重启游戏（用户口径 2026-11：所有行为改完配置立刻可用）。
             TraderUIQuietFix.Install(harmony);
             TryPatch(harmony, typeof(BlockDamageSyncFix.DamageBlock_Patch), "客机挖块伤害收敛（上报）");
+            TryPatch(harmony, typeof(BlockDamageSyncFix.WorldReset_Patch), "换层清理挖掘上报");
             BlockDamageRelax.Install(harmony);
             BuildingDamageRelax.Install(harmony);
+            UnitDamageRepair.Install(harmony);
 
             MigrateOldWatchdog();
 
@@ -507,7 +517,9 @@ namespace DDEN.MPfix
                 ("物品物理保险", StateOf(CfgPhysicsGuard.Value, false, "物品掉落物理保险（丢出）"), null),
                 ("挖方块伤害重算", StateOf(CfgBlockBreakSync.Value), null),
                 ("打单位伤害重算", StateOf(CfgSyncBuildingDamage.Value), null),
-                ("挖掘修复-激进上报", StateOf(CfgAggressiveConverge.Value && CfgBlockBreakSync.Value), null),
+                ("打角色/肢体伤害重算", StateOf(CfgSyncBodyDamage.Value), null),
+                ("挖掘修复-激进上报", StateOf(CfgAggressiveConverge.Value &&
+                    (CfgBlockBreakSync.Value || CfgSyncBuildingDamage.Value || CfgSyncBodyDamage.Value)), null),
                 ("商人商品表对齐", StateOf(CfgTraderSnapshot.Value), null),
                 ("商人界面静音", StateOf(CfgQuietTraderUIModItems.Value, false), null),
                 ("离场物品清理", StateOf(CfgRelayGhostItems.Value), null),
@@ -577,7 +589,7 @@ namespace DDEN.MPfix
             GUI.Label(new Rect(area.x, y, area.width, 76f),
                 "无芯片：联机时以主机的设置为准，本机自动跟着改（默认每 30 秒核对一次）。\n" +
                 "合成 / 物品：模组加的东西在联机里也能正常做出来、捡起来、穿上去。\n" +
-                $"挖块/打单位：伤害重算 {(CfgBlockBreakSync.Value || CfgSyncBuildingDamage.Value ? "开" : "关")}" +
+                $"挖块/打单位：伤害重算 {(CfgBlockBreakSync.Value || CfgSyncBuildingDamage.Value || CfgSyncBodyDamage.Value ? "开" : "关")}" +
                 (CfgAggressiveConverge.Value ? "   ⚠ 激进收敛开（帧数影响）" : "   （激进收敛关：不发额外包）") + "\n" +
                 $"巡检开销：{TickCostText}（每帧合计；数值大时日志里会有 [巡检] 明细）",
                 DdenUI.Wrap);
