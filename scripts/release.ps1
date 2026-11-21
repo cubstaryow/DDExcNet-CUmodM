@@ -16,7 +16,7 @@
 
 .NOTES
   · 默认读取 DdenVersion；改版本还须同步各插件BepInPlugin字面版本，-Version不会改源码版本。
-  · 发布包内容 = 五个 DDEN 组件 + 独立 ET-HeatingCageFix + 许可与说明文件。
+  发布包内容 = DDEN 五个组件（公共层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器）+ 许可与说明文件。
   · 不会自动 push 分支；发版前请确认 master 已经是最新的。
 #>
 [CmdletBinding()]
@@ -53,15 +53,15 @@ try {
     }
 
     $releaseBin = @{
-        'ET-HeatingCageFix.dll'               = 'src/外部mod/ET-HeatingCageFix/bin/Release/ET-HeatingCageFix.dll'
         'DDEN.Shared.dll'           = 'src/DDEN.Shared/bin/Release/DDEN.Shared.dll'
         'DDExcNet-CUmodM.dll'       = 'src/DDExcNet.CUmodM/bin/Release/DDExcNet-CUmodM.dll'
         'DDEN.MPfix.dll'            = 'src/DDEN.MPfix/bin/Release/DDEN.MPfix.dll'
         'DDEN.NetPerfTracker.dll'   = 'src/DDEN.NetPerfTracker/bin/Release/DDEN.NetPerfTracker.dll'
         'DDEN.SaveEditor.dll'       = 'src/DDEN.SaveEditor/bin/Release/DDEN.SaveEditor.dll'
     }
-    # 注意：发布包 = 全部模块（含存档编辑器与性能跟踪器）。性能跟踪器只是观测工具，
-    # 不装任何补丁，玩家不用它也不会影响游戏，但排查问题时让他开着能直接抓现场。
+    # 注意：发布包 = **DDEN 五个组件**（公共层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器）。
+    # 独立外部模组「ET-Fix（ET 加热笼修复）」**不随本包发布**，它有自己的仓库与发布节奏；
+    # 本机构建仍会把它部署到 plugins/DDEN/ 供联调，但不会进 dist。
     foreach ($pair in $releaseBin.GetEnumerator()) {
         if (-not (Test-Path $pair.Value)) { throw "缺少产物：$($pair.Value)（先构建 Release）" }
     }
