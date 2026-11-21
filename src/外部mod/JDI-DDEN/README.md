@@ -1,5 +1,7 @@
 # JDI-DDEN（工具撬石果）
 
+![JDI-DDEN](assets/cover.png)
+
 - 插件名：`JDI-DDEN`
 - GUID：`com.dden.jdi`
 - 版本：1.4.0
