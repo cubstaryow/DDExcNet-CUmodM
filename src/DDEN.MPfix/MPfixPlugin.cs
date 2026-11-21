@@ -21,7 +21,7 @@ namespace DDEN.MPfix
     ///  ⑦ 娱乐：道生一 一生二（商人购买多给一份，只在主机生效）。
     /// 界面与配置统一交给 DDExcNet-CUmodM 显示（模块 id = mpfix）。
     /// </summary>
-    [BepInPlugin(Guid, "DDEN MP Fix", "1.7.0")]
+    [BepInPlugin(Guid, "DDEN MP Fix", "1.7.1")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
     public class MPfixPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleGate, IDdenModuleHealth, IDdenConfigPolicy, IDdenConfigAvailability
@@ -55,7 +55,7 @@ namespace DDEN.MPfix
         // ===== 物品物理保险 =====
         internal static AuthoritySetting<bool> CfgPhysicsGuard;
 
-        // ===== 联机修正（商人商品表 / 挖块 / 掉线遗留物品） =====
+        // ===== 联机修正（商人商品表 / 挖块） =====
         internal static AuthoritySetting<bool> CfgTraderSnapshot;
         internal static AuthoritySetting<bool> CfgBlockBreakSync;
         internal static AuthoritySetting<float> CfgBlockBreakMinFraction;
@@ -471,7 +471,7 @@ namespace DDEN.MPfix
             _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
             InitializeAuthority();
 
-            Log.Info("已加载：无芯片同步 + 联机物品/合成 + 穿戴兜底 + 物品物理 + 挖块收敛 + 掉线遗留物品 + 娱乐开关。");
+            Log.Info("已加载：无芯片同步 + 联机物品/合成 + 穿戴兜底 + 物品物理 + 挖块收敛 + 娱乐开关。");
             LogMpCompatReport();
             if (UnchippedSelfTest.Requested) StartCoroutine(SelfTestDelayed());
         }
@@ -1056,7 +1056,7 @@ namespace DDEN.MPfix
                     DdenHub.SetPanelVisible("mpfix", _standaloneVisible);
                 }
 
-                // 两个周期巡检（穿戴兜底 / 掉线遗留物品）：各自内部有节拍，这里只量"本模块每帧吃了多少"，
+                // 周期处理（穿戴兜底 / 挖块上报）：各自内部有节拍，这里只量"本模块每帧吃了多少"，
                 // 每 60 秒汇总一条日志 —— 让"巡检是不是卡顿源"有数据，而不是靠感觉。
                 bool repairRunning = Mp.IsRunning;
                 if (_repairRunning != repairRunning)
@@ -1110,7 +1110,7 @@ namespace DDEN.MPfix
             }
         }
 
-        private void ReportTickCost(float total, float wear, float relayAndMining)
+        private void ReportTickCost(float total, float wear, float mining)
         {
             // 开局 6 秒是冷启动（JIT、资源加载），这段时间的数字没有参考价值，别记进来
             if (Time.realtimeSinceStartup < _warmupUntil) return;
@@ -1134,7 +1134,7 @@ namespace DDEN.MPfix
             if (avg < 0.5f && peak < 2f) return;
 
             MPfixPlugin.Log.Info($"[巡检] 本模块每帧合计 平均 {avg:0.000}ms / 峰值 {peak:0.000}ms " +
-                                 $"（最近一次：穿戴兜底 {wear:0.000} / 遗留清理和挖块 {relayAndMining:0.000}）");
+                                 $"（最近一次：穿戴兜底 {wear:0.000} / 挖块上报 {mining:0.000}）");
         }
 
         private void TickHost()

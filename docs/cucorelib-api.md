@@ -1,4 +1,4 @@
-# CUCoreLib API 速查 · DDEN v1.6.0
+# CUCoreLib API 速查 · DDEN v1.7.1
 
 > 对照本机CUCoreLib 1.1（GUID `net.cucorelib`）的public接口整理；这是安装版本的阅读记录，不是对未来版本的承诺。含`...`或斜线并列的是速记，不能原样编译。加号 `+` 表示嵌套类型。实际参数／返回值以对应DLL为准。
 

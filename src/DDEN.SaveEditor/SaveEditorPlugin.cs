@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace DDEN.SaveEditor
 {
-    [BepInPlugin(Guid, "DDEN Save Editor", "1.7.0")]
+    [BepInPlugin(Guid, "DDEN Save Editor", "1.7.1")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("org.bepinex.plugins.qol_unknown", BepInDependency.DependencyFlags.SoftDependency)]
     public class SaveEditorPlugin : BaseUnityPlugin, IDdenModule

@@ -1,37 +1,37 @@
-# 提交、推送与本地发布 · v1.6.0
+# 提交、推送与本地发布 · v1.7.1
 
 ## 分支和授权
 
-`dev`用于当前开发，`master`用于已验收内容。当前远端为 `origin`；每次操作前核对实际状态，不把文档当作实时分支状态。
+`dev`用于当前开发，`master`用于已验收内容；远端为`origin`，操作前核对实时状态。本轮用户授权文档校对、v1.7.1本地构建和普通推送`origin/dev`，不包含合并master、强推、创建tag或线上Release。
 
-用户本次已授权整理完成后push：检查改动、运行适当验证、仅暂存本次文件并提交，然后普通推送 `origin/dev`。不要把此授权延伸为自动合并master、force push、改远端、创建tag或发布Release。遇到远端新增提交先检查差异，不能覆盖它。
+只暂存本次相关文件，不使用无差别add、reset/clean，不覆盖其他协作者工作。反编译、备份、bin/obj/dist和真实存档均不进提交。`agent/`内其他协作者说明不擅自改写。
 
-不要默认 `git add -A`收进全部内容，也不用 `reset --hard/clean`解决工作区冲突。文档、代码、资源与生成产物分清；反编译、依赖、bin/obj/dist与真实存档不进提交。
+## 只构建、不部署
 
-## 本地构建与验收
+```powershell
+dotnet build DDExcNet.slnx -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=false
+```
 
-先按 [development.md](development.md)只构建并执行相关离线检查，再按需要在获得授权的游戏实例内验收。`build.sh`用Bash运行，不用PowerShell解释脚本内容。默认部署全部五个DDEN产物和独立ET-Fix；只想不带编辑器用 `--no-saveeditor`。
+`DDExcNet.slnx`只含五个自有发布组件；`CUmod.slnx`还含独立ET-Fix与JDI-DDEN。外部模组保持各自版本，不因DDExcNet版本提升而重发。
 
-原生／Harmony执行、视觉效果与真实双机联机需独立记录。主机开启无芯片后客机规则一致、不同角色近战与x3倍率、退出／重连物品、缺依赖禁用、主机配置恢复等均不能靠菜单自检替代。
+`scripts/build.sh`会部署五个DDEN组件和两个外部模组，不能用于本轮“游戏不动、不部署”的任务。本轮不启动／停止游戏，不改插件、配置、存档或自检标记。检查程序只使用模拟输入和临时样本。
 
-## 打包与发布
+## 本地打包
 
-版本基准是 `Directory.Build.props`中的DdenVersion；同步各BepInPlugin版本与文档。当前1.6.0，不能用旧包文件名或旧哈希代表本次构建。
-
-从仓库根目录执行：
+版本基准为Directory.Build.props的DdenVersion，同时核对四个BepInPlugin字面版本。目前1.7.1，不使用旧包哈希或文件名代替新构建。
 
 ```powershell
 pwsh scripts/release.ps1
 ```
 
-默认构建Release，组装 `dist/DDEN-v1.6.0.zip`与发布说明；不上传。包内是五个DDEN产物、`ET-Fix.dll`及README／LICENSE／LICENSE-ASSETS／NOTICE，不含游戏依赖、配置和存档。发布正文来自 [release-page.md](release-page.md)。
+默认以DeployOnBuild=false构建五个组件，并生成`dist/DDExcNet-v1.7.1.zip`和`dist/RELEASE-v1.7.1.md`。包内恰为五个DLL、README、LICENSE、LICENSE-ASSETS与NOTICE；README来自`docs/release/INSTALL.md`，不带损坏的仓库相对链接。不含ET-Fix、JDI-DDEN、第三方依赖、游戏文件、配置、存档或decomp备份。
 
-脚本需要本地git历史生成变更说明；`-Upload`才会创建线上Release并上传，`-OpenPage`打开发布页面。它们是独立动作，本次push授权不自动包含线上发布。桌面工具能力可能变化，不用它的限制推断发布已经发生。
+已显式完成本轮构建后，可用`-SkipBuild`打包同一批Release产物。脚本核对程序集版本；交付前还须检查插件元数据、ZIP字节和SHA-256。`-Upload`或`-OpenPage`是另外的线上操作，本轮不使用。
 
-本地构建需要商业游戏及已安装前置的程序集；不能把这些依赖上传到仓库或公共CI。完整包应在本地检查文件名、版本、依赖和SHA-256。不要承诺固定包大小。
+Nexus参考资料保存在本地`dist/deliverables/`，不提交Git。保留v1.7.0历史资料，另提供1.7.1更新；其主页不得继续宣传离场物品剔除。资料ZIP不是Main File，实际安装包从本轮最终普通ZIP转换，五个DLL须逐字节一致。
 
-## 改名升级
+## 已撤回功能与历史记录
 
-CageFix改为 **ET-Fix**，旧cfg的GUID仍为 `com.dden.heatingcagefix`，原存档键和频道不变。安装时删除旧 `CageFix.dll`，只保留新DLL；脚本只清理DDEN目录内已知旧名，其他独立安装位置手动核对。改名不意味着改变修复算法。
+用户实测玩家离场物品剔除广播无效，v1.7.1移除并放弃该项修复。原功能仅备份在`decomp/backup-ghostitems/`；不编译、不打包、不提交，也不把它列入后续验收。原版背包保存／重连流程由Together负责。
 
-旧包可保留追溯，但它们包含旧名、旧文档和旧版本，不能直接更名后宣称为新包。历史记录见 [history](history/conversation-v1.5.0.md)。
+旧版本发布包、测试结果和文案仅供追溯。保留历史记录并加过时提示，不将旧功能描述套用到当前版本。ET改名历史及独立安装说明见各自模块文档。

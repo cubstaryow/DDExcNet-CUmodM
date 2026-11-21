@@ -1,4 +1,4 @@
-# DDEN管理器接入约定 · v1.6.0
+# DDEN管理器接入约定 · v1.7.1
 
 面向模组作者，以 `DDEN.Shared/ExternalConfig.cs`、`Hub.cs`、`DdenDocs.cs`及管理器当前代码为准。管理器默认F8，冲突后以本机实际设置为准。
 

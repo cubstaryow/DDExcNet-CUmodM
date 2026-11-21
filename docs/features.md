@@ -1,10 +1,10 @@
-# 当前功能、证据与限制 · v1.6.0
+# 当前功能、证据与限制 · v1.7.1
 
 面向维护者。玩家入口见 [README](../README.md)，检查方法见 [development.md](development.md)。以下以当前源码为准；Together反编译用于理解上游行为，不复制其实现，也不随源码分发。
 
 ## 1. 管理器与公共层
 
-五个DDEN产物是管理器、MPfix、存档编辑器、性能跟踪器和Shared公共层；另外包含独立外部模组ET-Fix。不是“五个插件加一个管理器”。
+五个DDEN产物是管理器、MPfix、存档编辑器、性能跟踪器和Shared公共层；仓库另有独立外部模组ET-Fix和JDI-DDEN，它们不包含在DDExcNet发布包中。不是“五个插件加一个管理器”。
 
 `DdenHub`登记内部模块，管理器显示功能页与通用配置页。路由包括 `config:<id>`（内部配置）、`ext:<index>`（外部功能）和 `extconfig:<index>`（外部配置）。总览“配置”和全部配置“单独看”始终打开配置项，外部自绘页另有入口；总览和配置页按内容高度滚动。
 
@@ -80,10 +80,10 @@ Together主机的原合成结果经 `Utils.Create`生成；CCL已有正常模组
 - `WearGhostFix`：默认关。客机穿戴后1.5秒起最多请求3次；主机确认该玩家、物品归属／可达性与唯一候选，再走原生穿戴并广播。上限默认20次／局；不拿他人或离线背包猜，不重建或复制装备。
 - `ItemPhysicsGuard`：仅实际 `Body.DropItem/DropWearable`时处理自由物品；不移动、不改刚体模式、不做全场轮询。重叠或判断不足时保留现状，不能承诺所有穿墙都修好。
 - `TraderSnapshotFix`：客机打开商人时请求Together重发商品快照；不是在本地自行扣款或造货。`TraderUIQuietFix`仅对可确认的模组空资源误报静音。
-- **离场物品清理：已剔除（2026-11）。** 结论：**客机离场导致其他客机卡顿的问题无法修复，不再进行尝试。**
-  `GhostItemRelay`（含 `ddn.mp.ghostitems.v2` / `verify.v2` 协议）与 `RelayGhostItems` 配置已从 MPfix 移除；
-  源码备份留在 `decomp/backup-ghostitems/`（含结论与恢复步骤）。不要用"按坐标猜副本""冻结/抬升/全场搜索"等旧思路重做。
-  玩家离场时物品由原版 MP 的背包保存与重新生成流程负责；掉帧问题仍需在实际联机里另找原因（与本模组无关）。
+- **玩家离场物品剔除广播：v1.7.1 已移除并放弃修复。** 用户实测该方案不能解决客机退出后其他客机持续掉帧的问题，不能再将它列为本模组的有效功能。
+  `GhostItemRelay`、`RelayGhostItems` 配置及 `ddn.mp.ghostitems.v2` / `ddn.mp.ghostitems.verify.v2` 收发入口已经移除；旧 cfg 中残留该键也不生效。主机权威配置不会重新启用它。
+  原功能与恢复说明仅备份在本地 `decomp/backup-ghostitems/`，不编译、不打包、不提交；此备份不表示计划恢复该功能。`NetworkObjectIndex` 仍为未接入运行流程的辅助类型与离线检查输入，不会触发物品剔除。
+  MPfix 不再介入玩家退出时的背包处理，相关行为交回原版 Together 的保存／重连流程。本次不判断掉帧的唯一根因，也不宣称该问题已经解决。穿戴兜底和实际丢弃碰撞保险是其它功能，不因名称中有“幽灵”而删除。
 
 ## 6. 名称与主机权威配置
 
@@ -105,4 +105,4 @@ Together主机的原合成结果经 `Utils.Create`生成；CCL已有正常模组
 
 [ET-Fix](../src/外部mod/ET-Fix/README.md)独立于DDEN公共层，ET／CCL／Together通过延迟反射，缺少对应接口停用相应功能。具体腐坏、热源过滤、保存与查询协议见 [专属细节](../src/外部mod/ET-Fix/docs/features.md)。
 
-本轮文档核对与改名的验证记录以 [CHANGE.md](../CHANGE.md) 为准。离线检查模拟Unity／传输边界；菜单绘制成功不等于真实多人伤害、离场清理、名字或加热笼行为已验收。
+本轮文档核对与改名的验证记录以 [CHANGE.md](../CHANGE.md) 为准。离线检查模拟Unity／传输边界；菜单绘制成功不等于真实多人伤害、名字或加热笼行为已验收。
