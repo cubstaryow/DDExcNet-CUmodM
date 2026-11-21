@@ -9,3 +9,9 @@
 **验证**：`dotnet build src/外部mod/ET-Fix/ET-Fix.csproj -c Release -p:GameDir=...` 通过（0 警告 0 错误）。
 
 **待办 / 交接**：推送由仓库主人用 GitHub Desktop 执行；真实游戏内仍需验收无电池攻击、装电池点灯、加热笼关闭停腐坏/热源、存档与多人开关。
+
+## 2026-11-21 · JDI-DDEN 入库（dev）
+
+- 在 `src/外部mod/JDI-DDEN/` 新建外部模组：`Plugin.cs`、`JDI-DDEN.csproj`（$(GameDir)/$(BepInExPluginsDir) 引用）、README/AGENTS/CHANGE/docs、LICENSE 等；
+- 更新 `CUmod.slnx`、`scripts/build.sh`（OWNED + 部署 `JDI-DDEN.dll`）、`src/AGENTS.md`；
+- 编译验证通过；GUID `com.dden.jdi`、版本 1.4.0 不变。

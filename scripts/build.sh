@@ -36,7 +36,7 @@ mkdir -p "$DDEN_DIR"
 
 # 我们的产物清单：**只有这些文件由本脚本负责写/删**。
 # DDEN/ 目录里可能还有别人做的修复 mod，绝不能碰。
-OWNED=("DDEN.Shared.dll" "DDExcNet-CUmodM.dll" "DDEN.MPfix.dll" "DDEN.NetPerfTracker.dll" "DDEN.SaveEditor.dll" "ET-Fix.dll")
+OWNED=("DDEN.Shared.dll" "DDExcNet-CUmodM.dll" "DDEN.MPfix.dll" "DDEN.NetPerfTracker.dll" "DDEN.SaveEditor.dll" "ET-Fix.dll" "JDI-DDEN.dll")
 LEGACY_IN_DDEN=("DDEN.MPUnchippedSyncFix.dll" "CageFix.dll")
 
 is_owned() {
@@ -49,6 +49,7 @@ cp -v "$ROOT/src/DDEN.Shared/bin/$CONFIG/DDEN.Shared.dll"         "$DDEN_DIR/"
 cp -v "$ROOT/src/DDExcNet.CUmodM/bin/$CONFIG/DDExcNet-CUmodM.dll" "$DDEN_DIR/"
 cp -v "$ROOT/src/DDEN.MPfix/bin/$CONFIG/DDEN.MPfix.dll"           "$DDEN_DIR/"
 cp -v "$ROOT/src/外部mod/ET-Fix/bin/$CONFIG/ET-Fix.dll"          "$DDEN_DIR/"
+cp -v "$ROOT/src/外部mod/JDI-DDEN/bin/$CONFIG/JDI-DDEN.dll"      "$DDEN_DIR/"
 # 性能分析器：完整构建和发布包均包含，可按需不安装
 cp -v "$ROOT/src/DDEN.NetPerfTracker/bin/$CONFIG/DDEN.NetPerfTracker.dll"             "$DDEN_DIR/"
 
