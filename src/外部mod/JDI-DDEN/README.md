@@ -2,6 +2,13 @@
 
 ![JDI-DDEN](assets/cover.png)
 
+## 简介 / Introduction
+
+**中文**：JDI-DDEN 是一个独立的《Casualties Unknown》模组——把任意带 `tool` 标签的物品拖到背包/容器里的封闭石果（`stonefruitclosed`）上，就能直接撬开。单机与主机在本地完成；客机通过 Together 向主机请求执行，避免本地生成未登记物品被回滚。需要 Together / CasualtiesMP（软依赖），配置可由 DDEN 管理器统一显示。
+
+**English**: JDI-DDEN is a standalone mod for *Casualties: Unknown*. Drag any tool-tagged item onto a closed stonefruit (stonefruitclosed) in your inventory or a container to crack it open. It runs locally in single-player and on the host; clients ask the host through Together so no unregistered item is created locally. Requires Together / CasualtiesMP (soft dependency); its settings can be shown by the DDEN manager.
+
+
 - 插件名：`JDI-DDEN`
 - GUID：`com.dden.jdi`
 - 版本：1.4.0
