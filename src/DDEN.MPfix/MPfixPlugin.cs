@@ -487,6 +487,14 @@ namespace DDEN.MPfix
 
         public void DrawPage(Rect area)
         {
+            bool enabled = GUI.enabled;
+            try { DrawStatusPage(area); }
+            catch (Exception ex) { Log.Exception(ex, "绘制联机修复页面"); }
+            finally { GUI.enabled = enabled; }
+        }
+
+        private void DrawStatusPage(Rect area)
+        {
             float y = area.y;
 
             // 环境版本 / 总开关状态条（2026-11 用户口径：版本对不上就在这里说清楚）
@@ -506,7 +514,7 @@ namespace DDEN.MPfix
             y = gate.yMax + 6f;
 
             // ===== 运行一览 =====
-            DdenUI.Label(new Rect(area.x, y, area.width, 16f), "运行一览（本次环境里的各项修复）", DdenUI.Sub);
+            DdenUI.Label(new Rect(area.x, y, area.width, 16f), "运行一览", DdenUI.Sub);
             y += 18f;
 
             (string name, FixState state, string note)[] fixes =
@@ -554,53 +562,74 @@ namespace DDEN.MPfix
             }
             y += fixes.Length * 20f + 8f;
 
-            GUI.Label(new Rect(area.x, y, area.width, 18f), "无芯片同步", DdenUI.Sub);
-            y += 20f;
-            (string k, string v)[] rows =
+            DrawUnchippedStatus(new Rect(area.x, y, area.width, 180f));
+            y += 190f;
+            DdenUI.Label(new Rect(area.x + 4f, y, 90f, 18f), "巡检开销", DdenUI.Sub);
+            DdenUI.Label(new Rect(area.x + 96f, y, area.width - 100f, 18f), TickCostText, DdenUI.Sub);
+        }
+
+        private void DrawUnchippedStatus(Rect card)
+        {
+            bool running = Mp.IsRunning, server = running && Mp.IsServer, inWorld = Game.InWorld;
+            bool ready = Mp.CoreAvailable;
+            float left = card.x + 12f, width = card.width - 24f, half = (width - 12f) * 0.5f;
+
+            DdenUI.Fill(card, DdenUI.Panel);
+            DdenUI.Frame(card, DdenUI.AccentDim);
+            DdenUI.Fill(new Rect(card.x, card.y, 2f, card.height), DdenUI.AccentDim);
+            DdenUI.Label(new Rect(left, card.y + 9f, width - 158f, 24f), "无芯片同步", DdenUI.Title);
+            DdenUI.Chip(new Rect(card.xMax - 160f, card.y + 12f, 76f, 19f),
+                ready ? "组件就绪" : "组件缺失", ready ? DdenUI.Good : DdenUI.Bad);
+            DdenUI.Chip(new Rect(card.xMax - 76f, card.y + 12f, 64f, 19f),
+                !running ? "未联机" : server ? "主机" : "客机", running ? DdenUI.Accent : DdenUI.TextDim);
+
+            string hostValue = !running ? "等待联机" : _hasHostValue ? (_lastHostValue ? "无芯片" : "有芯片") : "等待同步";
+            string localValue = inWorld ? (WorldGeneration.world.unchippedMode ? "无芯片" : "有芯片") : "未进入世界";
+            DrawStatusValue(new Rect(left, card.y + 43f, half, 50f), "主机设置", hostValue, running && _hasHostValue);
+            DrawStatusValue(new Rect(left + half + 12f, card.y + 43f, half, 50f), "本机世界", localValue, inWorld);
+
+            DdenUI.Label(new Rect(left, card.y + 103f, 50f, 19f), "已纠正", DdenUI.Sub);
+            DdenUI.Label(new Rect(left + 52f, card.y + 103f, half - 52f, 19f), _appliedCount + " 次", DdenUI.Row);
+            DdenUI.Label(new Rect(left + half + 12f, card.y + 103f, 58f, 19f), "最近记录", DdenUI.Sub);
+            var reasonRect = new Rect(left + half + 72f, card.y + 103f, half - 60f, 19f);
+            string reason = ReasonText(_lastReason);
+            string visibleReason = DdenUI.ElideToWidth(reason, reasonRect.width, DdenUI.Sub);
+            DdenUI.Label(reasonRect, visibleReason, DdenUI.Sub);
+            if (visibleReason != reason) DdenUI.Hover(reasonRect, reason);
+
+            DdenUI.Fill(new Rect(left, card.y + 131f, width, 1f), DdenUI.AccentDim);
+            float buttonWidth = (width - 16f) / 3f;
+            var apply = new Rect(left, card.y + 141f, buttonWidth, 27f);
+            var request = new Rect(apply.xMax + 8f, apply.y, buttonWidth, apply.height);
+            var toggle = new Rect(request.xMax + 8f, apply.y, buttonWidth, apply.height);
+            bool enabled = GUI.enabled;
+            try
             {
-                ("联机组件", Mp.CoreAvailable ? "已就绪" : "未安装"),
-                ("联机状态", !Mp.IsRunning ? "未联机" : (Mp.IsServer ? "主机（我把设置同步给别人）" : "客机（跟随主机）")),
-                ("主机的设置", _hasHostValue ? (_lastHostValue ? "无芯片" : "有芯片") : "还没拿到"),
-                ("本机世界", Game.InWorld ? (WorldGeneration.world.unchippedMode ? "无芯片" : "有芯片") : "还没进世界"),
-                ("已自动纠正", _appliedCount + " 次"),
-                ("最近一次原因", ReasonText(_lastReason))
-            };
-            foreach ((string k, string v) in rows)
-            {
-                GUI.Label(new Rect(area.x, y, 190f, 18f), k, DdenUI.Sub);
-                GUI.Label(new Rect(area.x + 196f, y, area.width - 200f, 18f), v, DdenUI.Row);
-                y += 19f;
+                bool canSync = enabled && Active && running;
+                GUI.enabled = canSync;
+                if (DdenUI.Button(apply, "同步到本机", canSync)) ForceApply();
+                if (DdenUI.Button(request, "刷新主机状态")) RequestNow();
+                GUI.enabled = canSync && server && WorldGeneration.world != null;
+                if (DdenUI.Button(toggle, "切换无芯片")) ToggleHostState();
             }
+            finally { GUI.enabled = enabled; }
+            if (!running) DdenUI.Hover(new Rect(left, apply.y, width, apply.height), "联机后可使用同步操作。");
+            else if (!server) DdenUI.Hover(toggle, "仅主机可切换世界设置。");
+        }
 
-            y += 6f;
-            GUI.Label(new Rect(area.x, y, area.width, 18f), "物品 / 合成修复", DdenUI.Sub);
-            y += 20f;
-            GUI.Label(new Rect(area.x, y, area.width, 18f),
-                $"合成修复：{(CfgFixModItemCraftSpawn.Value ? "开" : "关")}     " +
-                $"打箱子/植物：{(CfgSyncBuildingDamage.Value ? "开" : "关")}", DdenUI.Row);
-            y += 22f;
-
-            if (DdenUI.Button(new Rect(area.x, y, 150f, 24f), "立即按主机同步", true)) ForceApply();
-            if (DdenUI.Button(new Rect(area.x + 158f, y, 130f, 24f), "再问一次主机")) RequestNow();
-            GUI.enabled = Mp.IsRunning && Mp.IsServer;
-            if (DdenUI.Button(new Rect(area.x + 296f, y, 140f, 24f), "在主机上切换")) ToggleHostState();
-            GUI.enabled = true;
-
-            y += 32f;
-            GUI.Label(new Rect(area.x, y, area.width, 76f),
-                "无芯片：联机时以主机的设置为准，本机自动跟着改（默认每 30 秒核对一次）。\n" +
-                "合成 / 物品：模组加的东西在联机里也能正常做出来、捡起来、穿上去。\n" +
-                $"挖块/打单位：伤害重算 {(CfgBlockBreakSync.Value || CfgSyncBuildingDamage.Value || CfgSyncBodyDamage.Value ? "开" : "关")}" +
-                (CfgAggressiveConverge.Value ? "   ⚠ 激进收敛开（帧数影响）" : "   （激进收敛关：不发额外包）") + "\n" +
-                $"巡检开销：{TickCostText}（每帧合计；数值大时日志里会有 [巡检] 明细）",
-                DdenUI.Wrap);
+        private static void DrawStatusValue(Rect area, string title, string value, bool known)
+        {
+            DdenUI.Fill(area, DdenUI.PanelAlt);
+            DdenUI.Label(new Rect(area.x + 10f, area.y + 5f, area.width - 20f, 15f), title, DdenUI.Sub);
+            DdenUI.Label(new Rect(area.x + 10f, area.y + 23f, area.width - 20f, 22f),
+                known ? value : "<color=#9ea8b8>" + value + "</color>", DdenUI.Title);
         }
 
         /// <summary>把内部原因码翻成人话（这些串只用来记原因，不该原样显示给玩家）。</summary>
         private static string ReasonText(string reason)
         {
-            if (string.IsNullOrEmpty(reason) || reason == "-") return "-";
-            if (reason.IndexOf("runSettings", StringComparison.Ordinal) >= 0) return "还没进世界（设置已记下，进局生效）";
+            if (string.IsNullOrEmpty(reason) || reason == "-") return "暂无";
+            if (reason.IndexOf("runSettings", StringComparison.Ordinal) >= 0) return "待进入世界";
             if (reason.StartsWith("request", StringComparison.Ordinal)) return "向主机查询";
             if (reason.StartsWith("push", StringComparison.Ordinal)) return "主机主动同步";
             if (reason.StartsWith("snapshot", StringComparison.Ordinal)) return "进局时同步";
