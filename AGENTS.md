@@ -8,15 +8,17 @@
 
 ## 0. 这是什么
 
-《Casualties Unknown》(Steam appid 4576490) 的 BepInEx 5 模组工作区。**四个 dll + 一个共享库**，统一由管理器承载界面：
+《Casualties Unknown》(Steam appid 4576490) 的 BepInEx 5 模组工作区。**管理器 + 五个 DDEN 组件 + 一个独立外部模组（CageFix）**，DDEN 部分统一由管理器承载界面：
 
 | 产物 | 源码 | 作用 |
 | --- | --- | --- |
 | `DDExcNet-CUmodM.dll` | `src/DDExcNet.CUmodM/` | **管理器**：统一功能界面 + 全部配置界面 + **兼容性总控** |
-| `DDEN.MPfix.dll` | `src/DDEN.MPfix/` | 多人修复合集：无芯片同步 + 联机合成/物品生成兜底 + 物品网络登记 + 穿戴兜底 + 物品物理保险 + 挖块收敛 + 商人快照 + 掉线遗留物品清理 + 娱乐（道生一 一生二） |
+| `DDEN.MPfix.dll` | `src/DDEN.MPfix/` | 多人修复合集：无芯片同步 + 合成失败补救 + 物品网络登记 + 穿戴兜底 + 物品物理保险 + 伤害重算（方块/单位/角色肢体）+ 激进上报收敛 + 商人快照 + 掉线遗留物品清理 + 名称显示修复 + 主机权威配置 + 娱乐（道生一 一生二） |
 | `DDEN.SaveEditor.dll` | `src/DDEN.SaveEditor/` | 可视化存档编辑器（图标/血条点选，QoL 多存档位） |
 | `DDEN.NetPerfTracker.dll` | `src/DDEN.NetPerfTracker/` | **性能跟踪器**（正式名 NetPerfTracker）：管理器独立页面，帧耗时/真实可用的2D计时/自身CPU/物品清醒与休眠分开观察；手动导出 `BepInEx/config/DDEN/perf-*.log`。**零补丁**，详细场景统计默认关闭 |
 | `DDEN.Shared.dll` | `src/DDEN.Shared/` | 公共层：反射、日志、联机桥、存档编解码、**IDdenModule / DdenHub / Compat / DdenUI** |
+
+独立外部模组集中在 `src/外部mod/`；CageFix 的源码、文档、检查工具和维护约束见 [专属AGENTS.md](src/外部mod/CageFix/AGENTS.md)。它通过L1桥交配置，不使用DDEN模块接口或强制引用公共层。
 
 部署目录：**`<游戏>/BepInEx/plugins/DDEN/`**（已实测 BepInEx 会递归扫描子目录）。
 
@@ -123,7 +125,7 @@ dotnet build CUmod.slnx -v m                  # 只编译
     显示数据年龄与清点跨度；向下运动和无实体碰撞本身不是故障证据。详细指标定义见 docs/perf-tracker.md。
   - 它**随发布包一起发**（用户 2026-11 明确要求：本地输出要包含全部模块，含存档编辑器与性能跟踪器）；
     它不打任何补丁，装不装都不影响游戏，只是排查掉帧时能直接抓现场。
-  - ⚠️ `[BepInPlugin(..., "1.3.0")]` 里的版本号读不了 MSBuild 属性：**改 `<DdenVersion>` 时顺手改各插件的 `[BepInPlugin]`**。
+  - ⚠️ `[BepInPlugin(..., "1.6.0")]` 里的版本号读不了 MSBuild 属性：**改 `<DdenVersion>` 时顺手改各插件的 `[BepInPlugin]`**。
 - **窗口必须用无皮肤模式**：`GUI.Window(id, rect, Draw, GUIContent.none, GUIStyle.none)` + 自己画标题栏。
   用默认窗框时它会把 y<20 的第一行内容盖住（表现为“文字上下被切掉”）。
 - **输入隔离（关键：这游戏的菜单按钮不走 uGUI）**：
@@ -145,18 +147,25 @@ dotnet build CUmod.slnx -v m                  # 只编译
 - **联机合成“无法生成物品”**：Together 主机侧自己实现了一份 spawn
   （`PlayerCamera_TryCraft_MultiplayerPatch.RecipeResult_SpawnResult` → `Utils.Create` → `Resources.Load(id)`），
   模组物品不在 Resources 里 → `CraftReason.SpawnFailed`（客户端文案 `craft_deny_spawnfailed`）。
-  修复在 `DDEN.MPfix.Utils_Create_ModItemPatch`：给 `Utils.Create` 加前缀，Resources 找不到时只走 CUCoreLib 两条正路：
-  ① `ResolvePrefab`（先确认带 `Item` 组件）再 `Instantiate` → ② `CustomInstantiate.InstantiateReturn`；
-  **客机一律不本地生成**（`Mp.IsRunning && !Mp.IsServer` 时直接返回 true）：商人购买 / 合成 / 水晶掉落
-  在客机上也会跑一遍“本地预测”，让客机成功造出模组物品就会和主机同步来的那份重复
-  （典型症状：**客机买商人东西买两份**）。客机保持原版行为，生成物一律由主机权威下发。
-  生成后在主机侧补 `NetObjectRegistry.Server_EnsureItemIsNetworkRegistered`
-  （开关只剩 `联机合成/修“无法生成物品”（FixModItemCraftSpawn）`；登记已改为无条件且幂等，不再有开关）。
-  **两条都不行就放弃兜底**（交回原版，该配方该失败就失败）——**绝不克隆现存物品、绝不做任何 Destroy**：
+  当前 CCL 自己已有 `UtilsCreatePatches.CreateItemFallback`；**HarmonyX 不会因一个前缀返回 false 而跳过其它前缀**。
+  MPfix 前缀只能观察购买 ID，**禁止再次实例化或覆盖 CCL 已生成的结果**。
+  `CraftSpawnScope` 限定主机原生合成的当前结果 ID；低优先级后缀只在结果为空时补救，准确的原生空资源异常单独识别。
+  先确认预制体带 `Item`，再只调用一次完整 `InstantiateReturn`（不能直接克隆停用模板，否则漏激活/场景/初始化）。
+  不处理客机、单机、购买或世界生成；原配方数量、材料扣除和失败回滚仍由 MP 执行。
+  成功补救后登记网络身份；同对象登记保持幂等，不能指望登记去重合并两次实例化。
+  娱乐开关仍独立负责购买赠品与20%生成赠品，不能被合成失败开关一同关掉。
+  **补救失败就保留原失败**——**绝不克隆现存物品、绝不做任何 Destroy**：
   克隆容器会把内容物一起复制（凭空刷物品），清理子物品又是一次删除，风险远大于收益。
-  **失败必须留痕**：会打一条 `[CraftFix] 生成失败 '<id>'：…（含注册表是否命中）`（同 id 30s 去重）。
+  **失败异常必须留痕**：会打一条 `[CraftFix] 生成失败 '<id>'：…（含注册表是否命中）`（同 id 30s 去重）。
   **绝对不要加“失败即永久拉黑这个 id”的负缓存**——首次调用可能早于模组注册/资源就绪，一旦拉黑该配方整局都失败。
   注意 Together 会按 attempt 缓存失败 receipt，同一会话重试仍失败，换层/重连才会清 —— 这是“过一层又能合成”的来源。
+- **名称修复只改显示**：`玩家名称/FixPlayerNames` 默认关。使用 `PlayerNameRepair` 的显示解析器与局部字体，
+  不写 `ScavPlayer.playerName`、`SyncString`、握手或 SteamID；尤其不能改变 LAN 的名字存档身份。
+  不全局放宽名字过滤、不强制开启隐藏名牌、不逐帧扫描场景。真实中文渲染和双端效果仍需多人实测。
+- **缺前置就停用对应配置**：统一由 `Compat.PluginLoaded` 查加载实例、`FeatureDependencies` 映射功能。
+  本地 bool 设 false，界面禁用并说明；`AuthoritySetting.Available` 在主机临时值外仍限制本机能力。
+  Shared/MPfix 不硬引用 CCL，缺它时仍能加载并显示禁用项；不能靠 try/catch 包硬引用冒充可选依赖。
+  补齐前置重启后开放配置，保留 false，不擅自开启。基础伤害、名称、娱乐等不依赖 CCL 的分支不要连带停用。
 - **穿戴兜底（联机）**：`DDEN.MPfix.WearGhostFix` —— 客机穿上物品后 1.5s 起**最多问主机 3 次**（间隔 1.5s），
   经 CUCoreLib 频道 `ddn.mp.wearfix` 带 {id, 上报位置}；主机用 `MpChannels.TryRegisterSender` 拿 clientId →
   `ScavPlayer.GetBodyFromClientId` 找该玩家 body → 按 id 找那件（同 id + wearable + 不属于别人 + **距该玩家 ≤14m**
@@ -188,15 +197,15 @@ dotnet build CUmod.slnx -v m                  # 只编译
   （重复修复导致的错位/残留/孤儿），而且“贴图残留”从未被证实存在——是上一个 agent 的推测。
   **不要再加回来**：它们会去改物品的父级与 localPosition，一旦判断错就是"身上物品乱飞/被挪走"，
   比它想解决的问题更糟。真出现“装备浮空/贴图残留”，先查是谁改了父级，别用巡检去猜。
-- **掉线后其他客机掉帧（GhostItemRelay，v1.5.0 内修订）**：在主机保存离线背包的解绑前捕获实体 ID + Version + 资源 ID，
+- **掉线后其他客机掉帧（GhostItemRelay，v1.6.0 协议 v2）**：在主机保存离线背包的解绑前捕获实体 ID + Version + 资源 ID，
   解绑成功后才记录权威清单。新频道 `ddn.mp.ghostitems.v2` 发通知，`ddn.mp.ghostitems.verify.v2` 由主机核验确认。
   **不要再按同类物品+坐标猜副本**，也不要恢复冻结/抬升/全场搜索。广播可被 CUCoreLib 客机转发，单靠广播不授权删除。
   客机以对象绑定索引精确匹配，8件/1ms 分帧、叶子先清，持有或未知内容物保留；ID 代次/重绑/换局取消旧任务。
   主机确认后清理客机同步实体和准确副本，避免公开 Destroy 在客机 no-op 后重新造网格；绝不删主机保存的真实背包。
-  双方必须更新本次包，版本按用户要求仍是 1.5.0。代码证据、限制与三人验收见 docs/features.md 2.10。
+  双方必须更新本次包（v1.6.0 起同协议）。代码证据、限制与三人验收见 docs/features.md 2.10。
 - **现在的周期节拍**：`WearGhostFix.Tick()`、`GhostItemRelay.Tick()`（主机攒批广播）；
   `[巡检]` 每 60 秒汇总一次（平均 ≥0.5ms 或峰值 ≥2ms 才写），状态页常驻显示 `巡检开销`。
-- **主机权威配置（v1.5.0追加）**：总开关下 `UseHostAuthorityConfig` 默认关闭；主机开启后可编辑，客机也开启且收到确认后才临时采用/锁定。
+- **主机权威配置（v1.5.0 起）**：总开关下 `UseHostAuthorityConfig` 默认关闭；主机开启后可编辑，客机也开启且收到确认后才临时采用/锁定。
   `CfgMasterEnabled` 和 `CfgUseHostAuthority` 保留原生ConfigEntry，其余配置使用 `AuthoritySetting<T>` 生效层；**禁止把主机值写进客机ConfigEntry或配置文件**。
   新增MPfix配置时同步包装并纳入白名单；自检要求除两个控制开关外完整覆盖。界面通过 `IDdenConfigPolicy` 展示生效值与「（主机权威模式）」；两个控制开关始终可编辑。
   `HostConfigSync.Tick` 在修复Active判断之前执行。仅连接就绪、主机实际配置变化、客机加入/选择采用和有界失败重试触发传输；无稳定期轮询。
@@ -216,7 +225,7 @@ dotnet build CUmod.slnx -v m                  # 只编译
   复制那件**故意不抄这一句**，别“修正”成随机；
   ③ `AutoPickUpItem`；拾不进背包就 `SetParent(null)` 留在脚下（已登记，客机收得到）→
   ④ `SyncNow`（`NetObjectRegistry.SafeNewGO`）推状态。
-  模组物品还依赖 `联机合成/FixModItemCraftSpawn` 开着，否则 `Utils.Create` 造不出来（只记 Debug）。
+  模组赠品依赖 CCL 的正常生成入口，不依赖合成失败兜底开关；未生成成功时只记 Debug，不另走合成补救。
   这是**故意**的多一份，和上面那条防重复的规则是两回事，别把它当 bug 修掉。
 - **商人商品表不一致（客机付钱不发货）**：`DDEN.MPfix.TraderSnapshotFix` —— 客机每次打开交易菜单
   （postfix `PlayerCamera.ToggleTradeMenu`）向主机发 `ddn.mp.tradersnap`；
@@ -290,7 +299,7 @@ grep -nE "SELFTEST|UITEST|Loading \[DDEN|Loading \[DDExcNet" "<游戏>/BepInEx/L
 ```
 
 已验证基线（2026-11-20）：
-- 4 个 dll 从 `plugins/DDEN/` 加载成功；
+- DDEN 组件 + CageFix 从 `plugins/DDEN/` 全部加载成功（v1.6.0 冒烟：mpfix 23 条配置、perf 18 条、UITEST PASS、无 DDEN 异常）；
 - 管理器快捷键 F8 与 SkinSync 冲突 → 自动改 F11 并写配置；
 - 兼容性扫描 23 条，识别出 `SaveSystem.SaveGame` 上 CasualtiesMP / QoL / CUCoreLib 三方补丁栈；
 - 存档自检：126 物品 / 15 肢体 / 51 运行设置 / 144 字段，图标解析 6/6，`cheatedSave` 保持原值 PASS；

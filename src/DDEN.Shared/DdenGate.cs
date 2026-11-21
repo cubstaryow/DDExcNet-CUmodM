@@ -56,7 +56,7 @@ namespace DDEN.Shared
 
             try
             {
-                Version v = CUCoreLib.Networking.MultiplayerApi.KrokMpVersion;
+                Version v = Compat.PluginVersion("CasualtiesMP");
                 MpVersion = v == null ? "未安装联机组件" : v.ToString();
             }
             catch { MpVersion = "未知"; }
@@ -73,7 +73,7 @@ namespace DDEN.Shared
         }
 
         /// <summary>被闸门拦住：版本不一致，且用户没有打开「忽略核对环境版本」。</summary>
-        public static bool Blocked => !IgnoreEnv && !VersionOk;
+        public static bool Blocked => Compat.PluginLoaded("CasualtiesMP") && !IgnoreEnv && !VersionOk;
 
         /// <summary>给玩家看的一句话说明（不含任何内部术语以外的实现细节）。</summary>
         public static string Reason =>

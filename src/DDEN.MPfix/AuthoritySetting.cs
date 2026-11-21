@@ -10,6 +10,7 @@ namespace DDEN.MPfix
         string Id { get; }
         string TypeName { get; }
         object EffectiveValue { get; }
+        Func<bool> Available { get; set; }
         string SerializeLocal();
         bool TryDecode(string value, out object decoded);
         void Override(object value);
@@ -28,7 +29,12 @@ namespace DDEN.MPfix
             Id = entry.Definition.Section + "/" + entry.Definition.Key;
             AuthoritySettings.All.Add(this);
         }
-        internal T Value { get => _overridden ? _remote : Local.Value; set => Local.Value = value; }
+        internal T Value
+        {
+            get => typeof(T) == typeof(bool) && Available != null && !Available() ? (T)(object)false : _overridden ? _remote : Local.Value;
+            set => Local.Value = value;
+        }
+        public Func<bool> Available { get; set; }
         public ConfigEntryBase Entry => Local;
         public string Id { get; }
         public string TypeName => typeof(T).FullName;

@@ -20,7 +20,7 @@ namespace DDEN.MPfix
         }
         internal static AuthorityPeer Read()
         {
-            if (!Mp.CoreAvailable || !Mp.IsRunning || !CUCoreLib.Networking.MultiplayerApi.BridgeReceiversInstalled || !Available) return default;
+            if (!Mp.CoreAvailable || !Mp.IsRunning || !Mp.BridgeReady || !Available) return default;
             bool server = Mp.IsServer;
             return new AuthorityPeer((server ? _server : _client).GetValue(null), true, server);
         }

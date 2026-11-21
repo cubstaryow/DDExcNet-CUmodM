@@ -42,7 +42,9 @@ namespace DDEN.Shared
 
         public static byte[] Encode(JObject save)
         {
-            string json = save.ToString(Formatting.None);
+            // The game's container is ASCII; escape Unicode so localized/custom names survive the round trip.
+            string json = JsonConvert.SerializeObject(save, Formatting.None,
+                new JsonSerializerSettings { StringEscapeHandling = StringEscapeHandling.EscapeNonAscii });
             using (var ms = new MemoryStream())
             {
                 using (var gz = new GZipStream(ms, CompressionLevel.Optimal, true))
@@ -64,23 +66,16 @@ namespace DDEN.Shared
             string tmp = path + ".cumod-tmp";
             File.WriteAllBytes(tmp, data);
 
-            string backup = null;
-            if (File.Exists(path))
-            {
-                backup = path + ".cumod.bak";
-                try { File.Copy(path, backup, true); }
-                catch (Exception ex) { Log.Warn($"备份失败（继续写入）：{ex.Message}"); backup = null; }
-            }
-
+            string backup = File.Exists(path) ? path + ".cumod.bak" : null;
             try
             {
-                File.Delete(path);
-                File.Move(tmp, path);
+                if (backup != null) File.Replace(tmp, path, backup, true);
+                else File.Move(tmp, path);
             }
-            catch
+            finally
             {
-                try { File.Copy(tmp, path, true); File.Delete(tmp); }
-                catch (Exception ex) { throw new IOException("写入存档失败：" + ex.Message, ex); }
+                // Never delete/truncate the original as a fallback. Failed replacement leaves it intact.
+                try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
             }
             return backup;
         }

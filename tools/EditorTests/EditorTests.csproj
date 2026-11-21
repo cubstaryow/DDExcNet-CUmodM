@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup>
+  <ItemGroup>
+    <Reference Update="Newtonsoft.Json;Assembly-CSharp;UnityEngine;UnityEngine.CoreModule"><Private>true</Private></Reference>
+    <Compile Include="../../src/DDEN.SaveEditor/SaveDocument.cs" Link="SaveDocument.cs" />
+    <Compile Include="../../src/DDEN.SaveEditor/ItemProperties.cs" Link="ItemProperties.cs" />
+    <Compile Include="../../src/DDEN.SaveEditor/DocumentSession.cs" Link="DocumentSession.cs" />
+    <Compile Include="../../src/DDEN.SaveEditor/SaveChanges.cs" Link="SaveChanges.cs" />
+    <Compile Include="../../src/DDEN.Shared/SaveCodec.cs" Link="SaveCodec.cs" />
+    <Compile Include="../../src/DDEN.Shared/ScrollLayout.cs" Link="ScrollLayout.cs" />
+    <Compile Include="../../src/DDEN.Shared/ImageFit.cs" Link="ImageFit.cs" />
+  </ItemGroup>
+</Project>

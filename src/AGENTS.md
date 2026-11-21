@@ -18,9 +18,12 @@ src/DDExcNet.CUmodM/     管理器（唯一画窗口的地方）
 src/DDEN.MPfix/          多人修复合集（无芯片同步 + 联机合成/物品生成兜底 + 网络登记）
 src/DDEN.NetPerfTracker/  性能跟踪器（调试用：零补丁，管理器里画帧数/CPU/物理/对象曲线 + 写 perf 日志）
 src/DDEN.SaveEditor/     存档编辑器（零 patch：文件 + 反射 + 图标）
+src/外部mod/CageFix/      独立加热笼修复（含专属AGENTS.md、文档与检查工具；不引用DDEN.Shared）
 ```
 
 ## 新增一个 DDEN 模组
+
+独立外部模组放在 `src/外部mod/<模组名>/`，遵守各自的 `AGENTS.md`；通过L1反射约定交配置，不强制依赖公共层。CageFix的详细约束见 [专属说明](外部mod/CageFix/AGENTS.md)，以下DDEN模块的Shared日志/UI要求不适用于该独立模组。
 
 ```bash
 cp -r src/DDEN.SaveEditor src/DDEN.MyMod

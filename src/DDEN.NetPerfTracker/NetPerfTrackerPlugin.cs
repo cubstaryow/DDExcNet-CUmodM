@@ -15,7 +15,7 @@ using UnityEngine;
 namespace DDEN.NetPerfTracker
 {
     /// <summary>Read-only, zero patches. Wall-frame timing, optional exact 2D marker and budgeted object censuses.</summary>
-    [BepInPlugin(Guid, "DDEN NetPerfTracker", "1.5.0")]
+    [BepInPlugin(Guid, "DDEN NetPerfTracker", "1.6.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     public class NetPerfTrackerPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleGate
     {
@@ -324,7 +324,7 @@ namespace DDEN.NetPerfTracker
                 if (_showEvents)
                 {
                     float listHeight = Math.Max(70, area.yMax - y - 92);
-                    _alertScroll = GUI.BeginScrollView(new Rect(area.x, y, area.width, listHeight), _alertScroll, new Rect(0, 0, area.width - 20, _eventContentHeight));
+                    _alertScroll = DdenUI.BeginScrollView(new Rect(area.x, y, area.width, listHeight), _alertScroll, new Rect(0, 0, area.width - 20, _eventContentHeight));
                     try
                     {
                         float rowY = 0;
@@ -335,7 +335,7 @@ namespace DDEN.NetPerfTracker
                             rowY += _eventHeights[i] + 9;
                         }
                     }
-                    finally { GUI.EndScrollView(); }
+                    finally { DdenUI.EndScrollView(); }
                     y += listHeight + 4; DrawButtons(area, ref y); return;
                 }
                 if (_buf.Count > 1)

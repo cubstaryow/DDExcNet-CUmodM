@@ -16,7 +16,7 @@
 
 .NOTES
   · 版本号默认取 Directory.Build.props 里的 <DdenVersion>，改版本只改那一行。
-  · 发布包内容 = **全部五个 dll**（共享层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器）+ 许可与说明文件。
+  · 发布包内容 = 五个 DDEN 组件 + 独立 CageFix + 许可与说明文件。
   · 不会自动 push 分支；发版前请确认 master 已经是最新的。
 #>
 [CmdletBinding()]
@@ -53,6 +53,7 @@ try {
     }
 
     $releaseBin = @{
+        'CageFix.dll'               = 'src/外部mod/CageFix/bin/Release/CageFix.dll'
         'DDEN.Shared.dll'           = 'src/DDEN.Shared/bin/Release/DDEN.Shared.dll'
         'DDExcNet-CUmodM.dll'       = 'src/DDExcNet.CUmodM/bin/Release/DDExcNet-CUmodM.dll'
         'DDEN.MPfix.dll'            = 'src/DDEN.MPfix/bin/Release/DDEN.MPfix.dll'

@@ -25,6 +25,14 @@ namespace DDEN.SaveEditor
         public RowKind Kind;
         public string Buffer;
         public bool BoolValue;
+        public string Error;
+        public double? Minimum, Maximum;
+        private bool Allowed(double value)
+        {
+            if (Minimum.HasValue && value < Minimum || Maximum.HasValue && value > Maximum)
+            { Error = "范围：" + (Minimum?.ToString(CultureInfo.InvariantCulture) ?? "不限") + "～" + (Maximum?.ToString(CultureInfo.InvariantCulture) ?? "不限"); return false; }
+            return true;
+        }
 
         public void Refresh()
         {
@@ -50,6 +58,7 @@ namespace DDEN.SaveEditor
             if (Token == null) return false;
             if (Buffer == text) return false;
             Buffer = text;
+            Error = null;
 
             try
             {
@@ -57,13 +66,15 @@ namespace DDEN.SaveEditor
 
                 if (jv.Type == JTokenType.Integer)
                 {
-                    if (!long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out long l)) return false;
+                    if (!long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out long l)) { Error = "请输入整数"; return false; }
+                    if (!Allowed(l)) return false;
                     jv.Value = l;
                     return true;
                 }
                 if (jv.Type == JTokenType.Float)
                 {
-                    if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double d)) return false;
+                    if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double d) || double.IsNaN(d) || double.IsInfinity(d) || Math.Abs(d) > float.MaxValue) { Error = "请输入有效数字"; return false; }
+                    if (!Allowed(d)) return false;
                     jv.Value = (float)d;
                     return true;
                 }
@@ -101,14 +112,16 @@ namespace DDEN.SaveEditor
 
         public void SetNumber(double value)
         {
-            if (!(Token is JValue jv)) return;
+            if (!(Token is JValue jv) || double.IsNaN(value) || double.IsInfinity(value)) return;
+            if (!Allowed(value)) return;
             if (jv.Type == JTokenType.Integer) jv.Value = (long)Math.Round(value);
             else jv.Value = (float)value;
+            Error = null;
             Refresh();
         }
     }
 
-    internal sealed class ItemView
+    internal sealed partial class ItemView
     {
         public int Index;
         public string Id;
@@ -144,7 +157,7 @@ namespace DDEN.SaveEditor
     }
 
     /// <summary>一个存档文件的编辑态：目标列表 + JObject + 各类视图。</summary>
-    internal sealed class SaveDocument
+    internal sealed partial class SaveDocument
     {
         public JObject Doc;
         public string Path;
@@ -234,8 +247,13 @@ namespace DDEN.SaveEditor
         {
             try
             {
-                Doc = SaveCodec.Read(path);
+                string beforeHash = FileHash(path);
+                JObject loaded = SaveCodec.Read(path);
+                string afterHash = FileHash(path);
+                if (beforeHash != afterHash) throw new IOException("读取期间存档发生变化，请重试。");
+                Doc = loaded;
                 Path = path;
+                SessionLoaded(afterHash);
                 Dirty = false;
                 SelectedItem = -1;
                 SelectedLimb = -1;
@@ -245,8 +263,6 @@ namespace DDEN.SaveEditor
             }
             catch (Exception ex)
             {
-                Doc = null;
-                Clear();
                 SetStatus("读取失败：" + ex.Message, true);
                 Log.Exception(ex, "Load save");
                 return false;
@@ -332,7 +348,7 @@ namespace DDEN.SaveEditor
                 {
                     Index = i,
                     Raw = limb,
-                    Label = LimbLabel(i)
+                    Label = EditorLabels.Limb(i)
                 };
                 foreach (JProperty prop in limb.Properties())
                 {
@@ -349,7 +365,7 @@ namespace DDEN.SaveEditor
 
         private void BuildItems(JArray array)
         {
-            for (int i = 0; i < array.Count && Items.Count < MaxItems; i++)
+            for (int i = 0; i < array.Count; i++)
             {
                 if (!(array[i] is JObject item)) continue;
 
@@ -364,6 +380,8 @@ namespace DDEN.SaveEditor
                     Favourited = MakeRow("item", "favourited", item["favourited"]),
                     Label = MakeRow("item", "label", item["label"])
                 };
+                if (Doc["itemComponents"] is JArray components && components.Count == array.Count && components[i] is JObject savedComponents)
+                    view.BuildProperties(savedComponents);
                 Items.Add(view);
             }
             BuildGroups();
@@ -397,7 +415,7 @@ namespace DDEN.SaveEditor
             string filter = (ItemFilter ?? string.Empty).Trim();
             foreach (ItemGroup group in ItemGroups)
             {
-                bool match = filter.Length == 0 || group.Items.Any(i => i.Id.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0);
+                bool match = filter.Length == 0 || group.Items.Any(i => (i.Id.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0 || EditorLabels.Item(i.Id).IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0 || (i.Label?.Buffer ?? "").IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0));
                 if (!match) continue;
                 VisibleGroups.Add(group);
             }
@@ -427,6 +445,7 @@ namespace DDEN.SaveEditor
                 case JTokenType.Integer:
                 case JTokenType.Float: kind = RowKind.Number; break;
                 case JTokenType.String: kind = RowKind.Text; break;
+                case JTokenType.Null when label == "label" || label == "batteryType" || label == "liquidId": kind = RowKind.Text; break;
                 default: return null;
             }
 
@@ -458,6 +477,8 @@ namespace DDEN.SaveEditor
         {
             if (Doc == null) return "没有已读取的存档。";
 
+            if (!ValidateForSave()) return Status;
+
             if (Compat.IsQolAutosaveBusy())
             {
                 SetStatus("QoL 正在自动存档，稍等 1 秒再保存（避免互相踩）。", true);
@@ -469,6 +490,7 @@ namespace DDEN.SaveEditor
                 string backup = SaveCodec.Write(Path, Doc);
                 SaveCodec.SyncMeta(Path, Doc);
                 Dirty = false;
+                SessionLoaded();
                 string msg = backup != null
                     ? $"已写入 {System.IO.Path.GetFileName(Path)}（备份 {System.IO.Path.GetFileName(backup)}）"
                     : $"已写入 {System.IO.Path.GetFileName(Path)}";
@@ -488,16 +510,18 @@ namespace DDEN.SaveEditor
 
         public void SetItemCondition(ItemView item, float value)
         {
-            item?.Condition?.SetNumber(value);
+            if (item?.Condition == null || float.IsNaN(value) || float.IsInfinity(value)) return;
+            item.Condition.SetNumber(value);
             Dirty = true;
-            SetStatus($"{item?.Id} 耐久 → {value:0.00}", false);
+            SetStatus($"{EditorLabels.Item(item.Id)} {(item.BatterySection != null ? "电量" : "状态")} → {value * 100:0.##}%", false);
         }
 
         public void AllItemsFullCondition()
         {
-            foreach (ItemView item in Items) item.Condition?.SetNumber(1d);
+            foreach (ItemView item in Items)
+                if (item.LiquidSection == null && (item.BatterySection == null || !string.IsNullOrEmpty(item.BatterySection.Raw.Value<string>("batteryType")))) item.Condition?.SetNumber(1d);
             Dirty = true;
-            SetStatus("已把全部物品耐久设为 100%", false);
+            SetStatus("已修复物品并充满已有电池，液体内容保持不变。", false);
         }
 
         public void DeleteItem(ItemView item)
@@ -506,6 +530,8 @@ namespace DDEN.SaveEditor
             try
             {
                 if (item.Index < 0 || item.Index >= items.Count) return;
+                if (ItemGroups.Any(g => g.Head.Index == item.Index && g.Count > 1)) { SetStatus("请先移除容器内的物品，再移除容器。", true); return; }
+                if (Doc["itemComponents"] is JArray paired && paired.Count != items.Count) { SetStatus("物品附加数据数量不一致，已停止移除。", true); return; }
                 items.RemoveAt(item.Index);
 
                 // itemComponents 与 items 一一对应，必须同步删，否则后面全部错位

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
-using CUCoreLib.Helpers;
 using DDEN.Shared;
 using HarmonyLib;
 using UnityEngine;
@@ -98,7 +97,7 @@ namespace DDEN.MPfix
         {
             try
             {
-                GameObject prefab = CustomInstantiate.ResolvePrefab(id);
+                GameObject prefab = ModItemFactory.ResolvePrefab(id);
                 if (prefab == null) return false;
                 if (ModResolved.Count < 4096) ModResolved.Add(id);
                 return true;

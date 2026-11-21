@@ -4,6 +4,8 @@
 
 > 别的模组怎么接入（交出配置 / 注册模块 / 用公共能力）：见 [cumodm-integration.md](cumodm-integration.md)。
 
+独立外部模组的资料与源码放在一起：[CageFix说明](../src/外部mod/CageFix/README.md)、[维护约束](../src/外部mod/CageFix/AGENTS.md)、[修复细节](../src/外部mod/CageFix/docs/features.md)。
+
 ---
 
 ## 0. 一套四件（部署在 `BepInEx/plugins/DDEN/`）
@@ -11,7 +13,7 @@
 | 文件 | 作用 |
 | --- | --- |
 | `DDExcNet-CUmodM.dll` | **统一管理器**：功能界面 + 全部配置界面 + 兼容性总控 |
-| `DDEN.MPfix.dll` | 多人相关修复合集：无芯片同步 + 联机合成/物品生成兜底 + 物品网络登记 |
+| `DDEN.MPfix.dll` | 多人相关修复合集：无芯片同步 + 合成失败补救 + 物品网络登记 + 伤害重算（方块/单位/角色肢体）+ 激进收敛 + 名称显示修复 + 主机权威配置 |
 | `DDEN.SaveEditor.dll` | 可视化存档编辑器（图标/血条点选，QoL 多存档位） |
 | `DDEN.Shared.dll` | 公共层（模块契约、UI 皮肤、兼容层、反射、存档编解码） |
 

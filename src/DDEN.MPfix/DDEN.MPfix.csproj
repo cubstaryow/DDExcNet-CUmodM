@@ -7,6 +7,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Reference Include="Unity.TextMeshPro"><HintPath>$(ManagedDir)\Unity.TextMeshPro.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>$(ManagedDir)\UnityEngine.UI.dll</HintPath><Private>false</Private></Reference>
     <ProjectReference Include="..\DDEN.Shared\DDEN.Shared.csproj">
       <Private>true</Private>
     </ProjectReference>

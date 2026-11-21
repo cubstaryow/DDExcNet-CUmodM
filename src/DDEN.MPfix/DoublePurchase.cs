@@ -101,7 +101,7 @@ namespace DDEN.MPfix
                 if (extra == null)
                 {
                     MPfixPlugin.Log.Debug($"[道生一] 额外那一件 '{id}' 生成失败（不影响正常购买；" +
-                                          "模组物品需要「联机合成/FixModItemCraftSpawn」开着才能造出来）");
+                                          "请检查该物品是否已被社区前置正常注册）");
                     return;
                 }
 

@@ -36,7 +36,7 @@ namespace DDEN.Shared
     public static class DdenExternal
     {
         /// <summary>一个外部模组交出来的配置块。</summary>
-        public sealed class Block
+        public sealed class Block : IDdenConfigPolicy, IDdenConfigAvailability
         {
             public string Owner;      // 插件名（BepInEx 元数据）
             public string Title;      // 显示名（DdenTitle 或 Owner）
@@ -44,6 +44,27 @@ namespace DDEN.Shared
             public Type Type;         // 提供成员的静态类型
             public IEnumerable<ConfigEntryBase> Entries;
             public Action<Rect> Draw; // 可选，自定义页面
+            private bool _summaryRead;
+            private int _summaryAt;
+            public string CurrentSummary
+            {
+                get
+                {
+                    int now = Environment.TickCount;
+                    if (!_summaryRead || unchecked(now - _summaryAt) >= 1000)
+                    { _summaryRead = true; _summaryAt = now; Summary = ReadSummary(Type) ?? Summary; }
+                    return Summary;
+                }
+            }
+            internal Func<ConfigEntryBase, string> Unavailable;
+            public bool CanEditConfig(ConfigEntryBase entry, bool normallyInteractive) => normallyInteractive && string.IsNullOrEmpty(ConfigUnavailableReason(entry));
+            public object ConfigDisplayValue(ConfigEntryBase entry) => entry.BoxedValue;
+            public string ConfigNotice => null;
+            public string ConfigUnavailableReason(ConfigEntryBase entry)
+            {
+                try { return Unavailable?.Invoke(entry); }
+                catch (Exception ex) { Log.Debug("外部配置可用性读取失败：" + ex.Message); return "此项暂时不可用"; }
+            }
         }
 
         private static readonly List<Block> _blocks = new List<Block>();
@@ -101,6 +122,9 @@ namespace DDEN.Shared
                 block.Title = ReadString(type) ?? owner;
                 block.Summary = ReadSummary(type);
                 block.Draw = ReadDraw(type);
+                MethodInfo reason = type.GetMethod("DdenUnavailable", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(ConfigEntryBase) }, null);
+                if (reason != null && reason.ReturnType == typeof(string))
+                    block.Unavailable = (Func<ConfigEntryBase, string>)Delegate.CreateDelegate(typeof(Func<ConfigEntryBase, string>), reason);
                 return block;
             }
             return null;

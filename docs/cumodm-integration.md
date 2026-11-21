@@ -55,12 +55,15 @@ namespace MyMod
 | `DdenTitle` | `string`（属性/字段/无参方法） | 否 | 「全部配置」页里的分组标题 |
 | `DdenSummary` | `string`（同上） | 否 | 标题右侧的一行状态 |
 | `DdenDraw` | `public static void DdenDraw(Rect area)` | 否 | 自定义页面内容；**不给也行** —— 不给就直接把你的 `ConfigEntry` 画成配置列表 |
+| `DdenUnavailable` | `public static string DdenUnavailable(ConfigEntryBase entry)` | 否 | 返回非空原因时，对应配置禁用；返回null/空表示可编辑。不需要引用 DDEN.Shared |
 
 扫描规则（`DdenExternal.Scan()`）：
 - 遍历 `Chainloader.PluginInfos` 里**每个已加载插件**的程序集，跳过 DDEN 自己的 dll；
 - 只看 `public` 类型；逐个类型找上面 4 个成员，找到第一个「交了配置」的类型就用它（每个插件最多一份）；
 - 任何反射异常都被吞掉并写 Debug，**不会影响你的模组**；
 - 扫描时机：管理器 `Start()`（所有插件 Awake 之后）。**改完代码重启游戏才生效**。
+- 外部状态摘要最多每秒刷新一次，配置开关变化后总览与侧栏会跟上。
+- 功能页路由 `ext:<下标>`，独立配置页 `extconfig:<下标>`。总览“配置”和全部配置“单独看”总是进入配置页，即使提供了 `DdenDraw`；自定义功能页另有入口。总览卡片列表可滚动。
 
 ### 1.3 渲染规则（你不需要适配，但值得知道）
 
@@ -314,7 +317,7 @@ Together/CasualtiesMP **5.5.3 / 5.5.4** 已验证存在下面三个问题，`DDE
 | --- | --- |
 | 我的配置没出现在「全部配置」 | 成员是不是 `public static`？类型是不是 `public`？名字拼写（`DdenConfig`）？改完有没有重启（扫描只在启动时） |
 | 出现了但值改了没生效 | 你的配置本来就是“启动时读取一次”的类型 → 在 `SettingChanged` 里自己重建对象 |
-| 「单独看」按钮不出现 | 没提供 `public static void DdenDraw(Rect)` |
+| 单独配置页没有出现 | 检查是否正确交出配置；无需提供DdenDraw。自定义功能页与配置页是两个独立入口 |
 | 我的热键失效 | 被别的模组先注册了 → 用 `Compat.FindHotkeyOwners` 查，再 `ResolveHotkey` 换键 |
 | 管理器没加载 | 管理器也是可选前置：`DdenHub.ManagerLoaded == false` 时必须能独立工作（用 `DdenUI.DrawStandalone` 兜底） |
 | 日志里没有我的行 | 用 `Log.For(Logger, "MyMod")`，并确认 `Log.Attach` 已由管理器完成（或你自己的插件里先 `DDEN.Shared.Log.Attach(Logger, "MyMod")`） |
@@ -325,6 +328,7 @@ Together/CasualtiesMP **5.5.3 / 5.5.4** 已验证存在下面三个问题，`DDE
 
 `src/DDEN.SaveEditor/` 是最小的“完整模块”样板（注册 + 功能页 + 配置页 + 自检），
 `src/DDEN.MPfix/` 是“联机 + 频道 + 反射调 Together”的样板。
+[`src/外部mod/CageFix/`](../src/外部mod/CageFix/README.md) 是L1独立插件样板：不引用DDEN.Shared，用public static桥交出配置与可用性；不提供DdenDraw，页面完全交给管理器自动绘制。源码、专属AGENTS.md、技术说明、变更记录与检查工具集中在此目录。
 新增模块的最快路径：
 
 ```bash
