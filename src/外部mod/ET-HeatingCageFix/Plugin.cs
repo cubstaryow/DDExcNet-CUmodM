@@ -5,9 +5,9 @@ using BepInEx.Bootstrap;
 using BepInEx.Configuration;
 using HarmonyLib;
 
-namespace CageFix
+namespace HeatingCageFix
 {
-    [BepInPlugin(Guid, "ET 加热笼修复", "1.6.0")]
+    [BepInPlugin(Guid, "ET-HeatingCageFix", "1.6.0")]
     [BepInDependency("com.a4kk.enhancedtools", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
@@ -22,8 +22,8 @@ namespace CageFix
         private float _nextTick;
         private bool _enforcing;
         internal static bool Active => Ready && Master.Value;
-        internal static void Error(Exception ex, string action) => Instance?.Logger.LogWarning("[CageFix] " + action + "：" + ex.Message);
-        internal static void Debug(string message) { if (Verbose?.Value == true) Instance?.Logger.LogInfo("[CageFix] " + message); }
+        internal static void Error(Exception ex, string action) => Instance?.Logger.LogWarning("[ET-HeatingCageFix] " + action + "：" + ex.Message);
+        internal static void Debug(string message) { if (Verbose?.Value == true) Instance?.Logger.LogInfo("[ET-HeatingCageFix] " + message); }
 
         private void Awake()
         {
@@ -48,7 +48,7 @@ namespace CageFix
                 catch (Exception ex) { Network.Value = false; Error(ex, "联机状态确认不可用"); }
                 Config.SettingChanged += (_, __) => Changed();
                 Changed();
-                Logger.LogInfo("[CageFix] 已加载：按实例控制腐坏与热源资格，配置可交给 DDEN 管理。");
+                Logger.LogInfo("[ET-HeatingCageFix] 已加载：按实例控制腐坏与热源资格，配置可交给 DDEN 管理。");
             }
             catch (Exception ex)
             {
@@ -107,7 +107,7 @@ namespace CageFix
     public static class DdenBridge
     {
         public static ConfigFile DdenConfig => Plugin.Instance?.Config;
-        public static string DdenTitle => "CageFix · 加热笼修复";
+        public static string DdenTitle => "ET 加热笼修复";
         public static string DdenSummary => !Plugin.Ready ? "功能不可用：" + Plugin.Problem : Plugin.Master.Value ? "已启用" : "已关闭";
         public static string DdenUnavailable(ConfigEntryBase entry)
         {

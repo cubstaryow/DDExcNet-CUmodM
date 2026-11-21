@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using HarmonyLib;
 using Newtonsoft.Json.Linq;
 
-namespace CageFix
+namespace HeatingCageFix
 {
     internal static class CagePatches
     {

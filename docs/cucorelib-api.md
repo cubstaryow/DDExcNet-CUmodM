@@ -1,6 +1,6 @@
-# CUCoreLib API 速查（从 `CUCoreLib.dll` 反编译核对，v1.1 / `net.cucorelib`）
+# CUCoreLib API 速查 · DDEN v1.6.0
 
-> 只列**public** 且在 2026-11-20 的 dll 里实测存在的签名。加号 `+` 表示嵌套类型（反射时写成 `Outer+Inner`）。
+> 对照本机CUCoreLib 1.1（GUID `net.cucorelib`）的public接口整理；这是安装版本的阅读记录，不是对未来版本的承诺。含`...`或斜线并列的是速记，不能原样编译。加号 `+` 表示嵌套类型。实际参数／返回值以对应DLL为准。
 
 ## 1. 联机：判定 + 频道
 
@@ -29,7 +29,7 @@ static bool BroadcastEverywhere(...) / BroadcastToPeer(string channel, uint clie
 坑：
 - 频道名自己带前缀，别撞 `cucorelib.*`；
 - `Broadcast` 只在主机端有效（`!IsServer` 直接返回 false）；
-- 客户端自己 `Broadcast` 会被转成“发给主机 → 主机转发”，延迟一圈，重要状态优先走 `RequestServer`/快照。
+- `BroadcastEverywhere`等转发入口另走`BroadcastRelayed`，可以请求主机转发。不能把“直接Broadcast仅主机可用”推导成收到的任意频道广播都可信；重要状态应向主机请求核验，并关联本次连接／世界／请求。
 
 ## 2. 联机：状态快照（晚进主机也能同步）
 
@@ -43,7 +43,7 @@ static void ScheduleInitialSnapshot() / RequestInitialSnapshot() / BroadcastSnap
 static void QueueHostSnapshotBroadcast()
 ```
 
-主机 `capture` → 打进快照 → 客机 `apply`。**本仓库组件 1 就是靠这个**。
+主机 `capture` → 打进快照 → 客机 `apply`。无芯片同步将它用于主机实际规则下发；还另有变更广播及客机20秒主动请求，并非只靠快照。
 
 ## 3. 控制台指令
 
@@ -119,4 +119,6 @@ CUCoreLib.Patches.KrokMpCompatibilityPatches / QoLUnknownCompatibilityPatches   
 
 1. **HarmonyX 版本**：`harmony.UnpatchAll(string id)` 已 `[Obsolete(error:true)]`，卸载用自己的实例 `UnpatchSelf()`。
 2. **目标框架必须是 `netstandard2.1`**：游戏 `Assembly-CSharp.dll` 与 CUCoreLib 都编到 netstandard 2.1（`Managed/netstandard.dll` 2.1.0.0）。
-   编 `netstandard2.0` 会报 “程序集引用比自身框架更新”。
+   不能为兼容旧教程降到netstandard2.0而忽略现有依赖的框架要求。
+
+这些公开注册API不等于ET-HeatingCageFix当前的保存实现：该修复是对CCL内置物品提供者Capture/Restore的可选后缀挂接，不是注册一个不存在的独立provider。见 [独立修复细节](../src/外部mod/ET-HeatingCageFix/docs/features.md)。

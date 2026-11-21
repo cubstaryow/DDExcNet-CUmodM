@@ -1,6 +1,6 @@
-# CageFix 维护说明
+# ET-HeatingCageFix 维护说明
 
-本目录是独立外部模组，继承仓库操作与授权边界；DDEN内部模块的Shared日志、接口和UI要求不适用于这里。保持程序集/插件名 `CageFix`、GUID `com.dden.heatingcagefix`、版本 **1.5.0**。不得为接管配置而强制引入DDEN公共层。
+本目录是独立外部模组，继承仓库操作与授权边界；DDEN内部模块的Shared日志、接口和UI要求不适用于这里。保持程序集/插件名 `ET-HeatingCageFix`、GUID `com.dden.heatingcagefix`、版本 **1.6.0**。不得为接管配置而强制引入DDEN公共层。
 
 ## 文件入口
 
@@ -10,7 +10,7 @@
 - `CageRules.cs`、`CageWire.cs`：保存字段与严格网络消息校验。
 - `CageNetwork.cs`：主机状态查询、通知合并、过期回包隔离与有界重试。
 - [README.md](README.md)：玩家说明；[docs/features.md](docs/features.md)：证据与实现；[CHANGE.md](CHANGE.md)：独立变更记录。
-- `tests/CageFixTests/`：离线检查。`bin/`、`obj/`、`dist/`为本地生成文件，不提交。
+- `tests/HeatingCageFixTests/`：离线检查。`bin/`、`obj/`、`dist/`为本地生成文件，不提交。
 
 ## 依赖与配置
 
@@ -34,13 +34,15 @@
 从本目录执行，继承仓库 `Directory.Build.props`；换游戏路径使用 `-p:GameDir=...`：
 
 ```powershell
-dotnet build CageFix.csproj -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=false
-dotnet build tests/CageFixTests/CageFixTests.csproj -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=false
-dotnet run --no-build --project tests/CageFixTests/CageFixTests.csproj -c Release
+dotnet build ET-HeatingCageFix.csproj -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=false
+dotnet build tests/HeatingCageFixTests/HeatingCageFixTests.csproj -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=false
+dotnet run --no-build --project tests/HeatingCageFixTests/HeatingCageFixTests.csproj -c Release
 ```
 
-检查自动构建CageFix和作为集成验证对象的Shared。DLL检查路径由构建元数据提供，不依赖执行目录。需本机游戏及ET/CCL安装文件；不随模组分发这些依赖。
+检查自动构建ET-HeatingCageFix和作为集成验证对象的Shared。DLL检查路径由构建元数据提供，不依赖执行目录。需本机游戏及ET/CCL安装文件；不随模组分发这些依赖。
 
-75项离线检查覆盖真实业务逻辑，但Unity、传输与反射边界使用模拟，不能当作Unity/Mono实际补丁执行或双机验收。游戏内检查开关、灯光/温度/腐坏、热源合成、两只不同状态笼子、存取、连续切换、晚加入、换层和重连。
+77项离线检查覆盖真实业务逻辑及改名后的程序集／插件身份，但Unity、传输与反射边界使用模拟，不能当作Unity/Mono实际补丁执行或双机验收。游戏内检查开关、灯光/温度/腐坏、热源合成、两只不同状态笼子、存取、连续切换、晚加入、换层和重连。
 
-本轮仅整理目录，不部署、不启动/停止游戏、不改真实配置或存档、不操作git。将来部署遵守用户当次授权；仅处理准确列出的自有文件，不造插件备份，不碰其他模组。
+本轮整理文档与改名，不部署、不启动/停止游戏、不改真实配置或存档；用户已授权验证后提交并推送dev。将来部署遵守用户当次授权；仅处理准确列出的自有文件，不造插件备份，不碰其他模组。
+
+改名必须保留原GUID／cfg／存档键／频道，旧CageFix.dll与新ET-HeatingCageFix.dll不能同时安装；namespace为HeatingCageFix，配置桥全名为HeatingCageFix.DdenBridge。

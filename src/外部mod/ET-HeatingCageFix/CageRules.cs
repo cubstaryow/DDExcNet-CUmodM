@@ -1,6 +1,6 @@
 using Newtonsoft.Json.Linq;
 
-namespace CageFix
+namespace HeatingCageFix
 {
     internal static class CageRules
     {

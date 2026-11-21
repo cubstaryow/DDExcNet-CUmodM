@@ -11,12 +11,12 @@
       打完包后创建 GitHub Release 并上传 zip（需要 gh CLI 已登录，或 GITHUB_TOKEN 环境变量）。
 
 .EXAMPLE
-  pwsh scripts/release.ps1 -Version 1.2.1 -Notes "修身上海挂贴图的问题" -Upload
+  pwsh scripts/release.ps1 -Version 1.6.0 -Notes "本次发布说明" -Upload
       指定版本号与一段自定义说明。
 
 .NOTES
-  · 版本号默认取 Directory.Build.props 里的 <DdenVersion>，改版本只改那一行。
-  · 发布包内容 = 五个 DDEN 组件 + 独立 CageFix + 许可与说明文件。
+  · 默认读取 DdenVersion；改版本还须同步各插件BepInPlugin字面版本，-Version不会改源码版本。
+  · 发布包内容 = 五个 DDEN 组件 + 独立 ET-HeatingCageFix + 许可与说明文件。
   · 不会自动 push 分支；发版前请确认 master 已经是最新的。
 #>
 [CmdletBinding()]
@@ -53,7 +53,7 @@ try {
     }
 
     $releaseBin = @{
-        'CageFix.dll'               = 'src/外部mod/CageFix/bin/Release/CageFix.dll'
+        'ET-HeatingCageFix.dll'               = 'src/外部mod/ET-HeatingCageFix/bin/Release/ET-HeatingCageFix.dll'
         'DDEN.Shared.dll'           = 'src/DDEN.Shared/bin/Release/DDEN.Shared.dll'
         'DDExcNet-CUmodM.dll'       = 'src/DDExcNet.CUmodM/bin/Release/DDExcNet-CUmodM.dll'
         'DDEN.MPfix.dll'            = 'src/DDEN.MPfix/bin/Release/DDEN.MPfix.dll'

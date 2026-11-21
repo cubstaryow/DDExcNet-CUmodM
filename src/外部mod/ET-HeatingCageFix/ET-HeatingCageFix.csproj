@@ -1,10 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><AssemblyName>CageFix</AssemblyName><RootNamespace>CageFix</RootNamespace><Version>$(DdenVersion)</Version></PropertyGroup>
+  <PropertyGroup><AssemblyName>ET-HeatingCageFix</AssemblyName><RootNamespace>HeatingCageFix</RootNamespace><Version>$(DdenVersion)</Version></PropertyGroup>
   <ItemGroup>
     <Reference Remove="CUCoreLib" />
     <Compile Remove="tests/**/*.cs" />
   </ItemGroup>
   <Target Name="DeployPlugin" AfterTargets="Build" Condition="'$(DeployOnBuild)' == 'true'">
     <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(DdenPluginsDir)" />
+    <Delete Files="$(DdenPluginsDir)\CageFix.dll" Condition="Exists('$(DdenPluginsDir)\CageFix.dll')" />
   </Target>
 </Project>

@@ -1,4 +1,15 @@
-# CageFix 变更记录
+# ET-HeatingCageFix 变更记录
+
+## v1.6.0 · 本次文档与命名整理
+
+- 产品／程序集／项目／源码目录统一为ET-HeatingCageFix，测试归入tests/HeatingCageFixTests；namespace为HeatingCageFix，管理器标题为ET 加热笼修复。
+- 原GUID com.dden.heatingcagefix、cfg、cagefix存档节点、网络频道和消息格式不变，不增加Shared硬依赖。
+- 更新构建、打包与旧名迁移：安装只保留ET-HeatingCageFix.dll，先移除CageFix.dll；部署只处理已知自有文件。
+- README、维护约束、技术说明更新到1.6.0。历史包保留旧名，不冒充新包；本次未改腐坏／合成／保存／网络算法。
+- 本轮不部署、不改真实存档或游戏配置；检查与提交情况见仓库CHANGE。中文／English切换仅给方案，尚未实现。
+- 新名Release构建及77项离线检查通过，包含程序集名称／版本、BepInPlugin名称／GUID保持和无Shared硬依赖；真实游戏及多人仍待实测。
+
+以下v1.5.0记录仅供历史追溯，不是当前目录名、包名或验证结论。
 
 ## v1.5.0 · 2026-11-21
 
@@ -15,4 +26,4 @@
 - 技术细节移入 `docs/features.md`，补齐本地 `AGENTS.md`、变更记录与许可文件。通用DDEN文档仅保留接入协议和管理器修复说明。
 - 独立安装包归入本目录 `dist/CageFix-v1.5.0.zip`；这是此前已部署版本的原包，保留原字节及SHA-256，不将目录调整当作重新部署。
 - 更新解决方案、构建/发布脚本和文档入口；检查路径改由构建元数据提供，支持从模组目录执行。运行时代码和开关行为不变。
-- 本次不操作git、不修改游戏安装、配置或真实存档。目录迁移后的检查结果见仓库 [CHANGE.md第12节](../../../CHANGE.md)。
+- 当时未操作git、未修改游戏安装、配置或真实存档。目录迁移检查见 [历史第12节](../../../docs/history/conversation-v1.5.0.md)。

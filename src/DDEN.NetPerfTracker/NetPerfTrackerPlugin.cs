@@ -500,7 +500,7 @@ namespace DDEN.NetPerfTracker
                 using (var writer = new StreamWriter(_file, false, new UTF8Encoding(false), 65536))
                 {
                     writer.WriteLine("# DDEN perf schema=3 exportedUtc=" + DateTime.UtcNow.ToString("O") + " engineTimeAtStart=" + _startedAt.ToString("0.000", CultureInfo.InvariantCulture));
-                    writer.WriteLine("# version=1.5.0 physicsSource=" + _physics.Source + "; -1=unavailable, never zero-filled; timing unit=ms per rendered frame; steps are scheduling only");
+                    writer.WriteLine("# version=" + Version + " physicsSource=" + _physics.Source + "; -1=unavailable, never zero-filled; timing unit=ms per rendered frame; steps are scheduling only");
                     writer.WriteLine("# object/scene timestamps use engine realtime seconds; counts are interval censuses, not simultaneous snapshots; all settings and costs belong to the recorded point");
                     writer.WriteLine("# free=no parent; freeDynamic=active,simulated,dynamic; awake excludes sleeping; downward=awake free velocityY<-2; noSolid excludes trigger colliders");
                     writer.WriteLine("# event bits:1=players,2=world,4=lowFPS,8=connection,16=manual,32=resume,64=selftest,128=alerts; observer CPU covers sampling+page code, not GPU/engine recorder work");

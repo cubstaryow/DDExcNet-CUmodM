@@ -69,7 +69,7 @@ public sealed class FakeCageFire : UnityEngine.MonoBehaviour
     private void SetActive(bool on)
     {
         active = on;
-        typeof(CageFix.CageRuntime).GetMethod("AfterSetActive", BindingFlags.Static | BindingFlags.NonPublic).Invoke(null, new object[] { this });
+        typeof(HeatingCageFix.CageRuntime).GetMethod("AfterSetActive", BindingFlags.Static | BindingFlags.NonPublic).Invoke(null, new object[] { this });
     }
 }
 public sealed class FakeSaveContext
@@ -78,7 +78,7 @@ public sealed class FakeSaveContext
     public void Defer(Action action) => Deferred.Add(action);
     public void Finish() { foreach (var action in Deferred) action(); Deferred.Clear(); }
 }
-namespace CageFix
+namespace HeatingCageFix
 {
     internal sealed class Flag { public bool Value = true; }
     internal static class Plugin

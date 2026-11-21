@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using Newtonsoft.Json.Linq;
 
-namespace CageFix
+namespace HeatingCageFix
 {
     internal readonly struct CageKey : IEquatable<CageKey>
     {

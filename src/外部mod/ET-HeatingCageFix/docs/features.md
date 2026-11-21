@@ -1,6 +1,6 @@
-# CageFix 修复细节（v1.5.0）
+# ET-HeatingCageFix 修复细节（v1.6.0）
 
-独立程序集 `CageFix.dll`，插件GUID沿用 `com.dden.heatingcagefix`；源码为本次重新实现，没有复制反编译参考DLL的实现。
+独立程序集 `ET-HeatingCageFix.dll`，插件GUID沿用 `com.dden.heatingcagefix`；修复在v1.5.0阶段独立实现，没有复制反编译参考DLL的代码，当前v1.6.0文档轮次只改名与说明。
 仅引用游戏、BepInEx、Harmony与JSON库；不硬引用DDEN.Shared、EnhancedTools、CUCoreLib或Together。
 ET/CCL缺失或接口不匹配时功能关闭，配置桥仍可被管理器发现；缺少Together时仅关闭联机确认。
 
@@ -31,8 +31,10 @@ ET加热笼注册缺少其自定义灯光控制器，原`SetActive`无法通过�
 
 ## 3. DDEN配置接管
 
-`CageFix.DdenBridge`通过public static `DdenConfig/DdenTitle/DdenSummary`交配置，不实现DDEN模块接口、不提供DdenDraw，完全交给通用配置页。
+`HeatingCageFix.DdenBridge`通过public static `DdenConfig/DdenTitle/DdenSummary`交配置，不实现DDEN模块接口、不提供DdenDraw，完全交给通用配置页。
 新增可选L1约定`DdenUnavailable(ConfigEntryBase)`，返回原因即可禁用对应配置；桥中所有类型均来自BepInEx，外部模组无需Shared引用。
 Shared侧适配为原有配置策略接口，旧模组没有这个成员时保持原行为。外部摘要最多每秒刷新一次。
 
-管理器通用入口与滚动修复见 [DDEN功能文档](../../../../docs/features.md#六外部模组配置入口v150内追加)。
+管理器通用入口与滚动修复见 [DDEN功能文档](../../../../docs/features.md)。
+
+产品／程序集已从CageFix改名，原GUID、cagefix存档节点和频道保持不变。安装只留一份新DLL；旧包和旧参考DLL不是本次构建，不随改名而重新部署。当前检查结论见上级CHANGE.md。

@@ -29,7 +29,7 @@ namespace DDEN.Shared
     /// public static string DdenSummary() =&gt; "就绪";
     /// </code>
     ///
-    /// 约定：成员必须是 public static；方法不能有参数（DdenDraw 除外，它接收 Rect）；
+    /// 约定：成员必须是 public static；取值方法无参，DdenDraw接收Rect，DdenUnavailable接收ConfigEntryBase；
     /// 返回值可以是 ConfigFile、IEnumerable&lt;ConfigEntryBase&gt;、或 ConfigEntryBase 数组。
     /// 任何异常都被吞掉并记 Debug，绝不影响对方模组。
     /// </summary>

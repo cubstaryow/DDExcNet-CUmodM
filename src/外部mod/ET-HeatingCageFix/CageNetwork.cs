@@ -6,7 +6,7 @@ using HarmonyLib;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
 
-namespace CageFix
+namespace HeatingCageFix
 {
     internal static class CageNetwork
     {

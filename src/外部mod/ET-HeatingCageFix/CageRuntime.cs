@@ -4,7 +4,7 @@ using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
 
-namespace CageFix
+namespace HeatingCageFix
 {
     internal sealed class CageState : MonoBehaviour
     {
