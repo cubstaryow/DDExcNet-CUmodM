@@ -64,6 +64,9 @@ namespace DDEN.MPfix
                 bool attackOk = UnitDamageRepair.SelfTest();
                 r.Add("攻击上报真实传输读写 = " + (attackOk ? "PASS" : "FAIL"));
                 if (!attackOk) pass = false;
+                bool retirementOk = GhostItemRelay.SelfTest();
+                r.Add("离场物品身份与清理接口 = " + (retirementOk ? "PASS" : "FAIL"));
+                if (!retirementOk) pass = false;
 
                 log.Info("[SELFTEST] " + string.Join(" | ", r) + (pass ? " | 结论 PASS" : " | 结论 FAIL"));
             }

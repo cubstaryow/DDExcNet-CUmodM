@@ -81,6 +81,7 @@ namespace DDEN.MPfix
         private bool _forcePushNextTick;
         private int _appliedCount;
         private string _lastReason = "-";
+        private bool _repairRunning;
 
         private KeyCode _standaloneKey = KeyCode.F10;
         private bool _standaloneVisible;
@@ -232,8 +233,8 @@ namespace DDEN.MPfix
             DdenDocs.Add("联机修正", "离场物品广播清理（RelayGhostItems）",
                 "玩家离场时，按主机给的清单清掉客机本地的遗留副本。",
                 "一名玩家掉线后，另一台客机帧数暴跌、地上的东西还在原地闪。",
-                "主机把离场玩家的物品清单广播出来，客机按清单删掉本地那份没人管的副本。",
-                "否", "低（只在有人离场时一次）");
+                "主机记录离场物品的准确身份，其他客机核对确认后分帧清理；有人持有或内容物未确认时保留。",
+                "否", "低（只处理退场清单，大量物品分帧清理）");
             DdenDocs.Add("联机修正", "商人界面不再刷“prefab 为空”（QuietTraderUIModItems）",
                 "商人界面自检不再对模组物品报错。",
                 "打开商人界面时控制台一直刷“prefab 为空”的错误。",
@@ -615,6 +616,7 @@ namespace DDEN.MPfix
 
         public void ForceApply()
         {
+            if (!Active) return;
             if (!_hasHostValue)
             {
                 RequestNow();
@@ -627,6 +629,7 @@ namespace DDEN.MPfix
 
         public void RequestNow()
         {
+            if (!Active) return;
             Mp.RequestServer(UnchippedProtocol.RequestChannel, new JObject { ["ask"] = "unchipped" }, token =>
             {
                 if (token == null) return;
@@ -638,6 +641,7 @@ namespace DDEN.MPfix
 
         public void ToggleHostState()
         {
+            if (!Active) return;
             if (!Mp.IsRunning || !Mp.IsServer) return;
             WorldGeneration world = WorldGeneration.world;
             if (world == null) return;
@@ -666,7 +670,8 @@ namespace DDEN.MPfix
             });
             Mp.RegisterServerHandler(UnchippedProtocol.RequestChannel, _ =>
             {
-                if (!CfgChipEnabled.Value) return null;
+                if (!Active || !CfgChipEnabled.Value || !Mp.IsRunning || !Mp.IsServer)
+                    return new JObject { ["enabled"] = false };
                 bool value = Mp.IsServer ? Mp.HostUnchipped() : _lastHostValue;
                 if (Mp.IsServer) OnHostValueSeen(value);
                 return JObject.FromObject(new
@@ -681,6 +686,7 @@ namespace DDEN.MPfix
 
         private JObject CaptureState()
         {
+            if (!Active || !CfgChipEnabled.Value || !Mp.IsServer) return null;
             bool value = Mp.HostUnchipped();
             OnHostValueSeen(value);
             return new JObject
@@ -707,6 +713,7 @@ namespace DDEN.MPfix
 
         private void OnHostState(bool value, string source, bool manual = false)
         {
+            if (!Active) return;
             // 手动按钮（面板上的「立即按主机同步 / 再问一次主机」）不受「无芯片同步/启用」开关限制
             if (!CfgChipEnabled.Value && !manual) return;
 
@@ -720,6 +727,7 @@ namespace DDEN.MPfix
 
         private void ApplyLocal(bool value, string reason)
         {
+            if (!Active) return;
             if (CfgOverrideIndividualRule.Value) Mp.UnchippedIsIndividual = false;
 
             WorldGeneration world = WorldGeneration.world;
@@ -823,6 +831,12 @@ namespace DDEN.MPfix
             try
             {
                 if (entry == null) return;
+                if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgRelayGhostItems))
+                    GhostItemRelay.Reset();
+                if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgWearFix))
+                    WearGhostFix.Reset();
+                if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgTraderSnapshot))
+                    TraderSnapshotFix.Reset();
 
                 if (ReferenceEquals(entry, CfgVerbose))
                 {
@@ -898,6 +912,17 @@ namespace DDEN.MPfix
 
                 // 两个周期巡检（穿戴兜底 / 掉线遗留物品）：各自内部有节拍，这里只量"本模块每帧吃了多少"，
                 // 每 60 秒汇总一条日志 —— 让"巡检是不是卡顿源"有数据，而不是靠感觉。
+                bool repairRunning = Mp.IsRunning;
+                if (_repairRunning != repairRunning)
+                {
+                    _repairRunning = repairRunning;
+                    WearGhostFix.Reset();
+                    TraderSnapshotFix.Reset();
+                    _hasHostValue = false;
+                    _wasClient = _requested = false;
+                    _forcePushNextTick = true;
+                    _nextWatchdog = 0f;
+                }
                 float t0 = Time.realtimeSinceStartup;
                 WearGhostFix.Tick();
                 float t1 = Time.realtimeSinceStartup;
@@ -907,7 +932,7 @@ namespace DDEN.MPfix
 
                 ReportTickCost((t2 - t0) * 1000f, (t1 - t0) * 1000f, (t2 - t1) * 1000f);
 
-                if (!CfgChipEnabled.Value) return;
+                if (!Active || !CfgChipEnabled.Value) return;
                 if (!Mp.CoreAvailable) return;
 
                 bool running = Mp.IsRunning;
@@ -940,7 +965,7 @@ namespace DDEN.MPfix
             }
         }
 
-        private void ReportTickCost(float total, float wear, float freezer)
+        private void ReportTickCost(float total, float wear, float relayAndMining)
         {
             // 开局 6 秒是冷启动（JIT、资源加载），这段时间的数字没有参考价值，别记进来
             if (Time.realtimeSinceStartup < _warmupUntil) return;
@@ -964,7 +989,7 @@ namespace DDEN.MPfix
             if (avg < 0.5f && peak < 2f) return;
 
             MPfixPlugin.Log.Info($"[巡检] 本模块每帧合计 平均 {avg:0.000}ms / 峰值 {peak:0.000}ms " +
-                                 $"（最近一次：穿戴兜底 {wear:0.000} / 遗留冻结 {freezer:0.000}）");
+                                 $"（最近一次：穿戴兜底 {wear:0.000} / 遗留清理和挖块 {relayAndMining:0.000}）");
         }
 
         private void TickHost()
@@ -1042,6 +1067,7 @@ namespace DDEN.MPfix
 
         private void OnDestroy()
         {
+            GhostItemRelay.Reset();
             try { new Harmony(Guid).UnpatchSelf(); }
             catch { /* ignored */ }
         }
@@ -1055,6 +1081,7 @@ namespace DDEN.MPfix
         private static void Postfix(bool unchipped)
         {
             MPfixPlugin plugin = MPfixPlugin.Instance;
+            if (!MPfixPlugin.Active) return;
             if (plugin == null || !MPfixPlugin.CfgChipEnabled.Value) return;
             if (!Mp.IsRunning || !Mp.IsServer) return;
 

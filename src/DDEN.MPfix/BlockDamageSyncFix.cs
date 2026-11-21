@@ -46,7 +46,13 @@ namespace DDEN.MPfix
         [HarmonyPatch(typeof(WorldGeneration), "GenerateWorld")]
         internal static class WorldReset_Patch
         {
-            private static void Prefix() => Reset();
+            private static void Prefix()
+            {
+                Reset();
+                GhostItemRelay.Reset();
+                WearGhostFix.Reset();
+                TraderSnapshotFix.Reset();
+            }
         }
 
         internal static void Reset()

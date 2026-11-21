@@ -57,6 +57,34 @@ internal static class Program
         Check(queue.Drain(value => throw new Exception(), 10, 0, () => ticks) == 0 && queue.Count == 8, "disabled time budget");
         queue.Clear();
         Check(queue.Count == 0 && queue.Drain(value => throw new Exception(), 10, 5, () => ticks) == 0, "world reset cancels stale work");
-        Console.WriteLine($"PASS: {_checks} checks (attack protocol validation; 10,000 queued blocks; frame budgets; world reset).");
+        var identities = new NetworkObjectIndex<object>();
+        object original = new object(), replacement = new object(), binding = new object();
+        var first = identities.Track(123, 7, "bag", original, binding);
+        Check(ReferenceEquals(identities.Find(123, 7, "bag"), first), "exact identity lookup");
+        Check(identities.Find(123, 8, "bag") == null, "old generation cannot match new entity");
+        Check(identities.Find(123, 7, "scrap") == null, "same ID cannot change resource");
+        Check(identities.Find(124, 7, "bag") == null, "nearby identical object cannot match");
+        var next = identities.Track(123, 8, "bag", replacement, new object());
+        Check(identities.IsCurrent(first) && identities.IsCurrent(next), "different generations remain distinct");
+        var rebinding = identities.Track(123, 7, "bag", original, new object());
+        Check(!identities.IsCurrent(first) && identities.IsCurrent(rebinding), "same mesh rebound invalidates queued retirement");
+        var reused = identities.Track(123, 7, "bag", replacement, new object());
+        Check(!identities.IsCurrent(rebinding) && !identities.IsCurrent(next) && identities.IsCurrent(reused), "ID and mesh reuse invalidate stale leases");
+        identities.Remove(original);
+        Check(identities.IsCurrent(reused), "late old-object destruction preserves new binding");
+        identities.Clear();
+        Check(identities.Count == 0 && !identities.IsCurrent(reused), "world reset cancels old identities");
+        Check(identities.Track(0, 0, "bag", original, binding) == null, "no unregistered identity");
+        Check(identities.Track(64000, 0, "bag", original, binding) == null, "peer-local IDs cannot authorize retirement");
+        Check(identities.Track(ushort.MaxValue, 0, "bag", original, binding) == null, "peer-local ID range rejected");
+        Check(identities.Track(1, 0, "", original, binding) == null, "no unnamed identity");
+        Check(identities.Track(1, 0, "bag", null, binding) == null, "no missing mesh");
+        Check(identities.Track(1, 0, "bag", original, null) == null, "no missing binding");
+        var saved = new NetworkObjectIndex<object>.Lease[1000];
+        for (int i = 0; i < saved.Length; i++) saved[i] = identities.Track((ushort)(i + 1), 1, "scrap", new object(), new object());
+        Check(identities.Count == 1000, "large inventory indexed once");
+        foreach (var lease in saved) { Check(identities.IsCurrent(lease), "inventory binding retained"); identities.Remove(lease.Value); }
+        Check(identities.Count == 0, "destroyed inventory releases cached references");
+        Console.WriteLine($"PASS: {_checks} checks (attack protocol; 10,000 queued tasks; frame budgets; 1,000 inventory identities; ID reuse; reset).");
     }
 }

@@ -18,7 +18,7 @@ namespace DDEN.MPfix
     ///   · **不再挂 `HeldQuiet.Restore`**（用户口径：被动恢复范围那套去掉，只处理玩家丢弃的物品）；
     ///   · 不碰 `rb.simulated`、不设 `CollisionDetectionMode.Continuous`、不移动物品
     ///     （这几样是"物品抽搐/飞天"的来源：物品正压在实体里时打开物理会被解算器弹飞）；
-    ///   · 与实体重叠时不处理，等它自己脱开。
+    ///   · 与实体重叠时本次跳过，不做持续恢复。
     ///   位置交给物理引擎，物品从不被挪动。
     /// </summary>
     internal static class ItemPhysicsGuard
@@ -28,20 +28,18 @@ namespace DDEN.MPfix
         [HarmonyPatch(typeof(Body), nameof(Body.DropItem), new[] { typeof(int) })]
         internal static class Body_DropItem_GuardPatch
         {
-            private static Item _pending;
-
             /// <summary>`Body.DropItem(int)` 是 void（没有返回值），所以在调用前记下那一格里的物品。</summary>
-            private static void Prefix(Body __instance, int slot)
+            private static void Prefix(Body __instance, int slot, out Item __state)
             {
-                try { _pending = __instance != null ? __instance.GetItem(slot) : null; }
-                catch { _pending = null; }
+                __state = null;
+                if (!MPfixPlugin.Active || !MPfixPlugin.CfgPhysicsGuard.Value) return;
+                try { __state = __instance != null ? __instance.GetItem(slot) : null; }
+                catch { __state = null; }
             }
 
-            private static void Postfix()
+            private static void Postfix(Item __state)
             {
-                Item item = _pending;
-                _pending = null;
-                Guard(item, "DropItem");
+                Guard(__state, "DropItem");
             }
         }
 
@@ -72,23 +70,30 @@ namespace DDEN.MPfix
         }
 
         /// <summary>物品当前是否和实体（非地面、非自身）重叠 —— 重叠时打开碰撞体必然被弹飞，所以跳过。</summary>
+        private static readonly Collider2D[] OverlapBuffer = new Collider2D[32];
         private static bool OverlappingSolid(Item item)
         {
             try
             {
                 Vector2 pos = item.transform.position;
-                Collider2D hit = Physics2D.OverlapCircle(pos, 0.12f);
-                if (hit == null || hit.transform == null) return false;
-                if (hit.transform.IsChildOf(item.transform) || hit.transform == item.transform) return false;
-
-                int ground = LayerMask.GetMask("Ground");
-                if (ground != 0 && hit.gameObject.layer == LayerMask.NameToLayer("Ground")) return false;
-                return true;
+                int count = Physics2D.OverlapCircleNonAlloc(pos, 0.12f, OverlapBuffer);
+                if (count == OverlapBuffer.Length) return true;
+                int ground = LayerMask.NameToLayer("Ground");
+                for (int i = 0; i < count; i++)
+                {
+                    Collider2D hit = OverlapBuffer[i];
+                    OverlapBuffer[i] = null;
+                    if (hit == null || hit.isTrigger || hit.transform == null || hit.gameObject.layer == ground) continue;
+                    if (hit.transform == item.transform || hit.transform.IsChildOf(item.transform)) continue;
+                    return true;
+                }
+                return false;
             }
             catch
             {
                 return true;    // 判不了就不动
             }
+            finally { Array.Clear(OverlapBuffer, 0, OverlapBuffer.Length); }
         }
 
         internal static void Guard(Item item, string why)

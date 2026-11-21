@@ -181,25 +181,12 @@ dotnet build CUmod.slnx -v m                  # 只编译
   （重复修复导致的错位/残留/孤儿），而且“贴图残留”从未被证实存在——是上一个 agent 的推测。
   **不要再加回来**：它们会去改物品的父级与 localPosition，一旦判断错就是"身上物品乱飞/被挪走"，
   比它想解决的问题更糟。真出现“装备浮空/贴图残留”，先查是谁改了父级，别用巡检去猜。
-- **掉线后另一台客机掉帧（`GhostItemRelay` 主机点名，2026-11 第五版）**：
-  **先读 MP 自己的退场流程**（decomp/mp554）：主机 `ScavPlayer.OnDestroy` → `PlayerCheckpoint.WriteOne` →
-  `new PlayerSavedState(body)`：物品 `SetParent` 到 `SAVESTATE_<nb>` → `NetObjectRegistry.DetachSyncKeepMesh(go)` → 容器 `SetActive(false)`。
-  **`DetachSyncKeepMesh` 是 `if (!Net.IsServer) return;`，只改主机注册表、不给客机发任何消息** ——
-  客机那份副本于是没人管：`HeldSeat.Detach/Release` 把它 `SetParent(null)` 并设回 Dynamic + `simulated = true`，
-  碰撞体却停在"被抓时"的关闭状态 → 一路下坠、永远 sleep 不了（实测 82 件 / 336 刚体 / 2.55 步每帧 / 19fps）。
-  注意客机自己的 `SyncRegistry` 仍有这些条目 → `IsRegistered` 为真，所以"按注册状态判断"的写法会全部放过它们。
-  - **主修 `GhostItemRelay`**（按用户口径：主机点名、客机执行）：Harmony postfix 到
-    `Together.NetObjectRegistry.DetachSyncKeepMesh(GameObject)`（反射挂，因为 Together 不能硬引用），
-    记下 `{item.id, 坐标}`，1.2 秒攒批后用 CUCoreLib `MultiplayerBridge.Broadcast("ddn.mp.ghostitems", …)` 广播；
-    客机 `RegisterClientHandler` 收到后按 **id + 1.5m 内** 精确命中本地"无主副本"，调
-    `NetObjectRegistry.SafeDestroyObject`（MP 自己的销毁通道：先卸容器内容物 → 摘注册表 → Destroy）删掉。
-    **不用任何"是不是在下坠/还登不登记"的猜测**；开关 `联机修正/RelayGhostItems`（默认开）。
-  - **启发式已删除**（用户口径 2026-11）：`GhostItemCleaner` 连同 `CleanGhostItems` / `CleanGhostItemsMaxPerSession`
-    一起删掉。理由：判据不稳（物品可能真的掉很久、还有浮空机制），不靠猜。
-  - **卡顿应急已删除**（用户口径 2026-11）：`PerfRescue` 连同 `卡顿应急/*` 四个开关一并删掉。
-    原因：它把无主物品冻成运动学并关掉碰撞体，客机侧看起来就是**物品往天上飘**（很诡异），
-    而且它只是在掩盖症状。**别再恢复**：卡顿要么靠"主机点名清理"根治，要么不动。
-  - `NetPerfTracker` 的「活跃刚体」只数 `Dynamic`（运动学/静态刚体不算压力），指标才反映真实开销。
+- **掉线后其他客机掉帧（GhostItemRelay，v1.5.0 内修订）**：在主机保存离线背包的解绑前捕获实体 ID + Version + 资源 ID，
+  解绑成功后才记录权威清单。新频道 `ddn.mp.ghostitems.v2` 发通知，`ddn.mp.ghostitems.verify.v2` 由主机核验确认。
+  **不要再按同类物品+坐标猜副本**，也不要恢复冻结/抬升/全场搜索。广播可被 CUCoreLib 客机转发，单靠广播不授权删除。
+  客机以对象绑定索引精确匹配，8件/1ms 分帧、叶子先清，持有或未知内容物保留；ID 代次/重绑/换局取消旧任务。
+  主机确认后清理客机同步实体和准确副本，避免公开 Destroy 在客机 no-op 后重新造网格；绝不删主机保存的真实背包。
+  双方必须更新本次包，版本按用户要求仍是 1.5.0。代码证据、限制与三人验收见 docs/features.md 2.10。
 - **现在的周期节拍**：`WearGhostFix.Tick()`、`GhostItemRelay.Tick()`（主机攒批广播）；
   `[巡检]` 每 60 秒汇总一次（平均 ≥0.5ms 或峰值 ≥2ms 才写），状态页常驻显示 `巡检开销`。
 - **“一生二”重复物品（重要）**：合成 / 购买 / 生成在客机上**也会跑一遍本地预测**。

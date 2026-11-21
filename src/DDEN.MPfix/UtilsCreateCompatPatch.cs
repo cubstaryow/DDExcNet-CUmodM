@@ -283,13 +283,17 @@ namespace DDEN.MPfix
                 // ① 表里已经有这个对象 → 已登记，直接返回（这是"重复实体"的根因所在）
                 try
                 {
-                    if (registry.Contains(go)) return;
+                    if (registry.Contains(go))
+                    {
+                        if (LiveSyncInfo(registry[go])) return;
+                        registry.Remove(go);
+                    }
                 }
                 catch { /* ignored */ }
 
                 // ② 对象身上已有现成的 SyncInfo → 只把它挂回表，不新建实体
                 object existing = TrackerSyncInfo(go);
-                if (existing != null)
+                if (LiveSyncInfo(existing))
                 {
                     Adopt(registry, go, existing);
                     return;
@@ -309,21 +313,32 @@ namespace DDEN.MPfix
             }
         }
 
-        private static IDictionary _syncRegistry;
+        private static FieldInfo _syncRegistryField;
         private static Type _syncRegistryOwner;
+        private static PropertyInfo _isDestroyed;
+        private static Type _syncInfoType;
+
+        private static bool LiveSyncInfo(object info)
+        {
+            if (info == null) return false;
+            Type type = info.GetType();
+            if (_syncInfoType != type)
+            { _syncInfoType = type; _isDestroyed = AccessTools.Property(type, "IsDestroyed"); }
+            return _isDestroyed != null && _isDestroyed.GetValue(info) is bool destroyed && !destroyed;
+        }
 
         private static IDictionary SyncRegistry(Type regType)
         {
-            if (_syncRegistry != null && _syncRegistryOwner == regType) return _syncRegistry;
             try
             {
-                FieldInfo f = regType.GetField("SyncRegistry",
-                    BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-                _syncRegistry = f == null ? null : f.GetValue(null) as IDictionary;
-                _syncRegistryOwner = regType;
+                if (_syncRegistryOwner != regType)
+                {
+                    _syncRegistryField = regType.GetField("SyncRegistry", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                    _syncRegistryOwner = regType;
+                }
+                return _syncRegistryField?.GetValue(null) as IDictionary;
             }
-            catch { _syncRegistry = null; }
-            return _syncRegistry;
+            catch { return null; }
         }
 
         /// <summary>对象身上的 `SyncInfoGameObjectTracker.syncInfo`（没有就返回 null）。</summary>

@@ -20,7 +20,7 @@ namespace DDEN.MPfix
     /// 而客机每帧把“我身上这件”的位置推给主机 → 那件自由物品就**跟着客机跑**。
     ///
     /// 修法：客机穿上后 1.5s 起，最多问主机 3 次（间隔递增）；
-    /// 主机按**自己**的身体位置找 id + wearable + 没被别人占用的那件（14m 内，取最近），
+    /// 主机按这名客机角色的位置找 id + wearable + 没被别人占用的那件（14m 内，候选必须唯一），
     /// 补登记网络身份 → <c>Together.ItemSync.Body_ForceWearWearable</c> → 校验 →
     /// 再 <c>NetObjectRegistry.SafeNewGO</c> 把新状态推给所有客机（Together 自己在 <c>136245</c> 也是这么做的，
     /// 少了这一下主机的修正到不了客机，症状就还是“物品跟着人跑”）。
@@ -50,12 +50,14 @@ namespace DDEN.MPfix
             public Vector2 Pos;
             public float Due;
             public int Attempts;
+            public int Epoch;
         }
 
         private static readonly List<Pending> Queue = new List<Pending>();
         private static readonly Dictionary<string, float> Claimed = new Dictionary<string, float>(StringComparer.Ordinal);
 
         private static int _adopted;
+        private static int _epoch;
         private static bool _disabled;
         private static float _lastLogAt = -99f;
 
@@ -63,6 +65,9 @@ namespace DDEN.MPfix
         private static bool _forceWearLookedUp;
 
         internal static bool Disabled => _disabled;
+
+        internal static void Reset()
+        { Queue.Clear(); Claimed.Clear(); _adopted = 0; _epoch++; }
 
         /// <summary>某个 id 刚被穿戴兜底接管过（孤儿物品修复要避开，别两套修复互相拆台）。</summary>
         internal static bool RecentlyRequested(string id)
@@ -92,14 +97,17 @@ namespace DDEN.MPfix
                 try
                 {
                     if (_disabled) return;
+                    if (!MPfixPlugin.Active) return;
                     if (!MPfixPlugin.CfgWearFix.Value) return;
                     if (item == null || __instance == null) return;
                     if (!Mp.IsRunning || !Mp.IsClient) return;
                     if (Game.LocalBody != __instance) return;
                     if (item.Stats == null || !item.Stats.wearable) return;
+                    foreach (var pending in Queue) if (pending.Item == item) return;
 
                     Queue.Add(new Pending
                     {
+                        Epoch = _epoch,
                         Item = item,
                         Body = __instance,
                         Id = item.id,
@@ -137,11 +145,13 @@ namespace DDEN.MPfix
                 if (!Mp.IsServer || token == null) return Fail("not-host");
                 if (!MPfixPlugin.Active) return Fail("disabled");
                 if (!MPfixPlugin.CfgWearFix.Value) return Fail("disabled");
+                if (_disabled || !Mp.IsRunning) return Fail("disabled");
 
                 string id = token["id"]?.ToString() ?? string.Empty;
                 float x = token["x"]?.Value<float>() ?? 0f;
                 float y = token["y"]?.Value<float>() ?? 0f;
-                if (string.IsNullOrEmpty(id)) return Fail("bad-id");
+                if (string.IsNullOrEmpty(id) || float.IsNaN(x) || float.IsInfinity(x)
+                    || float.IsNaN(y) || float.IsInfinity(y)) return Fail("bad-id");
 
                 // ★ 绝不回落成 Game.LocalBody：解析不到发送者就不要动，否则会把客机的物品穿到主机自己身上
                 Body body = MpChannels.BodyForClient(senderClientId);
@@ -154,6 +164,7 @@ namespace DDEN.MPfix
                 // 已经穿上了就别重复折腾
                 Item already = body.GetWearable(id);
                 if (already != null) return new JObject { ["ok"] = true, ["same"] = true };
+                if (_adopted >= MPfixPlugin.CfgWearFixMax.Value) return Fail("session-limit");
 
                 string why;
                 Item target = FindCandidate(id, body, new Vector2(x, y), out why);
@@ -198,21 +209,23 @@ namespace DDEN.MPfix
             {
                 Vector2 at = body.transform.position;
                 Item best = null;
-                float bestDist = float.MaxValue;
 
                 int total = 0, usable = 0;
                 float nearest = float.MaxValue;
                 string nearestInfo = "无";
 
-                foreach (Item item in UnityEngine.Object.FindObjectsOfType<Item>(true))
+                foreach (Item item in Item.allItems)
                 {
                     if (item == null || item.id != id) continue;
+                    if (!item.gameObject.activeInHierarchy) continue;
                     total++;
 
                     if (item.Stats == null || !item.Stats.wearable) continue;
 
                     Body owner = OwnerBody(item);
                     if (owner != null && owner != body) continue;      // 别人身上/包里那件：不抢
+                    // Inactive saved inventory and unowned storage are not loose wearable candidates.
+                    if (owner == null && item.transform.parent != null) continue;
                     usable++;
 
                     float d = Vector2.Distance(item.transform.position, at);
@@ -224,7 +237,8 @@ namespace DDEN.MPfix
                     }
 
                     if (d > SearchRadius) continue;                   // 太远：不是“刚穿上丢了”的那件
-                    if (d < bestDist) { bestDist = d; best = item; }
+                    if (best != null) { why = "同类候选不唯一，保持原物品不动"; return null; }
+                    best = item;
                 }
 
                 if (best == null)
@@ -304,7 +318,7 @@ namespace DDEN.MPfix
                     if (now < p.Due) continue;
                     Queue.RemoveAt(i);
 
-                    if (p.Item == null || p.Body == null) continue;
+                    if (p.Epoch != _epoch || p.Item == null || p.Body == null || p.Body != Game.LocalBody) continue;
                     if (p.Body.GetWearable(p.Id) != p.Item) continue;   // 已经不在身上了：要么成了，要么换了件
 
                     Request(p);
@@ -318,13 +332,6 @@ namespace DDEN.MPfix
 
         private static void Request(Pending p)
         {
-            if (_adopted >= MPfixPlugin.CfgWearFixMax.Value)
-            {
-                LogOnce(true, $"[穿戴兜底] 已达本会话上限（{MPfixPlugin.CfgWearFixMax.Value} 次），暂停。");
-                _disabled = true;
-                return;
-            }
-
             Claim(p.Id);        // 立刻登记“这件归穿戴兜底管”，孤儿物品修复别插手
 
             var payload = new JObject
@@ -334,13 +341,16 @@ namespace DDEN.MPfix
                 ["y"] = p.Pos.y
             };
 
-            Mp.RequestServer(FixChannel, payload, resp =>
+            bool sent = Mp.RequestServer(FixChannel, payload, resp =>
             {
                 try
                 {
+                    if (p.Epoch != _epoch || !MPfixPlugin.Active || !MPfixPlugin.CfgWearFix.Value
+                        || !Mp.IsRunning || !Mp.IsClient || p.Body != Game.LocalBody) return;
                     if (resp != null && resp.Value<bool?>("ok") == true) return;    // 主机已认出并穿上
 
                     string why = resp?["why"]?.ToString() ?? "no-response";
+                    if (why == "session-limit") return;
 
                     if (p.Attempts + 1 < MaxAttempts)
                     {
@@ -359,6 +369,8 @@ namespace DDEN.MPfix
                     Log.Debug("请求回调失败：" + ex.Message);
                 }
             });
+            if (!sent && p.Epoch == _epoch && p.Attempts + 1 < MaxAttempts)
+            { p.Attempts++; p.Due = Time.unscaledTime + RetrySpacing; Queue.Add(p); }
         }
 
 
