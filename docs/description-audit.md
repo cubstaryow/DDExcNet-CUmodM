@@ -15,7 +15,7 @@
 | 方块基础仍写自定义比例或3000次停报 | 当前原生比例／上限保留；旧BlockDamageRatio和进程累计停报限制已删除 | `BlockDamageRelax`与当前队列 |
 | 物品生成修复被写成总是再造一件 | 正常结果优先，主机合成作用域内失败才兜底一次；娱乐赠品独立 | `CraftSpawnScope/UtilsCreateCompatPatch/DoublePurchase` |
 | 物理保险仍写HeldQuiet被动恢复、生成时扫描 | 只处理实际DropItem／DropWearable，自由物品且检查足够时补碰撞；不挪位置 | `ItemPhysicsGuard` |
-| 离场就删除物品，或主机背包也清掉 | 主机确认离线保存身份后，只清其它客机对应副本；未经确认与正常物品保留 | `GhostItemRelay/NetworkObjectIndex` |
+| ~~离场就删除物品，或主机背包也清掉~~（已剔除） | **客机离场导致其他客机卡顿无法修复，不再尝试**；源码备份在 `decomp/backup-ghostitems/` | ~~`GhostItemRelay/NetworkObjectIndex` |
 | 把物理步／帧当物理压力、等待当GPU根因 | 调度、准确计时、对象状态与观察者开销分开；等待／数量只能提供线索 | `PhysicsTiming/FrameStages/ObjectCensus/PerfAlerts` |
 | Unity 2022.3被当成游戏版本 | 引擎版本与产品版本分开；当前门槛实际只核对Together 5.5.4 | `DdenGate.VersionOk/ExpectedGame` |
 | F11被写成默认值 | 默认F8，冲突后看本机实际配置；F11只是过去测试结果 | 管理器Config.Bind与 `Compat.ResolveHotkey` |

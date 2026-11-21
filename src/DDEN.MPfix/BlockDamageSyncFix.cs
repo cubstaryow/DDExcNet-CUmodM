@@ -49,7 +49,6 @@ namespace DDEN.MPfix
             private static void Prefix()
             {
                 Reset();
-                GhostItemRelay.Reset();
                 WearGhostFix.Reset();
                 TraderSnapshotFix.Reset();
             }

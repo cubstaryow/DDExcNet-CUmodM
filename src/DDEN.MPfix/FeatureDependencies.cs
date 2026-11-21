@@ -18,7 +18,7 @@ namespace DDEN.MPfix
                 bool authority = section == "总开关" && key.Contains("UseHostAuthorityConfig");
                 if (!functional && !authority) continue;
                 bool needsCore = authority || section == "无芯片同步" || section == "穿戴兜底" || section == "联机合成"
-                    || key.Contains("TraderSnapshotOnOpen") || key.Contains("RelayGhostItems")
+                    || key.Contains("TraderSnapshotOnOpen")
                     || key.Contains("QuietTraderUIModItems") || key.Contains("AggressiveConverge") || key.Contains("BlockBreakMinFraction");
                 string reason = !mp ? "缺少多人联机组件，已停用。" : needsCore && !core ? "缺少社区前置，已停用。" : null;
                 if (reason != null) _blocked.Add(entry, reason);

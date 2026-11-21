@@ -63,7 +63,6 @@ namespace DDEN.MPfix
         internal static AuthoritySetting<bool> CfgSyncBodyDamage;
         internal static AuthoritySetting<bool> CfgAggressiveConverge;
         internal static AuthoritySetting<bool> CfgQuietTraderUIModItems;
-        internal static AuthoritySetting<bool> CfgRelayGhostItems;
 
         // ===== 娱乐 =====
         internal static AuthoritySetting<bool> CfgDoublePurchase;
@@ -312,11 +311,6 @@ namespace DDEN.MPfix
                 "激进模式下，主机账上这块至少掉这么多才接受“已挖穿”。",
                 "激进模式被拿来一镐敲穿硬墙。", "按比例做一次可信度门槛判断。",
                 "否（仅激进模式生效）", "无");
-            DdenDocs.Add("联机修正", "离场物品广播清理（RelayGhostItems）",
-                "玩家离场时，按主机给的清单清掉客机本地的遗留副本。",
-                "一名玩家掉线后，另一台客机帧数暴跌、地上的东西还在原地闪。",
-                "主机记录离场物品的准确身份，其他客机核对确认后分帧清理；有人持有或内容物未确认时保留。",
-                "否", "低（只处理退场清单，大量物品分帧清理）");
             DdenDocs.Add("联机修正", "商人界面不再刷“prefab 为空”（QuietTraderUIModItems）",
                 "商人界面自检不再对模组物品报错。",
                 "打开商人界面时控制台一直刷“prefab 为空”的错误。",
@@ -397,8 +391,6 @@ namespace DDEN.MPfix
             CfgBlockBreakMinFraction = Config.Bind("联机修正", "挖块判定门槛-仅激进时生效（BlockBreakMinFraction）", 0.5f,
                 new ConfigDescription("激进模式下，主机账上这块至少掉这么多才接受“已挖穿”。",
                     new AcceptableValueRange<float>(0f, 0.95f)));
-            CfgRelayGhostItems = Config.Bind("联机修正", "离场物品广播清理（RelayGhostItems）", true,
-                "玩家离场时，按主机给的清单清掉客机本地的遗留副本。");
             CfgQuietTraderUIModItems = Config.Bind("联机修正", "商人界面不再刷“prefab 为空”（QuietTraderUIModItems）", true,
                 "商人界面自检不再对模组物品报错。");
             CfgDoublePurchase = Config.Bind("娱乐", "道生一 一生二（DoublePurchase）", false,
@@ -473,7 +465,6 @@ namespace DDEN.MPfix
                     BlockDamageSyncFix.RegisterHost();
                 }
                 DoublePurchase.Install(harmony);
-                if (hasCore) GhostItemRelay.Install(harmony);
             }
             _warmupUntil = Time.realtimeSinceStartup + 6f;      // 巡检耗时统计跳过冷启动
             DdenHub.Register(this);
@@ -638,7 +629,6 @@ namespace DDEN.MPfix
                     (CfgBlockBreakSync.Value || CfgSyncBuildingDamage.Value || CfgSyncBodyDamage.Value)), null),
                 ("商人商品表对齐", StateOf(CfgTraderSnapshot.Value), null),
                 ("商人界面静音", StateOf(CfgQuietTraderUIModItems.Value, false), null),
-                ("离场物品清理", StateOf(CfgRelayGhostItems.Value), null),
                 ("娱乐：一生二", StateOf(CfgDoublePurchase.Value, false), null),
                 ("环境版本核对", !Compat.PluginLoaded("CasualtiesMP") ? FixState.Off : DdenGate.Blocked ? FixState.Error : FixState.Running,
                     DdenGate.Blocked ? DdenGate.Reason : null)
@@ -986,8 +976,6 @@ namespace DDEN.MPfix
             {
                 if (entry == null) return;
                 if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgFixPlayerNames.Local)) PlayerNameRepair.Invalidate();
-                if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgRelayGhostItems.Local))
-                    GhostItemRelay.Reset();
                 if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgWearFix.Local))
                     WearGhostFix.Reset();
                 if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgTraderSnapshot.Local))
@@ -1084,7 +1072,6 @@ namespace DDEN.MPfix
                 float t0 = Time.realtimeSinceStartup;
                 WearGhostFix.Tick();
                 float t1 = Time.realtimeSinceStartup;
-                GhostItemRelay.Tick();
                 BlockDamageSyncFix.Tick();   // 挖块上报攒批：到点把攒下的碎块一起发
                 float t2 = Time.realtimeSinceStartup;
 
@@ -1227,7 +1214,6 @@ namespace DDEN.MPfix
         {
             try { _authority?.Stop(); } catch (Exception ex) { Log.Debug("恢复本机配置失败：" + ex.Message); }
             PlayerNameRepair.Stop();
-            GhostItemRelay.Reset();
             try { new Harmony(Guid).UnpatchSelf(); }
             catch { /* ignored */ }
         }
