@@ -15,7 +15,7 @@
 | `DDExcNet-CUmodM.dll` | `src/DDExcNet.CUmodM/` | **管理器**：统一功能界面 + 全部配置界面 + **兼容性总控** |
 | `DDEN.MPfix.dll` | `src/DDEN.MPfix/` | 多人修复合集：无芯片同步 + 联机合成/物品生成兜底 + 物品网络登记 + 穿戴兜底 + 物品物理保险 + 挖块收敛 + 商人快照 + 掉线遗留物品清理 + 娱乐（道生一 一生二） |
 | `DDEN.SaveEditor.dll` | `src/DDEN.SaveEditor/` | 可视化存档编辑器（图标/血条点选，QoL 多存档位） |
-| `DDEN.NetPerfTracker.dll` | `src/DDEN.NetPerfTracker/` | **性能跟踪器**（正式名 NetPerfTracker，调试/观测工具）：管理器里单独一页，帧数/CPU/物理压力曲线 + 世界对象与网络状态的文字读数；同时写 `BepInEx/config/DDEN/perf-*.log`。**不打任何补丁**，随发布包一起发（玩家不用也不会影响游戏，排查掉帧时让他开着就能抓现场） |
+| `DDEN.NetPerfTracker.dll` | `src/DDEN.NetPerfTracker/` | **性能跟踪器**（正式名 NetPerfTracker）：管理器独立页面，帧耗时/真实可用的2D计时/自身CPU/物品清醒与休眠分开观察；手动导出 `BepInEx/config/DDEN/perf-*.log`。**零补丁**，详细场景统计默认关闭 |
 | `DDEN.Shared.dll` | `src/DDEN.Shared/` | 公共层：反射、日志、联机桥、存档编解码、**IDdenModule / DdenHub / Compat / DdenUI** |
 
 部署目录：**`<游戏>/BepInEx/plugins/DDEN/`**（已实测 BepInEx 会递归扫描子目录）。
@@ -103,17 +103,18 @@ dotnet build CUmod.slnx -v m                  # 只编译
   技术细节统一写进 [docs/features.md](docs/features.md)（现象 / 诱发原因 / 修复路线 + 日志表），
   README 只讲“用起来是什么样”。**新增界面文字前先问自己：玩家看得懂吗、有没有暴露内部结构。**
 - **性能跟踪器（`DDEN.NetPerfTracker`，正式名 NetPerfTracker）**：调试用的子 mod，管理器侧边栏单独一页「性能分析」。
-  **零补丁**（一个 MonoBehaviour，不装 Harmony，最坏情况只是自己不采样），所以线上排查可以放心让它跑着。
-  - 采样两档：轻采样（帧数/最差帧/CPU%/物理步每帧数，默认 1 秒）与重采样（数 `Item`/`Body`/`Rigidbody2D`/`Collider2D`、
-    反射读 `NetObjectRegistry.SyncRegistry` 与 `ScavPlayer.ClientIdToPlayerDict`，默认 **15** 秒、且**只在页面被打开过之后**才跑）；
-    **重采样耗时超过 8ms 自动关掉碰撞体计数**（观察者不许成为元凶），每次耗时记在 `costMs`。
-  - 页面：4 张曲线（帧数 / CPU / 物理压力 / 世界对象）+ 文字读数（物品·无主·无主且物理开着、刚体、碰撞体、
-    网络对象·已销毁条目、玩家数、targetFrameRate、vSync、timeScale、fixedDt）+ 暂停/清空/写日志/打开目录。
-    曲线按像素列降采样，攒几千个点也不会把这一页画卡。
-  - 日志：**只在点「导出日志」按钮时写文件**（`BepInEx/config/DDEN/perf-<时间戳>.log`，一次把内存里全部采样写出来）；
-    平时只存内存，不写盘（用户口径 2026-11）。重采样（数世界对象）默认 15 秒一次，**且只在这一页被打开过之后才跑**，
-    没打开过就一直不跑 —— 观察者不许给正常玩家制造周期性卡顿。
-  - 用途：抓「一台客机掉线 → 另一台客机巨卡」这类现场 —— 看 `sim`（无主且物理开着）、`deadsync`、`players` 的台阶。
+  **零补丁、只读**；对象清点与计时源探测只在页面被打开过之后启动，开销不宣称为零。
+  - 默认每秒记录实际墙钟帧均值/最长帧、>50ms帧数、全核心CPU、GC/托管堆、调度Hz与设定Hz、跟踪器自身CPU均值/峰值。
+    `stepsPerFrame` 是 FixedUpdate 次数除以渲染帧数，**绝不是耗时或物理压力**。
+  - `PhysicsTiming` 只接受纳秒单位的准确 `Physics2D.Simulate` 记录器；没有则用 -1/不可用，不拿CPU或补步数代替。
+  - `ItemCensus` 默认15秒复制一次 `Item.allItems` 引用，复用数组，按64件上限及共享0.4ms预算分帧清点。
+    玩家数变化后10秒内按1秒间隔补清点。区分注册/启用/无父级动态/清醒/休眠/向下运动；不把无父级等同掉落或异常。
+  - `SceneCensus` 场景树遍历和物品碰撞检查均默认关闭；详细遍历每帧至多128操作，与物品清点共用预算。
+    原生调用/复制无法抢占，超慢分片退避100ms；记录工作总耗时、最慢分片和清点起止时间。
+  - 4张曲线分别为帧耗时、2D模拟/自身CPU、物品状态、可选场景刚体。环形历史、复用数组、缓存纹理；
+    每图一次贴图绘制，按真实时间绘制并保留尖峰，暂停区间留空。
+  - 日志仅手动导出，缓冲写入schema=2；每点保留当时设置/计时/清点成本，不能用导出时的当前值覆盖历史。
+    显示数据年龄与清点跨度；向下运动和无实体碰撞本身不是故障证据。详细指标定义见 docs/perf-tracker.md。
   - 它**随发布包一起发**（用户 2026-11 明确要求：本地输出要包含全部模块，含存档编辑器与性能跟踪器）；
     它不打任何补丁，装不装都不影响游戏，只是排查掉帧时能直接抓现场。
   - ⚠️ `[BepInPlugin(..., "1.3.0")]` 里的版本号读不了 MSBuild 属性：**改 `<DdenVersion>` 时顺手改各插件的 `[BepInPlugin]`**。

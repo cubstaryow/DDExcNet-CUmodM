@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
@@ -13,946 +14,427 @@ using UnityEngine;
 
 namespace DDEN.NetPerfTracker
 {
-    /// <summary>
-    /// DDEN.Perf —— 只读的**可视化性能分析器**（子 mod，管理器里单独一页）。
-    ///
-    /// 用途：联机时「一台客机掉线 → 另一台客机帧数暴跌、主机没事、必须全员重进或换层才恢复」这类问题，
-    /// 现场看一眼曲线 + 事件标记就知道是掉帧、还是对象数量涨了。
-    ///
-    /// 设计约束（刻意为之）：
-    ///  · **不打任何 Harmony 补丁**：只是一个 MonoBehaviour，不碰游戏逻辑，最坏情况是自己不采样。
-    ///  · 采样分两档：轻采样（帧时间/帧率，默认 1 秒一次，开销可忽略）与重采样（数世界对象，默认 5 秒一次，
-    ///    每次都把自己的耗时一起记下来 —— 免得"观察者自己就是元凶"）。
-    ///  · 图表只画窗口内可见的列数（宽 600px 最多 600 次 Fill），不会因为攒了几千个点而变卡。
-    ///  · 同时把数据写进 `BepInEx/config/DDEN/perf-*.log`（一行一个快照，key=value），方便事后 diff / 发给我。
-    /// </summary>
+    /// <summary>Read-only, zero patches. Wall-frame timing, optional exact 2D marker and budgeted object censuses.</summary>
     [BepInPlugin(Guid, "DDEN NetPerfTracker", "1.5.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     public class NetPerfTrackerPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleGate
     {
         public const string Guid = "com.dden.perf";
         public const string Title = "性能分析";
-
         internal static NetPerfTrackerPlugin Instance;
         internal static ManualLogSource LogSource;
         internal static LogChannel Log;
-
-        // ===== 配置 =====
-        internal static ConfigEntry<bool> CfgEnabled;
-        internal static ConfigEntry<float> CfgSampleSeconds;
-        internal static ConfigEntry<float> CfgHeavySeconds;
-        internal static ConfigEntry<float> CfgSlowFps;
-        internal static ConfigEntry<float> CfgWindowSeconds;
+        internal static ConfigEntry<bool> CfgEnabled, CfgWriteLog, CfgVerbose;
+        internal static ConfigEntry<float> CfgSampleSeconds, CfgHeavySeconds, CfgSlowFps, CfgWindowSeconds, CfgAutoStopMinutes;
         internal static ConfigEntry<int> CfgMaxSamples;
-        internal static ConfigEntry<bool> CfgWriteLog;
-        internal static ConfigEntry<float> CfgAutoStopMinutes;
-        internal static ConfigEntry<bool> CfgVerbose;
-
-        // ===== 一个采样点 =====
-        private struct Sample
-        {
-            public float T;        // 相对开始的时间
-            public float Fps;      // 本窗口平均
-            public float Worst;    // 本窗口最差帧折算 fps
-            public float DtMs;     // 最差帧时长（毫秒）
-            public float Cpu;      // 整个游戏进程的 CPU 占用（占全部核心的百分比）
-            public float Steps;    // 物理步/帧（理想 1.0，>1 说明物理在追帧）
-            public int Items, Free, Sim, Bodies, Rigid, Cols, Sync, Dead, Players;
-            public byte Event;     // 1=玩家数变化 2=换层 4=掉帧 8=联机状态变化
-        }
-
-        private readonly List<Sample> _buf = new List<Sample>(256);
-
-        // 逐帧累加
-        private int _frames;
-        private float _winTime;
-        private float _worstDt;
-        private int _fixedSteps;        // 本窗口内 FixedUpdate 次数 → 物理步/帧
-
-        // CPU 采样（整个游戏进程）
-        private System.Diagnostics.Process _proc;
-        private double _lastCpuSeconds = -1.0;
-        private float _lastCpuWall = -1f;
-        private float _cpuPercent = -1f;
-
-        // 采样节拍
-        private float _startedAt;
-        private float _nextLight;
-        private float _nextHeavy;
-        private bool _stopped;
-        private bool _paused;
-        private float _slowFor;
-
-        // 最近一次重采样结果（轻采样沿用它）
-        private int _items = -1, _free = -1, _sim = -1, _bodies = -1, _sync = -1, _dead = -1, _players = -1;
-        private int _rigid = -1, _cols = -1;
-        private float _heavyCostMs;
-        private float _heavyAt = -99f;
-        private bool _colliderScan = true;      // 统计撞体太贵时自动关掉
-        private int _heavySlowCount;
-        private int _heavyPass;
-
-        // 玩家数 / 世界 / 联机状态，用于判定"事件"
-        private int _lastPlayers = -1;
-        private int _lastWorldId;
-        private int _lastDepth = int.MinValue;
+        private ConfigEntry<bool> _detailed, _inspectCollision;
+        private ConfigEntry<float> _budgetMs;
+        private readonly SampleRing<PerfSample> _buf = new SampleRing<PerfSample>(2400);
+        private readonly ItemCensus _items = new ItemCensus();
+        private readonly SceneCensus _scene = new SceneCensus();
+        private readonly PhysicsTiming _physics = new PhysicsTiming();
+        private readonly PerfChart[] _charts = new PerfChart[4];
+        private readonly Dictionary<string, FieldInfo> _dictionaryFields = new Dictionary<string, FieldInfo>();
+        private readonly float[][] _series = new float[11][];
+        private float[] _times = Array.Empty<float>();
+        private byte[] _events = Array.Empty<byte>();
+        private int _cacheVersion = -1, _version, _cacheCount;
+        private float _startedAt, _nextLight, _nextObjects, _nextScene, _eventUntil, _nextPump;
+        private bool _pageOpened, _paused, _stopped, _wasRecording, _alternate;
+        private float _lastNow, _windowSeconds, _worstMs, _physicsSum, _physicsPeak, _selfSum, _selfPeak, _expectedHzSum;
+        private int _frames, _fixedSteps, _physicsFrames, _longFrames;
+        private float _selfThisFrame, _lastPumpMs;
+        private int _lastPlayers = -1, _worldId, _depth = int.MinValue;
         private bool _lastRunning;
-        private byte _pendingEvent;
+        private byte _event;
+        private int _gc0, _gc1, _gc2;
+        private Process _process;
+        private double _lastCpu = -1;
+        private float _lastCpuWall, _nextText;
+        private string _top = "等待采样", _detail = "", _schedule = "", _file;
+        private string _summary = "等待采样";
+        private float _textWidth, _topHeight = 20, _detailHeight = 57, _scheduleHeight = 34;
+        private readonly GUIContent _measureText = new GUIContent();
+        private static readonly string[] Titles = { "帧耗时（毫秒）", "耗时（毫秒/帧）：2D模拟与跟踪器自身CPU", "物品清点（分帧区间统计，非瞬时快照）", "场景动态刚体（清醒与休眠分开）" };
+        private bool Recording => CfgEnabled != null && CfgEnabled.Value && !_paused && !_stopped;
+        private static double ElapsedMs(long start) => (Stopwatch.GetTimestamp() - start) * 1000.0 / Stopwatch.Frequency;
 
-        // 日志
-        private string _file;
-        private StreamWriter _writer;
-        private int _lines;
-        private bool _pageOpenedOnce;
-
-        // 曲线缓存
-        private int _bufVersion;
-        private int _cacheVersion = -1;
-        private float[] _cFps, _cWorst, _cItems, _cFree, _cSim, _cBodies, _cSync, _cPlayers, _cCpu, _cSteps, _cRigid;
-        private float[] _cT;
-
-        // ===== IDdenModule =====
         public string Id => "perf";
         public string DisplayName => Title;
         public string Version => Info.Metadata.Version.ToString();
         public bool Ready => true;
-
-        /// <summary>“采样/Enabled”就是本模块的主开关：关掉采样 → 管理器把本模块配置整体置灰、侧边栏显示“关闭”。</summary>
         public bool ModuleEnabled => CfgEnabled != null && CfgEnabled.Value;
-
-        /// <summary>主开关就是「启用采样」；关掉采样后这一行仍然可点，能再打开。</summary>
         public string MasterKey => "总开关/启用采样（Enabled）";
-
-        /// <summary>本模块的主开关就是「启用采样」：它同时决定本模块的配置项是否可编辑、侧边栏是否显示“关闭”。</summary>
-        private void RegisterDocs()
-        {
-            DdenDocs.Add("总开关", "启用采样（Enabled）",
-                "性能跟踪器是否采样（关掉后不再画曲线、不占开销）。",
-                "不需要修什么：这是观测工具自己的开关。",
-                "关掉后这一页只显示已有数据，不再更新。", "否", "无（关掉反而更省）");
-        }
-        public string Summary
-        {
-            get
-            {
-                if (_stopped) return "已停止";
-                if (_buf.Count == 0) return "等待采样";
-                Sample s = _buf[_buf.Count - 1];
-                return string.Format(CultureInfo.InvariantCulture, "{0:0} fps · {1} 点", s.Fps, _buf.Count);
-            }
-        }
+        public string Summary => _stopped ? "已停止" : _paused ? "已暂停" : _summary;
         public IEnumerable<ConfigEntryBase> ConfigEntries => Config.Entries();
 
         private void Awake()
         {
-            Instance = this;
-            LogSource = base.Logger;
-
-            CfgEnabled = Config.Bind("总开关", "启用采样（Enabled）", true,
-                "是否采样。关掉后这一页不更新曲线，也不写日志。");
-            CfgSampleSeconds = Config.Bind("采样", "SampleSeconds", 1f,
-                new ConfigDescription("多久记一个点（秒）。曲线的时间分辨率就是它。",
-                    new AcceptableValueRange<float>(0.2f, 10f)));
-            CfgHeavySeconds = Config.Bind("采样", "HeavySeconds", 15f,
-                new ConfigDescription("多久统计一次世界里的物品/角色数量（秒）。这个比记帧时间贵，别调太小。",
-                    new AcceptableValueRange<float>(1f, 60f)));
-            CfgSlowFps = Config.Bind("采样", "SlowFpsWarn", 45f,
-                new ConfigDescription("低于这个帧数就在曲线上标一个红点（只做标记，不改任何东西）。",
-                    new AcceptableValueRange<float>(5f, 144f)));
-            CfgWindowSeconds = Config.Bind("显示", "WindowSeconds", 180f,
-                new ConfigDescription("页面上显示最近多少秒的曲线。",
-                    new AcceptableValueRange<float>(10f, 1800f)));
-            CfgMaxSamples = Config.Bind("显示", "MaxSamples", 2400,
-                new ConfigDescription("内存里最多保留多少个采样点（2400 点 × 1 秒 = 40 分钟）。",
-                    new AcceptableValueRange<int>(60, 20000)));
-            CfgWriteLog = Config.Bind("日志", "WriteLog", false,
-                "保留项（现在只在点「导出日志」时写文件）。开着不影响行为，写盘永远是手动触发。");
-            CfgAutoStopMinutes = Config.Bind("日志", "AutoStopMinutes", 0f,
-                new ConfigDescription("多少分钟后自动停止采样（0 = 一直开着）。",
-                    new AcceptableValueRange<float>(0f, 600f)));
-            CfgVerbose = Config.Bind("Debug", "Verbose", false, "同时在 BepInEx 主日志里输出采样行（排查启动问题时用）。");
-
-            Log = DDEN.Shared.Log.For(LogSource, "Perf", CfgVerbose.Value);
-
-            RegisterDocs();
-            DdenHub.Register(this);
-            Log.Info("性能分析已加载（不装补丁，只在管理器里画曲线 + 写日志）。");
+            try
+            {
+                Instance = this; LogSource = Logger;
+                CfgEnabled = Config.Bind("总开关", "启用采样（Enabled）", true, "是否记录新的性能数据。");
+                CfgSampleSeconds = Config.Bind("采样", "SampleSeconds", 1f, new ConfigDescription("多久保存一个性能记录（秒）。", new AcceptableValueRange<float>(0.2f, 10f)));
+                CfgHeavySeconds = Config.Bind("采样", "HeavySeconds", 15f, new ConfigDescription("两次物品清点的间隔（秒）；玩家数变化时会临时加快。", new AcceptableValueRange<float>(1f, 60f)));
+                CfgSlowFps = Config.Bind("采样", "SlowFpsWarn", 45f, new ConfigDescription("低于这个帧数只标记，不判断原因。", new AcceptableValueRange<float>(5f, 144f)));
+                CfgWindowSeconds = Config.Bind("显示", "WindowSeconds", 180f, new ConfigDescription("曲线显示最近多少秒。", new AcceptableValueRange<float>(10f, 1800f)));
+                CfgMaxSamples = Config.Bind("显示", "MaxSamples", 2400, new ConfigDescription("内存中最多保留多少条记录。", new AcceptableValueRange<int>(60, 20000)));
+                CfgWriteLog = Config.Bind("日志", "WriteLog", false, "兼容旧设置；仍只在点“导出日志”时写文件。");
+                CfgAutoStopMinutes = Config.Bind("日志", "AutoStopMinutes", 0f, new ConfigDescription("多少分钟后停止记录；0 表示持续记录。", new AcceptableValueRange<float>(0f, 600f)));
+                CfgVerbose = Config.Bind("Debug", "Verbose", false, "额外输出采样明细，可能增加日志开销。");
+                _detailed = Config.Bind("详细统计", "场景物理对象", false, "统计场景中的清醒、休眠刚体和碰撞体；开销更高，分帧进行。");
+                _inspectCollision = Config.Bind("详细统计", "物品碰撞检查", false, "检查清醒自由物品是否有实体碰撞；分帧进行，默认关闭。");
+                _budgetMs = Config.Bind("采样", "每帧清点预算毫秒", 0.4f, new ConfigDescription("分帧清点达到预算后暂停；单次引擎调用无法中途打断。", new AcceptableValueRange<float>(0.1f, 2f)));
+                Log = DDEN.Shared.Log.For(Logger, "Perf", CfgVerbose.Value);
+                Config.SettingChanged += (_, __) => OnSettingsChanged();
+                RegisterDocs(); DdenHub.Register(this);
+                _buf.SetCapacity(CfgMaxSamples.Value);
+                _charts[0] = new PerfChart(new float[2][], new[] { DdenUI.Good, DdenUI.Warn }, new[] { "平均", "最长" });
+                _charts[1] = new PerfChart(new float[3][], new[] { DdenUI.Accent, DdenUI.Warn, DdenUI.Bad }, new[] { "2D平均", "跟踪均", "跟踪峰" });
+                _charts[2] = new PerfChart(new float[3][], new[] { DdenUI.Good, DdenUI.Accent, DdenUI.Warn }, new[] { "物品", "清醒自由", "向下运动" });
+                _charts[3] = new PerfChart(new float[3][], new[] { DdenUI.Accent, DdenUI.Good, DdenUI.TextDim }, new[] { "清醒", "休眠", "启用动态" });
+                Log.Info("性能分析已加载：物理调度与耗时分开；对象分帧清点，详细场景统计默认关闭（无补丁）。");
+            }
+            catch (Exception ex) { Logger.LogError(ex); }
         }
-
+        private void RegisterDocs()
+        {
+            DdenDocs.Add("总开关", "启用采样（Enabled）", "是否记录新的性能数据。", "需要停止观察者自身的采样工作。", "关闭后停止计时和对象清点，保留已有记录。", "否", "关闭后不再采样");
+            DdenDocs.Add("详细统计", "场景物理对象", "分帧统计场景中的刚体和碰撞体。", "需要区分清醒、休眠和仅启用模拟的物体。", "遍历场景树，按每帧预算暂停，不在一帧搜索全场。", "否", "高于轻量跟踪；默认关闭，统计结果有时间范围");
+            DdenDocs.Add("详细统计", "物品碰撞检查", "检查清醒自由物品是否有实体碰撞。", "需要进一步判断遗留副本的状态。", "只检查正在模拟的清醒自由物品；无碰撞或向下运动不直接判为故障。", "否", "额外开销；默认关闭");
+        }
         private void Start()
         {
-            _startedAt = Time.realtimeSinceStartup;
-            _nextLight = _startedAt + Mathf.Max(0.2f, CfgSampleSeconds.Value);
-            _nextHeavy = _startedAt;
-            _lastWorldId = 0;
-            // 不预先建文件：写盘只由「导出日志」按钮触发
+            try
+            {
+                _startedAt = _lastNow = Time.realtimeSinceStartup;
+                _nextLight = _startedAt + CfgSampleSeconds.Value;
+                _nextObjects = _nextScene = _startedAt;
+                ResetWindow(_startedAt);
+                if (File.Exists(Path.Combine(Paths.ConfigPath, "cumod.selftest")) || Array.IndexOf(Environment.GetCommandLineArgs(), "-cumodtest") >= 0)
+                    StartCoroutine(SelfTest());
+            }
+            catch (Exception ex) { Log.Exception(ex, "初始化性能跟踪"); }
         }
-
-        // ===== 采样 =====
-        private void Update()
+        private void OnSettingsChanged()
         {
-            float dt = Time.unscaledDeltaTime;
-            _frames++;
-            _winTime += dt;
-            if (dt > _worstDt) _worstDt = dt;
-
-            if (_stopped || !CfgEnabled.Value) return;
-
-            float now = Time.realtimeSinceStartup;
-
-            if (CfgAutoStopMinutes.Value > 0f && now - _startedAt > CfgAutoStopMinutes.Value * 60f)
+            try
             {
-                _stopped = true;
-                Line("stop", "reason=auto-stop");
-                Log.Info("已按设置自动停止采样。");
-                return;
+                Log.Verbose = CfgVerbose.Value;
+                _buf.SetCapacity(CfgMaxSamples.Value); _version++;
+                _items.Cancel(); _scene.Reset(); _nextObjects = _nextScene = Time.realtimeSinceStartup;
+                if (!CfgEnabled.Value) _physics.Dispose();
+                _nextText = 0;
             }
-
-            if (_winTime > 0.2f && _frames / Mathf.Max(0.0001f, _winTime) < CfgSlowFps.Value) _slowFor += dt;
-            else _slowFor = 0f;
-
-            // 重采样（数世界对象）只在「这一页被打开过」之后才跑：平时不打开页面的玩家不会被它周期性拖一下。
-            if (_pageOpenedOnce && now >= _nextHeavy)
-            {
-                _nextHeavy = now + Mathf.Max(1f, CfgHeavySeconds.Value);
-                HeavySample();
-            }
-
-            if (_paused) return;
-            if (now >= _nextLight)
-            {
-                _nextLight = now + Mathf.Max(0.2f, CfgSampleSeconds.Value);
-                LightSample();
-            }
+            catch (Exception ex) { Log.Exception(ex, "修改采样设置"); }
         }
-
-        /// <summary>物理步计数：物理跟不上时 Unity 会在一帧里补跑多次 FixedUpdate，这个数字直接反映物理压力。</summary>
+        private void ResetWindow(float now)
+        {
+            _lastNow = now; _frames = _fixedSteps = _physicsFrames = _longFrames = 0;
+            _windowSeconds = _worstMs = _physicsSum = _physicsPeak = _selfSum = _selfPeak = _expectedHzSum = 0;
+            _gc0 = GC.CollectionCount(0); _gc1 = GC.CollectionCount(1); _gc2 = GC.CollectionCount(2);
+        }
         private void FixedUpdate()
         {
-            _fixedSteps++;
+            try { if (Recording) _fixedSteps++; }
+            catch (Exception ex) { Log.Exception(ex, "记录物理调度"); }
         }
-
-        /// <summary>整个游戏进程的 CPU 占用（占全部核心的百分比）。拿不到就返回 -1（曲线断开）。</summary>
-        private float SampleCpu()
+        private void Update()
         {
+            long start = Stopwatch.GetTimestamp();
             try
             {
-                if (_proc == null) _proc = System.Diagnostics.Process.GetCurrentProcess();
-                _proc.Refresh();
-                double cpuSeconds = _proc.TotalProcessorTime.TotalSeconds;
-                float wall = Time.realtimeSinceStartup;
-
-                if (_lastCpuSeconds < 0.0 || _lastCpuWall < 0f)
+                float now = Time.realtimeSinceStartup;
+                bool recording = Recording;
+                if (recording != _wasRecording)
                 {
-                    _lastCpuSeconds = cpuSeconds;
-                    _lastCpuWall = wall;
-                    return _cpuPercent;
+                    _wasRecording = recording; ResetWindow(now); _nextLight = now + CfgSampleSeconds.Value;
+                    if (recording) { _event |= 32; _lastCpu = -1; Cpu(now); }
+                    if (!recording) { _items.Cancel(); _scene.Cancel(); _physics.Dispose(); }
+                    else if (_pageOpened) _physics.Start();
                 }
-
-                float dtWall = wall - _lastCpuWall;
-                if (dtWall < 0.05f) return _cpuPercent;
-
-                double dtCpu = cpuSeconds - _lastCpuSeconds;
-                _lastCpuSeconds = cpuSeconds;
-                _lastCpuWall = wall;
-
-                int cores = Mathf.Max(1, Environment.ProcessorCount);
-                _cpuPercent = (float)(dtCpu / dtWall / cores * 100.0);
-                return _cpuPercent;
-            }
-            catch
-            {
-                _proc = null;
-                return -1f;
-            }
-        }
-
-        private void LightSample()
-        {
-            // 帧率（本窗口）
-            float fps = _winTime > 0f ? _frames / _winTime : 0f;
-            float worst = _worstDt > 0f ? 1f / _worstDt : 0f;
-            // 物理步/帧：帧数太少时这个比值没意义，用 1 兜底
-            float steps = _frames > 0 ? _fixedSteps / (float)_frames : 1f;
-            float cpu = SampleCpu();
-
-            // 玩家数 / 联机状态 / 换层：这些便宜，每个轻采样都查
-            int players = PlayersCount();
-            if (players >= 0)
-            {
-                if (_lastPlayers >= 0 && players != _lastPlayers) _pendingEvent |= 1;
-                _lastPlayers = players;
-            }
-            bool running = Mp.IsRunning;
-            if (running != _lastRunning) { _pendingEvent |= 8; _lastRunning = running; }
-
-            try
-            {
-                WorldGeneration w = WorldGeneration.world;
-                if (w != null)
+                float self = _selfThisFrame; _selfThisFrame = 0;
+                if (!recording) return;
+                if (CfgAutoStopMinutes.Value > 0 && now - _startedAt >= CfgAutoStopMinutes.Value * 60f) { _stopped = true; return; }
+                float elapsed = Math.Max(0, now - _lastNow); _lastNow = now;
+                if (elapsed > 0)
                 {
-                    int id = w.GetInstanceID();
-                    int depth = Convert.ToInt32(Reflect.GetInstance(w, "biomeDepth") ?? 0);
-                    if ((_lastWorldId != 0 && id != _lastWorldId) || (_lastDepth != int.MinValue && depth != _lastDepth))
-                    {
-                        _pendingEvent |= 2;
-                    }
-                    _lastWorldId = id;
-                    _lastDepth = depth;
+                    _frames++; _windowSeconds += elapsed; _worstMs = Math.Max(_worstMs, elapsed * 1000f);
+                    if (elapsed > 0.05f) _longFrames++;
+                    _selfSum += self; _selfPeak = Math.Max(_selfPeak, self);
+                    _expectedHzSum += PerfMath.ExpectedHz(Time.timeScale, Time.fixedDeltaTime) * elapsed;
+                    float physics = _physics.ReadMs();
+                    if (physics >= 0) { _physicsSum += physics; _physicsPeak = Math.Max(_physicsPeak, physics); _physicsFrames++; }
                 }
+                if (_pageOpened) PumpCensuses(now);
+                if (now >= _nextLight && _windowSeconds > 0)
+                { _nextLight = now + Math.Max(0.2f, CfgSampleSeconds.Value); LightSample(now); }
             }
-            catch { /* ignored */ }
-
-            if (fps > 0f && fps < CfgSlowFps.Value) _pendingEvent |= 4;
-
-            var s = new Sample
-            {
-                T = Time.realtimeSinceStartup - _startedAt,
-                Fps = fps,
-                Worst = worst,
-                DtMs = _worstDt * 1000f,
-                Cpu = cpu,
-                Steps = steps,
-                Items = _items,
-                Free = _free,
-                Sim = _sim,
-                Bodies = _bodies,
-                Rigid = _rigid,
-                Cols = _cols,
-                Sync = _sync,
-                Dead = _dead,
-                Players = players >= 0 ? players : _players,
-                Event = _pendingEvent
-            };
-            _pendingEvent = 0;
-
-            _buf.Add(s);
-            _bufVersion++;
-            int cap = Mathf.Max(60, CfgMaxSamples.Value);
-            while (_buf.Count > cap) _buf.RemoveAt(0);
-
-            // 重置窗口
-            _frames = 0;
-            _winTime = 0f;
-            _worstDt = 0f;
-            _fixedSteps = 0;
-
-            // 只记内存；写文件由「导出日志」按钮主动触发（用户口径：不要一直写盘）
-            if (CfgVerbose.Value) Log.Debug(Describe(s));
+            catch (Exception ex) { Log.Exception(ex, "性能采样"); _items.Cancel(); _scene.Cancel(); }
+            finally { _selfThisFrame += (float)ElapsedMs(start); }
         }
-
-        /// <summary>
-        /// 把内存里的全部采样一次性写成文件（点按钮才做）。返回写出的行数。
-        /// </summary>
-        internal int ExportLog()
+        private void PumpCensuses(float now)
         {
-            try
-            {
-                if (_writer == null) OpenFile();
-                if (_writer == null) return 0;
-
-                _writer.WriteLine("# ---- 导出 " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
-                                 + "：共 " + _buf.Count + " 个采样点 ----");
-                for (int i = 0; i < _buf.Count; i++)
-                {
-                    Line("sample", Describe(_buf[i]));
-                }
-                _writer.Flush();
-                Log.Info($"[Perf] 已导出 {_buf.Count} 个采样点到 {_file}");
-                return _buf.Count;
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("导出日志失败：" + ex.Message);
-                return 0;
-            }
+            if (now < _nextPump) return;
+            bool itemDue = !_items.Running && now >= _nextObjects;
+            bool sceneDue = _detailed.Value && !_scene.Running && now >= _nextScene;
+            if (!_items.Running && !_scene.Running && !itemDue && !sceneDue) return;
+            long start = Stopwatch.GetTimestamp();
+            if (itemDue)
+            { _items.Begin(now, _inspectCollision.Value); _nextObjects = now + (now < _eventUntil ? 1f : CfgHeavySeconds.Value); }
+            if (sceneDue)
+            { _scene.Begin(now, gameObject.scene); _nextScene = now + CfgHeavySeconds.Value; }
+            long budget = (long)(_budgetMs.Value * Stopwatch.Frequency / 1000.0);
+            _alternate = !_alternate;
+            if (_alternate) { _items.Step(start, budget, now); _scene.Step(start, budget, now); }
+            else { _scene.Step(start, budget, now); _items.Step(start, budget, now); }
+            _lastPumpMs = (float)ElapsedMs(start);
+            // Even snapshot copy/root discovery is measured. Slow native operations back off instead of repeating every frame.
+            if (_lastPumpMs > Math.Max(2f, _budgetMs.Value * 4f)) _nextPump = now + 0.1f;
         }
-
-        /// <summary>重采样：数世界对象。每次记下自己的耗时。</summary>
-        private void HeavySample()
-        {
-            float t0 = Time.realtimeSinceStartup;
-            try
-            {
-                Item[] all = UnityEngine.Object.FindObjectsOfType<Item>(true);
-                _items = all.Length;
-                _free = 0;
-                _sim = 0;
-                for (int i = 0; i < all.Length; i++)
-                {
-                    Item it = all[i];
-                    if (it == null) continue;
-                    Transform t = it.transform;
-                    if (t == null || t.parent != null) continue;
-                    _free++;
-                    Rigidbody2D rb = it.rb;
-                    if (rb != null && rb.simulated) _sim++;
-                }
-            }
-            catch { /* ignored */ }
-
-            try { _bodies = UnityEngine.Object.FindObjectsOfType<Body>().Length; }
-            catch { /* ignored */ }
-
-            // 物理压力：活跃刚体 + 碰撞体。碰撞体这项最贵：
-            // 刚体一多（>150，典型是掉线后残留的一堆自由物品）就不再每轮都数，隔一轮数一次，
-            // 免得"观察者自己"成了周期性卡顿的来源。
-            try
-            {
-                Rigidbody2D[] rbs = UnityEngine.Object.FindObjectsOfType<Rigidbody2D>();
-                int live = 0;
-                for (int i = 0; i < rbs.Length; i++)
-                {
-                    // 只数"真正参与物理求解"的：运动学/静态刚体（被冻结的幽灵物品会变成这种）不算压力
-                    if (rbs[i] != null && rbs[i].simulated && rbs[i].bodyType == RigidbodyType2D.Dynamic) live++;
-                }
-                _rigid = live;
-            }
-            catch { _rigid = -1; }
-
-            _heavyPass++;
-            bool wantCols = _colliderScan && (_rigid >= 0 && _rigid <= 150 || (_heavyPass & 1) == 0);
-            if (wantCols)
-            {
-                try { _cols = UnityEngine.Object.FindObjectsOfType<Collider2D>().Length; }
-                catch { _cols = -1; }
-            }
-
-            try
-            {
-                IDictionary reg = ReflectDict("Together.NetObjectRegistry", "SyncRegistry");
-                if (reg != null)
-                {
-                    _sync = reg.Count;
-                    _dead = 0;
-                    foreach (DictionaryEntry e in reg)
-                    {
-                        var go = e.Key as UnityEngine.Object;
-                        if (go == null) { _dead++; continue; }
-                        object v = e.Value;
-                        if (v == null) { _dead++; continue; }
-                        if (IsDestroyedFlag(v)) _dead++;
-                    }
-                }
-            }
-            catch { _sync = -1; _dead = -1; }
-
-            _heavyCostMs = (Time.realtimeSinceStartup - t0) * 1000f;
-            _heavyAt = Time.realtimeSinceStartup - _startedAt;
-
-            // 自适应降级：统计自己太贵就先砍掉最贵的碰撞体计数（绝不能观察者把机器拖慢）
-            if (_heavyCostMs > 5f && _colliderScan)
-            {
-                if (++_heavySlowCount >= 2)
-                {
-                    _colliderScan = false;
-                    Log.Info($"统计自身耗时 {_heavyCostMs:0.0}ms 偏高，已关闭碰撞体计数（曲线不受影响）。");
-                }
-            }
-            else if (_heavyCostMs <= 5f)
-            {
-                _heavySlowCount = 0;
-            }
-        }
-
-        private static bool IsDestroyedFlag(object syncInfo)
-        {
-            try
-            {
-                Type t = syncInfo.GetType();
-                PropertyInfo p = t.GetProperty("IsDestroyed", BindingFlags.Public | BindingFlags.Instance);
-                if (p != null && p.PropertyType == typeof(bool)) return (bool)p.GetValue(syncInfo, null);
-                FieldInfo f = t.GetField("IsDestroyed", BindingFlags.Public | BindingFlags.Instance);
-                if (f != null && f.FieldType == typeof(bool)) return (bool)f.GetValue(syncInfo);
-            }
-            catch { /* ignored */ }
-            return false;
-        }
-
-        private static int PlayersCount()
-        {
-            IDictionary d = ReflectDict("Together.ScavPlayer", "ClientIdToPlayerDict");
-            return d == null ? -1 : d.Count;
-        }
-
-        // ===== 日志 =====
-        private void OpenFile()
-        {
-            try
-            {
-                string dir = Path.Combine(Paths.ConfigPath, "DDEN");
-                Directory.CreateDirectory(dir);
-                _file = Path.Combine(dir, "perf-" + DateTime.Now.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".log");
-                _writer = new StreamWriter(new FileStream(_file, FileMode.Create, FileAccess.Write, FileShare.ReadWrite),
-                    new UTF8Encoding(false)) { AutoFlush = true };
-
-                _writer.WriteLine("# DDEN 性能分析日志");
-                _writer.WriteLine("# 一行一个快照，key=value；E=事件（hb 心跳 / stop 停止 / shutdown 退出）");
-                _writer.WriteLine("# 环境：游戏 " + Application.version + " · Unity " + Application.unityVersion
-                                 + " · 管理器 " + SafeVersion("com.dden.cumodm")
-                                 + " · 修复 " + SafeVersion("com.dden.mpfix")
-                                 + " · 联机框架 " + SafeTogetherVersion());
-                _writer.WriteLine("# items=物品总数 free=无父级物品 sim=无父级且物理开着(" + "最关键" + ") bodies=角色数"
-                                 + " sync=网络对象登记表条目 deadsync=其中已销毁条目 players=玩家数 costMs=本次统计耗时");
-            }
-            catch (Exception ex)
-            {
-                Log.Warn("打不开日志文件（曲线照常）: " + ex.Message);
-            }
-        }
-
-        private string Describe(Sample s)
-        {
-            var sb = new StringBuilder(240);
-            sb.Append("fps=").Append(s.Fps.ToString("0.0", CultureInfo.InvariantCulture));
-            sb.Append(" worst=").Append(s.Worst.ToString("0.0", CultureInfo.InvariantCulture));
-            sb.Append(" dtms=").Append(s.DtMs.ToString("0.0", CultureInfo.InvariantCulture));
-            sb.Append(" cpu=").Append(s.Cpu.ToString("0.0", CultureInfo.InvariantCulture));
-            sb.Append(" steps=").Append(s.Steps.ToString("0.00", CultureInfo.InvariantCulture));
-            sb.Append(" target=").Append(Application.targetFrameRate);
-            sb.Append(" vsync=").Append(QualitySettings.vSyncCount);
-            sb.Append(" ts=").Append(Time.timeScale.ToString("0.00", CultureInfo.InvariantCulture));
-            sb.Append(" fdt=").Append(Time.fixedDeltaTime.ToString("0.000", CultureInfo.InvariantCulture));
-            sb.Append(" items=").Append(s.Items);
-            sb.Append(" free=").Append(s.Free);
-            sb.Append(" sim=").Append(s.Sim);
-            sb.Append(" bodies=").Append(s.Bodies);
-            sb.Append(" rigid=").Append(s.Rigid);
-            sb.Append(" cols=").Append(s.Cols);
-            sb.Append(" sync=").Append(s.Sync);
-            sb.Append(" deadsync=").Append(s.Dead);
-            sb.Append(" players=").Append(s.Players);
-            sb.Append(" costMs=").Append(_heavyCostMs.ToString("0.0", CultureInfo.InvariantCulture));
-            if (s.Event != 0) sb.Append(" ev=").Append(EventText(s.Event));
-            return sb.ToString();
-        }
-
-        private static string EventText(byte e)
-        {
-            var parts = new List<string>(4);
-            if ((e & 1) != 0) parts.Add("players");
-            if ((e & 2) != 0) parts.Add("world");
-            if ((e & 4) != 0) parts.Add("slow");
-            if ((e & 8) != 0) parts.Add("net");
-            return string.Join("+", parts.ToArray());
-        }
-
-        private void Line(string tag, string body)
-        {
-            if (_writer == null) return;
-            try
-            {
-                _writer.Write("t=");
-                _writer.Write((Time.realtimeSinceStartup - _startedAt).ToString("0.0", CultureInfo.InvariantCulture));
-                _writer.Write(" E=");
-                _writer.Write(tag);
-                _writer.Write(' ');
-                _writer.Write(body);
-                _writer.WriteLine();
-                _lines++;
-            }
-            catch (Exception ex) { Log.Debug("写日志失败：" + ex.Message); }
-        }
-
-        private static string SafeVersion(string guid)
-        {
-            try
-            {
-                BepInEx.PluginInfo info;
-                if (BepInEx.Bootstrap.Chainloader.PluginInfos.TryGetValue(guid, out info)) return info.Metadata.Version.ToString();
-            }
-            catch { /* ignored */ }
-            return "-";
-        }
-
-        private static string SafeTogetherVersion()
-        {
-            try
-            {
-                Version v = CUCoreLib.Networking.MultiplayerApi.KrokMpVersion;
-                if (v != null) return v.ToString();
-            }
-            catch { /* ignored */ }
-            return "-";
-        }
-
-        // ===== 反射读字典（失败只试一次）=====
-        private static readonly Dictionary<string, IDictionary> DictCache = new Dictionary<string, IDictionary>(StringComparer.Ordinal);
-        private static readonly HashSet<string> DictFailed = new HashSet<string>(StringComparer.Ordinal);
-
-        private static IDictionary ReflectDict(string typeName, string fieldName)
+        private int DictionaryCount(string typeName, string fieldName)
         {
             string key = typeName + "." + fieldName;
-            IDictionary cached;
-            if (DictCache.TryGetValue(key, out cached) && cached != null) return cached;
-            if (DictFailed.Contains(key)) return null;
+            if (!_dictionaryFields.TryGetValue(key, out var field))
+            {
+                Type type = Reflect.Type(typeName);
+                if (type == null) return -1; // Do not permanently cache a plugin that is not loaded yet.
+                field = type.GetField(fieldName, BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+                _dictionaryFields[key] = field;
+            }
+            return (field?.GetValue(null) as IDictionary)?.Count ?? -1;
+        }
+        private float Cpu(float now)
+        {
             try
             {
-                Type t = Reflect.Type(typeName);
-                if (t == null) { DictFailed.Add(key); return null; }
-                FieldInfo f = t.GetField(fieldName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
-                if (f == null) { DictFailed.Add(key); return null; }
-                var dict = f.GetValue(null) as IDictionary;
-                if (dict == null) { DictFailed.Add(key); return null; }
-                DictCache[key] = dict;
-                return dict;
+                if (_process == null) _process = Process.GetCurrentProcess();
+                double value = _process.TotalProcessorTime.TotalSeconds;
+                float percent = _lastCpu >= 0 && now > _lastCpuWall ? (float)((value - _lastCpu) / (now - _lastCpuWall) / Math.Max(1, Environment.ProcessorCount) * 100) : -1;
+                _lastCpu = value; _lastCpuWall = now; return percent;
             }
-            catch { DictFailed.Add(key); return null; }
+            catch { return -1; }
+        }
+        private void LightSample(float now)
+        {
+            int players = DictionaryCount("Together.ScavPlayer", "ClientIdToPlayerDict");
+            if (_lastPlayers >= 0 && players >= 0 && players != _lastPlayers)
+            { _event |= 1; _nextObjects = now; _eventUntil = now + 10f; }
+            _lastPlayers = players;
+            bool running = Mp.IsRunning;
+            if (running != _lastRunning) { _lastRunning = running; _event |= 8; _items.Reset(); _scene.Reset(); }
+            var world = WorldGeneration.world;
+            int id = world != null ? world.GetInstanceID() : 0, depth = world != null ? world.biomeDepth : int.MinValue;
+            if (id != _worldId || depth != _depth)
+            {
+                _worldId = id; _depth = depth; _event |= 2; _items.Reset(); _scene.Reset();
+                _nextObjects = _nextScene = now;
+                _physics.Dispose(); if (_pageOpened) _physics.Start();
+            }
+            if (_frames / _windowSeconds < CfgSlowFps.Value) _event |= 4;
+            var sample = new PerfSample
+            {
+                T = now - _startedAt, Fps = _frames / _windowSeconds, MeanMs = _windowSeconds * 1000f / _frames,
+                WorstMs = _worstMs, LongFrames = _longFrames, Cpu = Cpu(now),
+                PhysicsMs = _physicsFrames > 0 ? _physicsSum / _physicsFrames : -1,
+                PhysicsPeakMs = _physicsFrames > 0 ? _physicsPeak : -1,
+                SelfMs = _selfSum / _frames, SelfPeakMs = _selfPeak,
+                StepsPerFrame = PerfMath.PerFrame(_fixedSteps, _frames), StepsPerSecond = PerfMath.PerSecond(_fixedSteps, _windowSeconds),
+                ExpectedStepsPerSecond = _expectedHzSum / _windowSeconds,
+                Scale = Time.timeScale, FixedDt = Time.fixedDeltaTime, Target = Application.targetFrameRate, VSync = QualitySettings.vSyncCount,
+                GC0 = GC.CollectionCount(0) - _gc0, GC1 = GC.CollectionCount(1) - _gc1, GC2 = GC.CollectionCount(2) - _gc2,
+                HeapMb = GC.GetTotalMemory(false) / (1024f * 1024f), Players = players,
+                WindowSeconds = _windowSeconds, Frames = _frames, FixedSteps = _fixedSteps, PhysicsFrames = _physicsFrames,
+                CensusBudgetMs = _budgetMs.Value, LastCensusSliceMs = _lastPumpMs,
+                SampleInterval = CfgSampleSeconds.Value, CensusInterval = CfgHeavySeconds.Value,
+                Detailed = _detailed.Value, Collision = _inspectCollision.Value,
+                Sync = DictionaryCount("Together.NetObjectRegistry", "SyncRegistry"), Event = _event,
+                Objects = _items.Result, Scene = _scene.Result
+            };
+            _event = 0; _buf.Add(sample); _version++; _nextText = 0;
+            _summary = sample.Fps.ToString("0") + " fps · " + _buf.Count + " 点";
+            if (CfgVerbose.Value) Log.Debug(Describe(sample));
+            ResetWindow(now);
         }
 
-        // ===== 界面：曲线页 =====
         public void DrawPage(Rect area)
         {
-            _pageOpenedOnce = true;
-            float y = area.y;
-
-            Sample last = _buf.Count > 0 ? _buf[_buf.Count - 1] : default(Sample);
-            GUI.Label(new Rect(area.x, y, area.width, 20f), "性能分析", DdenUI.Title);
-            y += 22f;
-
-            // KPI：只放最该一眼看到的三个数
-            string kpi = string.Format(CultureInfo.InvariantCulture,
-                "帧数 <color=#8cd97c>{0:0}</color> fps（最差 {1:0}）　CPU <color=#ffcf70>{2:0}%</color>　物理 <color=#89c4ff>{3:0.00}</color> 步/帧",
-                last.Fps, last.Worst, last.Cpu, last.Steps);
-            GUI.Label(new Rect(area.x, y, area.width, 18f), kpi, DdenUI.Row);
-            y += 20f;
-
-            if (_buf.Count < 2)
+            long started = Stopwatch.GetTimestamp();
+            try
             {
-                DdenUI.Label(new Rect(area.x, y, area.width, 40f),
-                    _stopped ? "已停止采样。" : "采样中…进一局游戏、跑几秒就会有曲线。", DdenUI.Wrap);
-                DrawButtons(area, ref y);
-                return;
-            }
-
-            BuildCache();
-
-            float win = Mathf.Max(10f, CfgWindowSeconds.Value);
-            float tEnd = _buf[_buf.Count - 1].T;
-            float tStart = Mathf.Max(0f, tEnd - win);
-
-            // 4 张图平分剩余高度
-            float chartH = Mathf.Clamp((area.height - y - 108f) / 4f, 54f, 130f);
-            float chartW = area.width;
-
-            Chart(new Rect(area.x, y, chartW, chartH), "帧数（绿=平均　橙=本窗口最差帧）", tStart, tEnd,
-                new[] { _cFps, _cWorst },
-                new[] { DdenUI.Good, DdenUI.Warn }, new[] { "平均", "最差" }, 0f, -1f, CfgSlowFps.Value);
-            y += chartH + 5f;
-
-            Chart(new Rect(area.x, y, chartW, chartH), "CPU（整个游戏进程 / 全部核心）", tStart, tEnd,
-                new[] { _cCpu },
-                new[] { DdenUI.Warn }, new[] { "CPU%" }, 0f, 100f, -1f);
-            y += chartH + 5f;
-
-            Chart(new Rect(area.x, y, chartW, chartH), "物理压力（蓝=活跃刚体　橙=物理步/帧×100，正常≈83，>100 说明物理在追帧）",
-                tStart, tEnd,
-                new[] { _cRigid, _cSteps },
-                new[] { DdenUI.Accent, DdenUI.Warn }, new[] { "刚体", "步/帧×100" }, 0f, -1f, -1f);
-            y += chartH + 5f;
-
-            Chart(new Rect(area.x, y, chartW, chartH), "世界对象（绿=物品　橙=无主物品　蓝=无主且物理开　灰=角色）",
-                tStart, tEnd,
-                new[] { _cItems, _cFree, _cSim, _cBodies },
-                new[] { DdenUI.Good, DdenUI.Warn, DdenUI.Accent, DdenUI.TextDim },
-                new[] { "物品", "无主", "无主+物理", "角色" }, 0f, -1f, -1f);
-            y += chartH + 6f;
-
-            // 文字区：图上不适合画的细节都放这里
-            string detail = string.Format(CultureInfo.InvariantCulture,
-                "物品 {0}（无主 {1} · 无主且物理开着 {2}）　角色 {3}　活跃刚体 {4}　碰撞体 {5}\n" +
-                "网络对象 {6}（其中已销毁 {7}）　玩家 {8}　targetFrameRate {9}　vSync {10}　timeScale {11}　fixedDt {12}\n" +
-                "重采样耗时 {13:0.0}ms（间隔 {14:0}s）· 采样点 {15} 个 · 窗口 {16:0}s · 低于 {17:0} fps 标红点",
-                last.Items, last.Free, last.Sim, last.Bodies, last.Rigid, last.Cols,
-                last.Sync, last.Dead, last.Players, Application.targetFrameRate, QualitySettings.vSyncCount,
-                Time.timeScale.ToString("0.00", CultureInfo.InvariantCulture),
-                Time.fixedDeltaTime.ToString("0.000", CultureInfo.InvariantCulture),
-                _heavyCostMs, CfgHeavySeconds.Value, _buf.Count, win, CfgSlowFps.Value);
-            GUI.Label(new Rect(area.x, y, area.width, 56f), detail, DdenUI.Wrap);
-            y += 58f;
-
-            DrawButtons(area, ref y);
-        }
-
-        private void DrawButtons(Rect area, ref float y)
-        {
-            if (DdenUI.Button(new Rect(area.x, y, 90f, 24f), _paused ? "继续" : "暂停", true)) _paused = !_paused;
-            if (DdenUI.Button(new Rect(area.x + 96f, y, 90f, 24f), "清空")) { _buf.Clear(); _bufVersion++; }
-            if (DdenUI.Button(new Rect(area.x + 192f, y, 110f, 24f), "导出日志"))
-            {
-                int n = ExportLog();
-                if (n <= 0) Log.Warn("没有可导出的采样（先让它跑一会儿）");
-            }
-            if (DdenUI.Button(new Rect(area.x + 308f, y, 120f, 24f), "打开日志目录")) OpenFolder();
-            y += 30f;
-
-            GUI.Label(new Rect(area.x, y, area.width, 34f),
-                "这一页只读：不打补丁、不改游戏状态。采样只存在内存里，**点「导出日志」才会写文件**；" +
-                "重采样（数世界对象）在你打开过这一页之后才开始跑。",
-                DdenUI.Wrap);
-        }
-
-        public bool DrawSettings(Rect area) => false;
-
-        /// <summary>
-        /// 画一张折线图：网格 + 多条曲线 + 事件竖线 + 红点（低于阈值）。
-        /// 只按像素列聚合，所以几千个点也不会把这一页画卡。
-        /// </summary>
-        private void Chart(Rect r, string title, float tStart, float tEnd,
-                           float[][] series, Color[] colors, string[] labels,
-                           float min, float max, float warnBelow)
-        {
-            DdenUI.Fill(r, new Color(0f, 0f, 0f, 0.28f));
-            DdenUI.Frame(r, DdenUI.AccentDim);
-
-            GUI.Label(new Rect(r.x + 6f, r.y + 2f, r.width - 12f, 16f), title, DdenUI.Sub);
-
-            // 右侧留一列显示"最新一次的数值"，不靠肉眼看曲线估数
-            const float gutter = 82f;
-            Rect inner = new Rect(r.x + 34f, r.y + 18f, Mathf.Max(8f, r.width - 42f - gutter), r.height - 24f);
-            if (inner.width < 8f || inner.height < 8f) return;
-
-            // 值域
-            float vmax = max;
-            if (vmax <= 0f)
-            {
-                vmax = 1f;
-                for (int si = 0; si < series.Length; si++)
+                if (!_pageOpened)
                 {
-                    float[] arr = series[si];
-                    if (arr == null) continue;
-                    for (int i = 0; i < arr.Length; i++)
+                    _pageOpened = true;
+                    if (Recording) _physics.Start();
+                    _nextObjects = Time.realtimeSinceStartup;
+                }
+                float now = Time.realtimeSinceStartup;
+                if (now >= _nextText || _textWidth != area.width)
+                {
+                    _nextText = now + 0.5f; _textWidth = area.width; RefreshText(now);
+                    _measureText.text = _top; _topHeight = DdenUI.Wrap.CalcHeight(_measureText, area.width);
+                    _measureText.text = _detail; _detailHeight = DdenUI.Wrap.CalcHeight(_measureText, area.width);
+                    _measureText.text = _schedule; _scheduleHeight = DdenUI.Wrap.CalcHeight(_measureText, area.width);
+                }
+                float y = area.y;
+                GUI.Label(new Rect(area.x, y, area.width, 20), "性能分析 · 耗时与物品状态", DdenUI.Title); y += 23;
+                GUI.Label(new Rect(area.x, y, area.width, _topHeight), _top, DdenUI.Wrap); y += _topHeight + 2;
+                GUI.Label(new Rect(area.x, y, area.width, 18), "物理步数是调度读数，不能判断物理耗时；“不可用”不代表耗时为零。", DdenUI.Sub); y += 21;
+                if (_buf.Count > 1)
+                {
+                    BuildCache();
+                    float end = _buf[_buf.Count - 1].T, begin = Math.Max(0, end - CfgWindowSeconds.Value);
+                    float height = Mathf.Clamp((area.yMax - y - _detailHeight - _scheduleHeight - 69) / 4f - 4, 30, 115);
+                    for (int i = 0; i < 4; i++)
                     {
-                        if (arr[i] > vmax) vmax = arr[i];
+                        string title = i == 3 && !_detailed.Value ? "场景动态刚体：详细统计关闭（保留历史，不估算新值）" : Titles[i];
+                        _charts[i].Draw(new Rect(area.x, y, area.width, height), title, _times, _events, _cacheCount, _version, begin, end); y += height + 4;
                     }
                 }
-                vmax *= 1.15f;
+                else { GUI.Label(new Rect(area.x, y, area.width, 30), "等待新的记录…", DdenUI.Sub); y += 33; }
+                GUI.Label(new Rect(area.x, y, area.width, _detailHeight), _detail, DdenUI.Wrap); y += _detailHeight + 2;
+                GUI.Label(new Rect(area.x, y, area.width, _scheduleHeight), _schedule, DdenUI.Wrap); y += _scheduleHeight + 2;
+                DrawButtons(area, ref y);
             }
-
-            // 网格 + 刻度
-            for (int g = 0; g <= 2; g++)
-            {
-                float gy = inner.y + inner.height * (g / 2f);
-                DdenUI.Fill(new Rect(inner.x, gy, inner.width, 1f), new Color(1f, 1f, 1f, 0.07f));
-                float val = Mathf.Lerp(vmax, min, g / 2f);
-                GUI.Label(new Rect(r.x + 2f, gy - 7f, 30f, 14f), val.ToString("0"), DdenUI.Small);
-            }
-
-            int count = _buf.Count;
-            float span = Mathf.Max(0.001f, tEnd - tStart);
-            int cols = Mathf.Max(2, Mathf.RoundToInt(inner.width));
-
-            // 每列取窗口内的样本（取最近一个）
-            int startIdx = 0;
-            while (startIdx < count - 1 && _buf[startIdx].T < tStart) startIdx++;
-
-            for (int si = 0; si < series.Length; si++)
-            {
-                float[] arr = series[si];
-                if (arr == null) continue;
-                Color c = colors != null && si < colors.Length ? colors[si] : DdenUI.Accent;
-                float prevX = -1f, prevY = -1f;
-                for (int col = 0; col < cols; col++)
-                {
-                    int idx = startIdx + Mathf.RoundToInt((count - 1 - startIdx) * (col / (float)(cols - 1)));
-                    if (idx < 0 || idx >= count) continue;
-                    float v = arr[idx];
-                    if (v < 0f) continue;               // 该点没有数据
-                    float px = inner.x + inner.width * (col / (float)(cols - 1));
-                    float py = inner.y + inner.height * (1f - Mathf.InverseLerp(min, vmax, Mathf.Clamp(v, min, vmax)));
-                    // 两点之间连成一段竖线（1px 粗），够细也够省
-                    if (prevX >= 0f) DdenUI.Fill(new Rect(px - 1f, Mathf.Min(py, prevY), 2f, Mathf.Abs(py - prevY) + 1f), c);
-                    else DdenUI.Fill(new Rect(px, py, 2f, 1f), c);
-                    prevX = px; prevY = py;
-                }
-            }
-
-            // 事件竖线 + 掉帧红点
-            for (int i = startIdx; i < count; i++)
-            {
-                Sample s = _buf[i];
-                float px = inner.x + inner.width * Mathf.Clamp01((s.T - tStart) / span);
-                if (s.Event != 0)
-                {
-                    Color ec = (s.Event & 1) != 0 ? DdenUI.Warn : ((s.Event & 2) != 0 ? DdenUI.Accent : DdenUI.Bad);
-                    DdenUI.Fill(new Rect(px, inner.y, 1f, inner.height), new Color(ec.r, ec.g, ec.b, 0.55f));
-                }
-                if (warnBelow > 0f && s.Fps > 0f && s.Fps < warnBelow)
-                {
-                    float py = inner.y + inner.height * (1f - Mathf.InverseLerp(min, vmax, Mathf.Clamp(s.Fps, min, vmax)));
-                    DdenUI.Fill(new Rect(px - 1f, py - 1f, 3f, 3f), DdenUI.Bad);
-                }
-            }
-
-            // 右侧"最新值"列：每条曲线一个色块 + 当前数值（取最后一条有效样本）
-            Rect valCol = new Rect(inner.xMax + 10f, inner.y, gutter - 16f, inner.height);
-            float vy = valCol.y;
-            for (int si = 0; si < series.Length; si++)
-            {
-                float v = LastValue(series[si]);
-                if (v < 0f) continue;
-                Color sc = colors != null && si < colors.Length ? colors[si] : DdenUI.Accent;
-                DdenUI.Fill(new Rect(valCol.x, vy + 5f, 6f, 6f), sc);
-                GUI.Label(new Rect(valCol.x + 9f, vy - 1f, valCol.width - 9f, 15f), FmtValue(v), DdenUI.Small);
-                vy += 15f;
-                if (vy > valCol.yMax - 12f) break;
-            }
-
-            // 鼠标悬停：竖线 + 该时刻所有曲线的数值框（IMGUI 里自己画，别用 GUI.tooltip）
-            Event ev = Event.current;
-            if (ev != null && inner.Contains(ev.mousePosition) && count > startIdx)
-            {
-                float frac = Mathf.Clamp01((ev.mousePosition.x - inner.x) / inner.width);
-                int idx = Mathf.Clamp(startIdx + Mathf.RoundToInt((count - 1 - startIdx) * frac), startIdx, count - 1);
-                float px = inner.x + inner.width * frac;
-
-                DdenUI.Fill(new Rect(px, inner.y, 1f, inner.height),
-                    new Color(DdenUI.Accent.r, DdenUI.Accent.g, DdenUI.Accent.b, 0.85f));
-
-                // 每条曲线在该点的位置画个点
-                for (int si = 0; si < series.Length; si++)
-                {
-                    float[] arr = series[si];
-                    if (arr == null || idx >= arr.Length) continue;
-                    float v = arr[idx];
-                    if (v < 0f) continue;
-                    Color sc = colors != null && si < colors.Length ? colors[si] : DdenUI.Accent;
-                    float py = inner.y + inner.height * (1f - Mathf.InverseLerp(min, vmax, Mathf.Clamp(v, min, vmax)));
-                    DdenUI.Fill(new Rect(px - 2f, py - 2f, 5f, 5f), sc);
-                }
-
-                // 数值框
-                int rows = 1;
-                for (int si = 0; si < series.Length; si++)
-                {
-                    if (series[si] != null && idx < series[si].Length && series[si][idx] >= 0f) rows++;
-                }
-                float bw = 150f;
-                float bh = 6f + rows * 15f;
-                float bx = Mathf.Clamp(px + 14f, inner.x, Mathf.Max(inner.x, inner.xMax - bw));
-                float by = Mathf.Clamp(ev.mousePosition.y - bh * 0.5f, inner.y, Mathf.Max(inner.y, inner.yMax - bh));
-                Rect box = new Rect(bx, by, bw, bh);
-                DdenUI.Fill(box, new Color(0.05f, 0.06f, 0.08f, 0.96f));
-                DdenUI.Frame(box, DdenUI.AccentDim);
-
-                GUI.Label(new Rect(box.x + 6f, box.y + 3f, bw - 12f, 15f),
-                    "距现在 -" + Mathf.Max(0f, tEnd - _cT[idx]).ToString("0.0", CultureInfo.InvariantCulture) + "s",
-                    DdenUI.Small);
-
-                float ly = box.y + 3f + 15f;
-                for (int si = 0; si < series.Length; si++)
-                {
-                    float[] arr = series[si];
-                    if (arr == null || idx >= arr.Length || arr[idx] < 0f) continue;
-                    Color sc = colors != null && si < colors.Length ? colors[si] : DdenUI.Accent;
-                    DdenUI.Fill(new Rect(box.x + 6f, ly + 5f, 6f, 6f), sc);
-                    string nm = labels != null && si < labels.Length ? labels[si] : ("#" + si);
-                    GUI.Label(new Rect(box.x + 16f, ly, bw - 22f, 15f), nm + "  " + FmtValue(arr[idx]), DdenUI.Small);
-                    ly += 15f;
-                }
-            }
-
-            // 时间轴说明
-            GUI.Label(new Rect(inner.x, r.yMax - 15f, 80f, 14f), "-" + Mathf.RoundToInt(tEnd - tStart) + "s", DdenUI.Small);
-            DdenUI.Label(new Rect(inner.x, r.yMax - 15f, inner.width, 14f), "", DdenUI.Small);
-
-            // 图例
-            if (labels != null)
-            {
-                float lx = inner.xMax;
-                for (int i = labels.Length - 1; i >= 0; i--)
-                {
-                    float w = 14f + labels[i].Length * 11f;
-                    lx -= w;
-                    if (lx < inner.x + 40f) break;
-                    Color c = colors != null && i < colors.Length ? colors[i] : DdenUI.Accent;
-                    DdenUI.Fill(new Rect(lx, r.y + 6f, 8f, 8f), c);
-                    GUI.Label(new Rect(lx + 10f, r.y + 1f, w - 10f, 16f), labels[i], DdenUI.Sub);
-                }
-            }
+            catch (Exception ex) { Log.Exception(ex, "绘制性能页面"); }
+            finally { _selfThisFrame += (float)ElapsedMs(started); }
         }
-
-        /// <summary>取数组里最后一个有效（≥0）的值；全无效返回 -1。</summary>
-        private static float LastValue(float[] arr)
+        private void RefreshText(float now)
         {
-            if (arr == null) return -1f;
-            for (int i = arr.Length - 1; i >= 0; i--)
-            {
-                if (arr[i] >= 0f) return arr[i];
-            }
-            return -1f;
+            if (_buf.Count == 0) { _top = "等待采样"; _detail = _schedule = ""; return; }
+            var s = _buf[_buf.Count - 1];
+            _top = $"{s.Fps:0} fps　平均 {s.MeanMs:0.0}ms / 最长 {s.WorstMs:0.0}ms　2D模拟 {Milliseconds(s.PhysicsMs)}　自身 {s.SelfMs:0.00}ms / 峰值 {s.SelfPeakMs:0.00}ms";
+            var o = s.Objects; var scene = s.Scene;
+            string objectText = o.Valid ? $"物品 {o.Total}（启用 {o.Active}）· 自由动态 {o.Simulated}（清醒 {o.Awake} / 休眠 {o.Sleeping}）· 向下运动 {o.Downward} · 无实体碰撞 {(o.CollisionChecked ? o.NoSolid.ToString() : "未检查")}" : "物品清点：等待完成";
+            string age = o.Valid ? $"物品数据距今 {Math.Max(0, now - o.Ended):0.0}s，清点跨度 {o.Ended - o.Started:0.00}s" : "物品状态尚无完整记录";
+            _detail = objectText + "\n" + $"玩家 {s.Players} · 网络条目 {s.Sync} · CPU {Value(s.Cpu)}%（全核心平均）· GC {s.GC0}/{s.GC1}/{s.GC2} · 托管堆 {s.HeapMb:0.0}MB\n" + age;
+            _schedule = $"物理调度：{s.StepsPerSecond:0.0}步/秒 / 设定 {s.ExpectedStepsPerSecond:0.0}，{s.StepsPerFrame:0.00}步/帧（非耗时）" +
+                $"；每帧清点预算 {_budgetMs.Value:0.0}ms，最近分片 {_lastPumpMs:0.00}ms" +
+                (_items.Running ? $"；物品清点中 {_items.Progress} 件" : "") + (_scene.Running ? $"；场景清点中 {_scene.Progress} 个对象" : "") +
+                (scene.Valid ? $"；场景数据距今 {Math.Max(0, now - scene.Ended):0.0}s" : "");
         }
-
-        /// <summary>数值格式：大数取整，小数保留 1~2 位，避免右侧一列数字挤在一起还看不出量级。</summary>
-        private static string FmtValue(float v)
+        private void DrawButtons(Rect area, ref float y)
         {
-            if (v >= 100f) return v.ToString("0", CultureInfo.InvariantCulture);
-            if (v >= 10f) return v.ToString("0.0", CultureInfo.InvariantCulture);
-            return v.ToString("0.00", CultureInfo.InvariantCulture);
+            if (DdenUI.Button(new Rect(area.x, y, 65, 23), _stopped ? "清空重启" : _paused ? "继续" : "暂停", true))
+            {
+                if (_stopped) { _buf.Clear(); _version++; _startedAt = Time.realtimeSinceStartup; _items.Reset(); _scene.Reset(); _stopped = _paused = false; }
+                else _paused = !_paused;
+                _nextText = 0;
+            }
+            if (DdenUI.Button(new Rect(area.x + 70, y, 65, 23), "清空")) { _buf.Clear(); _version++; _nextText = 0; _summary = "等待采样"; }
+            if (DdenUI.Button(new Rect(area.x + 140, y, 100, 23), "标记并清点")) { _event |= 16; _nextObjects = _nextScene = Time.realtimeSinceStartup; }
+            if (DdenUI.Button(new Rect(area.x + 245, y, 110, 23), _detailed.Value ? "详细统计：开" : "详细统计：关")) _detailed.Value = !_detailed.Value;
+            if (DdenUI.Button(new Rect(area.x + 360, y, 90, 23), "导出日志")) ExportLog();
+            if (DdenUI.Button(new Rect(area.x + 455, y, 90, 23), "打开目录"))
+            {
+                string dir = Path.Combine(Paths.ConfigPath, "DDEN"); Directory.CreateDirectory(dir);
+                Process.Start(new ProcessStartInfo { FileName = dir, UseShellExecute = true });
+            }
+            y += 27;
+            GUI.Label(new Rect(area.x, y, area.width, 31), "默认轻量记录；详细统计与碰撞检查可选。只在点“导出日志”时写文件。向下运动或无碰撞本身不证明物品异常。", DdenUI.Wrap);
         }
-
-        /// <summary>把环形缓冲摊平成数组（只在新增采样点时重建一次）。</summary>
+        public bool DrawSettings(Rect area) => false;
+        private static string Value(float value) => value < 0 ? "不可用" : value.ToString("0.##", CultureInfo.InvariantCulture);
+        private static string Milliseconds(float value) => value < 0 ? "不可用" : value.ToString("0.##", CultureInfo.InvariantCulture) + "ms";
         private void BuildCache()
         {
-            if (_cacheVersion == _bufVersion && _cFps != null) return;
-            _cacheVersion = _bufVersion;
-
-            int n = _buf.Count;
-            _cT = new float[n];
-            _cFps = new float[n];
-            _cWorst = new float[n];
-            _cCpu = new float[n];
-            _cSteps = new float[n];
-            _cRigid = new float[n];
-            _cItems = new float[n];
-            _cFree = new float[n];
-            _cSim = new float[n];
-            _cBodies = new float[n];
-            _cSync = new float[n];
-            _cPlayers = new float[n];
-
-            for (int i = 0; i < n; i++)
+            if (_cacheVersion == _version) return;
+            _cacheVersion = _version; _cacheCount = _buf.Count;
+            if (_times.Length < _cacheCount)
             {
-                Sample s = _buf[i];
-                _cT[i] = s.T;
-                _cFps[i] = s.Fps;
-                _cWorst[i] = s.Worst;
-                _cCpu[i] = s.Cpu;
-                _cSteps[i] = s.Steps * 100f;      // ×100 让它和"刚体数"同量级，否则永远贴在 0 线上看不见
-                _cRigid[i] = s.Rigid;
-                _cItems[i] = s.Items;
-                _cFree[i] = s.Free;
-                _cSim[i] = s.Sim;
-                _cBodies[i] = s.Bodies;
-                _cSync[i] = s.Sync;
-                _cPlayers[i] = s.Players;
+                int capacity = Math.Max(128, Math.Max(_cacheCount, _times.Length * 2));
+                _times = new float[capacity]; _events = new byte[capacity];
+                for (int i = 0; i < _series.Length; i++) _series[i] = new float[capacity];
+                _charts[0].SetSeries(0, _series[0]); _charts[0].SetSeries(1, _series[1]);
+                for (int i = 0; i < 3; i++) { _charts[1].SetSeries(i, _series[2 + i]); _charts[2].SetSeries(i, _series[5 + i]); _charts[3].SetSeries(i, _series[8 + i]); }
+            }
+            for (int i = 0; i < _cacheCount; i++)
+            {
+                var s = _buf[i]; _times[i] = s.T; _events[i] = s.Event;
+                _series[0][i] = s.MeanMs; _series[1][i] = s.WorstMs; _series[2][i] = s.PhysicsMs;
+                _series[3][i] = s.SelfMs; _series[4][i] = s.SelfPeakMs;
+                _series[5][i] = s.Objects.Valid ? s.Objects.Total : -1;
+                _series[6][i] = s.Objects.Valid ? s.Objects.Awake : -1;
+                _series[7][i] = s.Objects.Valid ? s.Objects.Downward : -1;
+                _series[8][i] = s.Scene.Valid ? s.Scene.Awake : -1;
+                _series[9][i] = s.Scene.Valid ? s.Scene.Sleeping : -1;
+                _series[10][i] = s.Scene.Valid ? s.Scene.Dynamic : -1;
             }
         }
-
-        private void OpenFolder()
+        private static string Describe(PerfSample s)
         {
+            var c = CultureInfo.InvariantCulture;
+            var b = new StringBuilder(600);
+            b.Append("t=").Append(s.T.ToString("0.000", c)).Append(" fps=").Append(s.Fps.ToString("0.0", c));
+            b.Append(" frameAvgMs=").Append(s.MeanMs.ToString("0.000", c)).Append(" frameMaxMs=").Append(s.WorstMs.ToString("0.000", c));
+            b.Append(" longFrames50ms=").Append(s.LongFrames).Append(" physics2dAvgMs=").Append(s.PhysicsMs.ToString("0.000", c)).Append(" physics2dMaxMs=").Append(s.PhysicsPeakMs.ToString("0.000", c));
+            b.Append(" windowSeconds=").Append(s.WindowSeconds.ToString("0.000", c)).Append(" frames=").Append(s.Frames).Append(" fixedSteps=").Append(s.FixedSteps).Append(" physicsFrames=").Append(s.PhysicsFrames);
+            b.Append(" observerAvgMs=").Append(s.SelfMs.ToString("0.000", c)).Append(" observerMaxMs=").Append(s.SelfPeakMs.ToString("0.000", c));
+            b.Append(" stepsPerFrame=").Append(s.StepsPerFrame.ToString("0.000", c)).Append(" stepsPerSecond=").Append(s.StepsPerSecond.ToString("0.00", c)).Append(" expectedStepHz=").Append(s.ExpectedStepsPerSecond.ToString("0.00", c));
+            b.Append(" timeScale=").Append(s.Scale.ToString("0.00", c)).Append(" fixedDt=").Append(s.FixedDt.ToString("0.0000", c)).Append(" targetFps=").Append(s.Target).Append(" vsync=").Append(s.VSync);
+            b.Append(" cpuAllCoresPct=").Append(s.Cpu.ToString("0.00", c)).Append(" gc0=").Append(s.GC0).Append(" gc1=").Append(s.GC1).Append(" gc2=").Append(s.GC2).Append(" heapMb=").Append(s.HeapMb.ToString("0.00", c));
+            b.Append(" players=").Append(s.Players).Append(" sync=").Append(s.Sync).Append(" event=").Append(s.Event);
+            b.Append(" censusBudgetMs=").Append(s.CensusBudgetMs.ToString("0.000", c)).Append(" lastCensusSliceMs=").Append(s.LastCensusSliceMs.ToString("0.000", c));
+            b.Append(" sampleInterval=").Append(s.SampleInterval.ToString("0.000", c)).Append(" censusInterval=").Append(s.CensusInterval.ToString("0.000", c));
+            b.Append(" detailed=").Append(s.Detailed ? 1 : 0).Append(" collisionCheck=").Append(s.Collision ? 1 : 0);
+            var o = s.Objects;
+            b.Append(" objectsValid=").Append(o.Valid ? 1 : 0).Append(" objectsStart=").Append((o.Started).ToString("0.000", c)).Append(" objectsEnd=").Append(o.Ended.ToString("0.000", c));
+            b.Append(" items=").Append(o.Valid ? o.Total : -1).Append(" activeItems=").Append(o.Valid ? o.Active : -1).Append(" free=").Append(o.Valid ? o.Free : -1);
+            b.Append(" freeDynamic=").Append(o.Valid ? o.Simulated : -1).Append(" freeAwake=").Append(o.Valid ? o.Awake : -1).Append(" freeSleeping=").Append(o.Valid ? o.Sleeping : -1).Append(" downward=").Append(o.Valid ? o.Downward : -1);
+            b.Append(" awakeNoSolid=").Append(o.Valid && o.CollisionChecked ? o.NoSolid : -1).Append(" objectWorkMs=").Append(o.WorkMs.ToString("0.000", c)).Append(" objectMaxSliceMs=").Append(o.MaxSliceMs.ToString("0.000", c));
+            var scene = s.Scene;
+            b.Append(" sceneValid=").Append(scene.Valid ? 1 : 0).Append(" sceneStart=").Append(scene.Started.ToString("0.000", c)).Append(" sceneEnd=").Append(scene.Ended.ToString("0.000", c));
+            b.Append(" sceneBodies=").Append(scene.Valid ? scene.Rigid : -1).Append(" sceneDynamic=").Append(scene.Valid ? scene.Dynamic : -1).Append(" sceneAwake=").Append(scene.Valid ? scene.Awake : -1).Append(" sceneSleeping=").Append(scene.Valid ? scene.Sleeping : -1);
+            b.Append(" sceneKinematic=").Append(scene.Valid ? scene.Kinematic : -1).Append(" enabledColliders=").Append(scene.Valid ? scene.Colliders : -1).Append(" sceneWorkMs=").Append(scene.WorkMs.ToString("0.000", c)).Append(" sceneMaxSliceMs=").Append(scene.MaxSliceMs.ToString("0.000", c));
+            return b.ToString();
+        }
+        internal int ExportLog()
+        {
+            if (_buf.Count == 0) return 0;
             try
             {
-                string dir = Path.Combine(Paths.ConfigPath, "DDEN");
-                Directory.CreateDirectory(dir);
-                Application.OpenURL("file:///" + dir.Replace('\\', '/'));
+                string dir = Path.Combine(Paths.ConfigPath, "DDEN"); Directory.CreateDirectory(dir);
+                _file = Path.Combine(dir, "perf-" + DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffZ") + ".log");
+                using (var writer = new StreamWriter(_file, false, new UTF8Encoding(false), 65536))
+                {
+                    writer.WriteLine("# DDEN perf schema=2 exportedUtc=" + DateTime.UtcNow.ToString("O") + " engineTimeAtStart=" + _startedAt.ToString("0.000", CultureInfo.InvariantCulture));
+                    writer.WriteLine("# version=1.5.0 physicsSource=" + _physics.Source + "; -1=unavailable, never zero-filled; timing unit=ms per rendered frame; steps are scheduling only");
+                    writer.WriteLine("# object/scene timestamps use engine realtime seconds; counts are interval censuses, not simultaneous snapshots; all settings and costs belong to the recorded point");
+                    writer.WriteLine("# free=no parent; freeDynamic=active,simulated,dynamic; awake excludes sleeping; downward=awake free velocityY<-2; noSolid excludes trigger colliders");
+                    writer.WriteLine("# event bits:1=players,2=world,4=lowFPS,8=connection,16=manual,32=resume,64=selftest; observer CPU covers sampling+page code, not GPU work");
+                    for (int i = 0; i < _buf.Count; i++) writer.WriteLine(Describe(_buf[i]));
+                }
+                Log.Info("已导出 " + _buf.Count + " 条记录：" + _file); return _buf.Count;
             }
-            catch (Exception ex) { Log.Debug("打开目录失败：" + ex.Message); }
+            catch (Exception ex) { Log.Exception(ex, "导出性能记录"); return 0; }
         }
-
+        private System.Collections.IEnumerator SelfTest()
+        {
+            yield return new WaitForSecondsRealtime(10f);
+            bool classified = false;
+            try
+            {
+                _event |= 64;
+                classified = CensusProbe.Run();
+                _pageOpened = true; _physics.Start();
+                _nextObjects = Time.realtimeSinceStartup;
+                _scene.Begin(Time.realtimeSinceStartup, gameObject.scene);
+            }
+            catch (Exception ex) { Log.Exception(ex, "[PERFTEST] FAIL 初始化/分类"); yield break; }
+            float deadline = Time.realtimeSinceStartup + 15f;
+            while ((_scene.Running || !_items.Result.Valid) && Time.realtimeSinceStartup < deadline) yield return null;
+            try
+            {
+                bool ok = classified && _items.Result.Valid && _scene.Result.Valid && _buf.Count > 0;
+                Log.Info("[PERFTEST] " + (ok ? "PASS" : "FAIL") + " objects=" + _items.Result.Total + " sceneAwake=" + _scene.Result.Awake + " sceneSleeping=" + _scene.Result.Sleeping + " physicsSource=" + _physics.Source + " maxObjectSliceMs=" + _items.Result.MaxSliceMs.ToString("0.000"));
+            }
+            catch (Exception ex) { Log.Exception(ex, "[PERFTEST] FAIL 完成"); }
+            finally { _scene.Reset(); } // Does not enable continuous detailed scans or alter saved settings.
+        }
         private void OnDestroy()
         {
-            try
-            {
-                if (_writer != null)
-                {
-                    Line("shutdown", "lines=" + _lines);
-                    _writer.Flush();
-                    _writer.Dispose();
-                    _writer = null;
-                }
-            }
-            catch { /* ignored */ }
+            try { _physics.Dispose(); _items.Cancel(); _scene.Cancel(); foreach (var chart in _charts) chart?.Dispose(); _process?.Dispose(); }
+            catch (Exception ex) { Log.Debug("结束跟踪失败：" + ex.Message); }
         }
     }
 }
