@@ -49,6 +49,7 @@ namespace DDEN.MPfix
         {
             try
             {
+                if (!MPfixPlugin.Active) return true;
                 if (!MPfixPlugin.CfgQuietTraderUIModItems.Value) return true;
                 if (cam == null || cam.currentTrader == null) return true;
 

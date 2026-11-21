@@ -105,12 +105,14 @@ dotnet build CUmod.slnx -v m                  # 只编译
 - **性能跟踪器（`DDEN.NetPerfTracker`，正式名 NetPerfTracker）**：调试用的子 mod，管理器侧边栏单独一页「性能分析」。
   **零补丁**（一个 MonoBehaviour，不装 Harmony，最坏情况只是自己不采样），所以线上排查可以放心让它跑着。
   - 采样两档：轻采样（帧数/最差帧/CPU%/物理步每帧数，默认 1 秒）与重采样（数 `Item`/`Body`/`Rigidbody2D`/`Collider2D`、
-    反射读 `NetObjectRegistry.SyncRegistry` 与 `ScavPlayer.ClientIdToPlayerDict`，默认 5 秒）；
-    **重采样耗时超过 8ms 自动关掉碰撞体计数**（观察者不许成为元凶），每次耗时都写进日志的 `costMs`。
+    反射读 `NetObjectRegistry.SyncRegistry` 与 `ScavPlayer.ClientIdToPlayerDict`，默认 **15** 秒、且**只在页面被打开过之后**才跑）；
+    **重采样耗时超过 8ms 自动关掉碰撞体计数**（观察者不许成为元凶），每次耗时记在 `costMs`。
   - 页面：4 张曲线（帧数 / CPU / 物理压力 / 世界对象）+ 文字读数（物品·无主·无主且物理开着、刚体、碰撞体、
     网络对象·已销毁条目、玩家数、targetFrameRate、vSync、timeScale、fixedDt）+ 暂停/清空/写日志/打开目录。
     曲线按像素列降采样，攒几千个点也不会把这一页画卡。
-  - 日志：`BepInEx/config/DDEN/perf-<时间戳>.log`，一行一个快照 `key=value`（不走 BepInEx 主日志，那边会被新实例截断）。
+  - 日志：**只在点「导出日志」按钮时写文件**（`BepInEx/config/DDEN/perf-<时间戳>.log`，一次把内存里全部采样写出来）；
+    平时只存内存，不写盘（用户口径 2026-11）。重采样（数世界对象）默认 15 秒一次，**且只在这一页被打开过之后才跑**，
+    没打开过就一直不跑 —— 观察者不许给正常玩家制造周期性卡顿。
   - 用途：抓「一台客机掉线 → 另一台客机巨卡」这类现场 —— 看 `sim`（无主且物理开着）、`deadsync`、`players` 的台阶。
   - 它**随发布包一起发**（用户 2026-11 明确要求：本地输出要包含全部模块，含存档编辑器与性能跟踪器）；
     它不打任何补丁，装不装都不影响游戏，只是排查掉帧时能直接抓现场。
@@ -164,9 +166,9 @@ dotnet build CUmod.slnx -v m                  # 只编译
   `Awake` 里把物品所有 `Collider2D` 关掉并记下当时状态，`Restore()` 再写回；
   若挂上那一刻碰撞体本来就是关的（物品在背包里 / 模组物品后加的碰撞体不在名单里），写回后仍然是关的，
   而 `HeldSeat` 已经把 `rb.simulated = true` → **无碰撞 + 有物理 = 穿过墙块往下掉**。
-  修复在 `DDEN.MPfix.ItemPhysicsGuard`：① Harmony postfix 到 `HeldQuiet.Restore`（反射按名字找类型）恢复后**只补碰撞体**，
-  **且只管 `物品物理/被动恢复碰撞范围（GuardRadius）`（默认 5 米，约等于刚丢出去的距离）以内的物品** —— 远处恢复碰撞对玩家没意义，纯属多花开销；
-  ② 只在 `Body.DropItem` / `Body.DropWearable`（真正的丢出动作）后**补开碰撞体 / 打开物理**，**绝不移动物品**。
+  修复在 `DDEN.MPfix.ItemPhysicsGuard`：**只挂 `Body.DropItem` / `Body.DropWearable`（真正的丢出动作）**，
+  之后补开碰撞体。**被动恢复（`HeldQuiet.Restore` 那条）与 `GuardRadius` 已整体删除**（用户口径 2026-11：
+  「被动恢复范围检测去掉，只处理玩家丢弃的物品」）——它盯着一堆没被丢的物品反复开关碰撞体，是抖动来源。
   **三条铁律**（2026-11 因“主机物品一直掉落/浮空”两次收紧）：只处理 `IsFree` 的自由物品（无父级、不在 Container 里）；
   只“打开”不“改写”；任何位移副作用一律删除（早期版本会上移 0.5~3m，位移会残留在局部坐标 →
   表现为“还穿在身上却浮在角色上方”）。
@@ -250,9 +252,11 @@ dotnet build CUmod.slnx -v m                  # 只编译
   **不要再加回来**：它要同时猜“主机重跑有没有扣过”，双扣/漏扣都比原版更难调。
 - **删幽灵物品必须先保内容物**：`WearGhostFix.TryRetireGhost` 先把子物品逐个脱离落地，
   含液体（`WaterContainerItem.stack`）或取不干净就**保留不删**，只有空壳才 Destroy。
-- **配置界面必须是两行一条**：上行「键 + 控件」，下行说明（`DdenUI.ConfigRow`，行高 44）。
-  “全部配置”页必须把**所有模块的配置**都列出来（按模块分块、按 Section 分组），不能要求先选模块才看得到。
-  说明放不下时用 `DdenUI.Hover` 让鼠标悬停看全文。
+- **配置界面版式（2026-11 定稿）**：上行「键 + 右侧固定控件（120×18）」，下行**单行**说明。
+  行高固定 `ConfigRowHeight = 46`；最左 3px 状态条（开=亮蓝 / 关=暗灰 / 实验性=橙），关掉的键用暗色 —— 扫一眼就知道哪行是哪个功能、什么状态。
+  **说明只写「这个开关做什么」**，不写修过什么、不写怎么修；完整五项（功能 / 修复的问题 / 解决方案 / 实验性 / 性能影响）
+  由 `DdenDocs`（`DDEN.Shared/DdenDocs.cs`）维护，鼠标移到整行时提示框展开。新增开关必须同时 `DdenDocs.Add(...)`，
+  否则提示框只剩那一行说明。
 - **外部模组接入（给别人用）**：`DDEN.Shared.DdenExternal` 在管理器 `Start()` 扫描所有已加载插件程序集，
   认出约定成员（`DdenConfig` / `DdenTitle` / `DdenSummary` / `DdenDraw(Rect)`）后收进管理器。
   **对方不需要引用 `DDEN.Shared.dll`**。文档：[docs/cumodm-integration.md](docs/cumodm-integration.md)；
@@ -270,6 +274,9 @@ dotnet build CUmod.slnx -v m                  # 只编译
 - **不要在模块里重复造兼容判断**，也别各自写自己的弹窗系统。
 - **存档编辑红线**：只改用户点过的字段；`cheatedSave`（禁用成就）**绝不自动写入**，仅由“进度/成就”页手动切换；
   写盘只走 `SaveCodec.Write` + `SyncMeta`（原子 + `.cumod.bak`），写前查 `Compat.IsQolAutosaveBusy()`。
+- **环境版本闸门（2026-11 定）**：`DDEN.Shared/DdenGate.cs`；本版针对联机组件 **5.5.4**。版本对不上且管理器「总览」里的
+  `兼容性/忽略核对环境版本（IgnoreEnvVersion）`（默认关）没打开时：`MPfixPlugin.Active` 恒 false（各入口都查它），
+  管理器在**主界面常驻红色提示条** `DDEN未校对此环境版本兼容性，需要打开面板处理！`，总览里是红色卡片 + 一键开关。
 - 不碰别人放在 plugins 下的 dll；不 git push（本地仓库由用户自行建远端）。
 
 ## 4. 验证流程（三件套，全部真实运行）
@@ -350,3 +357,10 @@ ilspycmd -o decomp/qol  --nested-directories "<plugins>/QoL Unknown 1.1.5 - 实�
 - **CI 构建不了**，别尝试加 Actions：编译需要游戏本体的 `Assembly-CSharp.dll` / `UnityEngine.*` 与
   `0Harmony.dll`，这些是商业游戏安装文件，不能进仓库也不能传 CI —— 只能本地构建再上传产物。
 - 不提交 `decomp/`、`bin/`、`obj/`、`dist/`、`backup/`、`artifacts/`。
+
+- **挖块=伤害重算（最小侵入，2026-11 定）**：BlockDamageRelax 只做一件事 —— 前缀里 `ref float hostOwnDamage *= attackdamage`
+  然后 `return true`，**判定/比例/上限/拒绝退路全部交回 Together 原码**。不要再去重写 ChooseBlockDamage 的规则
+  （那是上一版的做法，已删）；BlockDamageRatio 开关也随之删除。单位同构：BuildingDamageRelax 只乘 armstrength。
+- **上报收敛=激进开关**：联机修正/挖掘修复-激进（实验性 · ⚠帧数影响）（AggressiveConverge） 默认 **关**，
+  打开后才启用 `ddn.mp.blockdmg` 上报（0.35 秒攒批）+ 主机校验收敛；只对已打开的“伤害重算”项生效。
+  平时不需要它 —— 倍率补上之后两边数字本来就一致。

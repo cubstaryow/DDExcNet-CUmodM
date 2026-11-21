@@ -36,7 +36,8 @@ namespace DDEN.MPfix
             {
                 try
                 {
-                    if (!MPfixPlugin.CfgTraderSnapshot.Value) return;
+                    if (!MPfixPlugin.Active) return;
+                if (!MPfixPlugin.CfgTraderSnapshot.Value) return;
                     if (!Mp.IsRunning || !Mp.IsClient) return;
 
                     float now = Time.unscaledTime;

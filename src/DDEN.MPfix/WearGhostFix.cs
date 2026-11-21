@@ -135,6 +135,7 @@ namespace DDEN.MPfix
             try
             {
                 if (!Mp.IsServer || token == null) return Fail("not-host");
+                if (!MPfixPlugin.Active) return Fail("disabled");
                 if (!MPfixPlugin.CfgWearFix.Value) return Fail("disabled");
 
                 string id = token["id"]?.ToString() ?? string.Empty;
@@ -289,6 +290,7 @@ namespace DDEN.MPfix
         internal static void Tick()
         {
             if (_disabled || Queue.Count == 0) return;
+            if (!MPfixPlugin.Active) { Queue.Clear(); return; }
             if (!MPfixPlugin.CfgWearFix.Value) { Queue.Clear(); return; }
 
             try

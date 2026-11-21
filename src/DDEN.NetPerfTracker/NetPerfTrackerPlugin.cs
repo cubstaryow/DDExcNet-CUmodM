@@ -28,7 +28,7 @@ namespace DDEN.NetPerfTracker
     /// </summary>
     [BepInPlugin(Guid, "DDEN NetPerfTracker", "1.3.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
-    public class NetPerfTrackerPlugin : BaseUnityPlugin, IDdenModule
+    public class NetPerfTrackerPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleGate
     {
         public const string Guid = "com.dden.perf";
         public const string Title = "性能分析";
@@ -103,7 +103,7 @@ namespace DDEN.NetPerfTracker
         private string _file;
         private StreamWriter _writer;
         private int _lines;
-        private float _nextLog;
+        private bool _pageOpenedOnce;
 
         // 曲线缓存
         private int _bufVersion;
@@ -116,6 +116,21 @@ namespace DDEN.NetPerfTracker
         public string DisplayName => Title;
         public string Version => Info.Metadata.Version.ToString();
         public bool Ready => true;
+
+        /// <summary>“采样/Enabled”就是本模块的主开关：关掉采样 → 管理器把本模块配置整体置灰、侧边栏显示“关闭”。</summary>
+        public bool ModuleEnabled => CfgEnabled != null && CfgEnabled.Value;
+
+        /// <summary>主开关就是「启用采样」；关掉采样后这一行仍然可点，能再打开。</summary>
+        public string MasterKey => "总开关/启用采样（Enabled）";
+
+        /// <summary>本模块的主开关就是「启用采样」：它同时决定本模块的配置项是否可编辑、侧边栏是否显示“关闭”。</summary>
+        private void RegisterDocs()
+        {
+            DdenDocs.Add("总开关", "启用采样（Enabled）",
+                "性能跟踪器是否采样（关掉后不再画曲线、不占开销）。",
+                "不需要修什么：这是观测工具自己的开关。",
+                "关掉后这一页只显示已有数据，不再更新。", "否", "无（关掉反而更省）");
+        }
         public string Summary
         {
             get
@@ -133,12 +148,12 @@ namespace DDEN.NetPerfTracker
             Instance = this;
             LogSource = base.Logger;
 
-            CfgEnabled = Config.Bind("采样", "Enabled", true,
+            CfgEnabled = Config.Bind("总开关", "启用采样（Enabled）", true,
                 "是否采样。关掉后这一页不更新曲线，也不写日志。");
             CfgSampleSeconds = Config.Bind("采样", "SampleSeconds", 1f,
                 new ConfigDescription("多久记一个点（秒）。曲线的时间分辨率就是它。",
                     new AcceptableValueRange<float>(0.2f, 10f)));
-            CfgHeavySeconds = Config.Bind("采样", "HeavySeconds", 5f,
+            CfgHeavySeconds = Config.Bind("采样", "HeavySeconds", 15f,
                 new ConfigDescription("多久统计一次世界里的物品/角色数量（秒）。这个比记帧时间贵，别调太小。",
                     new AcceptableValueRange<float>(1f, 60f)));
             CfgSlowFps = Config.Bind("采样", "SlowFpsWarn", 45f,
@@ -150,15 +165,16 @@ namespace DDEN.NetPerfTracker
             CfgMaxSamples = Config.Bind("显示", "MaxSamples", 2400,
                 new ConfigDescription("内存里最多保留多少个采样点（2400 点 × 1 秒 = 40 分钟）。",
                     new AcceptableValueRange<int>(60, 20000)));
-            CfgWriteLog = Config.Bind("日志", "WriteLog", true,
-                "同时把数据写成文本日志（BepInEx/config/DDEN/perf-*.log），方便事后回看或发给作者。");
+            CfgWriteLog = Config.Bind("日志", "WriteLog", false,
+                "保留项（现在只在点「导出日志」时写文件）。开着不影响行为，写盘永远是手动触发。");
             CfgAutoStopMinutes = Config.Bind("日志", "AutoStopMinutes", 0f,
-                new ConfigDescription("多少分钟后自动停止采样与写日志（0 = 一直开着）。",
+                new ConfigDescription("多少分钟后自动停止采样（0 = 一直开着）。",
                     new AcceptableValueRange<float>(0f, 600f)));
             CfgVerbose = Config.Bind("Debug", "Verbose", false, "同时在 BepInEx 主日志里输出采样行（排查启动问题时用）。");
 
             Log = DDEN.Shared.Log.For(LogSource, "Perf", CfgVerbose.Value);
 
+            RegisterDocs();
             DdenHub.Register(this);
             Log.Info("性能分析已加载（不装补丁，只在管理器里画曲线 + 写日志）。");
         }
@@ -168,9 +184,8 @@ namespace DDEN.NetPerfTracker
             _startedAt = Time.realtimeSinceStartup;
             _nextLight = _startedAt + Mathf.Max(0.2f, CfgSampleSeconds.Value);
             _nextHeavy = _startedAt;
-            _nextLog = _startedAt;
             _lastWorldId = 0;
-            if (CfgWriteLog.Value && CfgEnabled.Value) OpenFile();
+            // 不预先建文件：写盘只由「导出日志」按钮触发
         }
 
         // ===== 采样 =====
@@ -196,7 +211,8 @@ namespace DDEN.NetPerfTracker
             if (_winTime > 0.2f && _frames / Mathf.Max(0.0001f, _winTime) < CfgSlowFps.Value) _slowFor += dt;
             else _slowFor = 0f;
 
-            if (now >= _nextHeavy)
+            // 重采样（数世界对象）只在「这一页被打开过」之后才跑：平时不打开页面的玩家不会被它周期性拖一下。
+            if (_pageOpenedOnce && now >= _nextHeavy)
             {
                 _nextHeavy = now + Mathf.Max(1f, CfgHeavySeconds.Value);
                 HeavySample();
@@ -321,13 +337,35 @@ namespace DDEN.NetPerfTracker
             _worstDt = 0f;
             _fixedSteps = 0;
 
-            // 日志：默认 5 秒一条（曲线点更多，但日志不必那么密）
-            if (_writer != null && Time.realtimeSinceStartup >= _nextLog)
-            {
-                _nextLog = Time.realtimeSinceStartup + 5f;
-                Line("hb", Describe(s));
-            }
+            // 只记内存；写文件由「导出日志」按钮主动触发（用户口径：不要一直写盘）
             if (CfgVerbose.Value) Log.Debug(Describe(s));
+        }
+
+        /// <summary>
+        /// 把内存里的全部采样一次性写成文件（点按钮才做）。返回写出的行数。
+        /// </summary>
+        internal int ExportLog()
+        {
+            try
+            {
+                if (_writer == null) OpenFile();
+                if (_writer == null) return 0;
+
+                _writer.WriteLine("# ---- 导出 " + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
+                                 + "：共 " + _buf.Count + " 个采样点 ----");
+                for (int i = 0; i < _buf.Count; i++)
+                {
+                    Line("sample", Describe(_buf[i]));
+                }
+                _writer.Flush();
+                Log.Info($"[Perf] 已导出 {_buf.Count} 个采样点到 {_file}");
+                return _buf.Count;
+            }
+            catch (Exception ex)
+            {
+                Log.Warn("导出日志失败：" + ex.Message);
+                return 0;
+            }
         }
 
         /// <summary>重采样：数世界对象。每次记下自己的耗时。</summary>
@@ -565,6 +603,7 @@ namespace DDEN.NetPerfTracker
         // ===== 界面：曲线页 =====
         public void DrawPage(Rect area)
         {
+            _pageOpenedOnce = true;
             float y = area.y;
 
             Sample last = _buf.Count > 0 ? _buf[_buf.Count - 1] : default(Sample);
@@ -639,17 +678,17 @@ namespace DDEN.NetPerfTracker
         {
             if (DdenUI.Button(new Rect(area.x, y, 90f, 24f), _paused ? "继续" : "暂停", true)) _paused = !_paused;
             if (DdenUI.Button(new Rect(area.x + 96f, y, 90f, 24f), "清空")) { _buf.Clear(); _bufVersion++; }
-            if (DdenUI.Button(new Rect(area.x + 192f, y, 110f, 24f), "写一条日志"))
+            if (DdenUI.Button(new Rect(area.x + 192f, y, 110f, 24f), "导出日志"))
             {
-                if (_writer == null && CfgWriteLog.Value) OpenFile();
-                Sample s = _buf.Count > 0 ? _buf[_buf.Count - 1] : default(Sample);
-                Line("manual", Describe(s));
+                int n = ExportLog();
+                if (n <= 0) Log.Warn("没有可导出的采样（先让它跑一会儿）");
             }
             if (DdenUI.Button(new Rect(area.x + 308f, y, 120f, 24f), "打开日志目录")) OpenFolder();
             y += 30f;
 
             GUI.Label(new Rect(area.x, y, area.width, 34f),
-                "这一页只读：不打补丁、不改游戏状态。曲线攒在内存里（上限见设置），同时在 BepInEx/config/DDEN/ 写文本日志。",
+                "这一页只读：不打补丁、不改游戏状态。采样只存在内存里，**点「导出日志」才会写文件**；" +
+                "重采样（数世界对象）在你打开过这一页之后才开始跑。",
                 DdenUI.Wrap);
         }
 

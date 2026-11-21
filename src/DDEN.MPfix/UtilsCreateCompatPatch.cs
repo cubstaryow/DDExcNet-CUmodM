@@ -47,6 +47,7 @@ namespace DDEN.MPfix
                 // 商人购买窗口内记一下生成过什么 id，供「道生一 一生二」复制（不影响正常流程）
                 DoublePurchase.NoteId(id);
 
+                if (!MPfixPlugin.Active) return true;                  // 总开关/环境版本闸门
                 if (!MPfixPlugin.CfgFixModItemCraftSpawn.Value) return true;
                 if (string.IsNullOrEmpty(id)) return true;
                 if (VanillaIds.Contains(id)) return true;
@@ -116,6 +117,7 @@ namespace DDEN.MPfix
         {
             try
             {
+                if (!MPfixPlugin.Active) return;
                 if (__result == null) return;
                 if (!MPfixPlugin.CfgDoublePurchase.Value) return;
                 if (!Mp.IsRunning || !Mp.IsServer) return;

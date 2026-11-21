@@ -80,6 +80,7 @@ namespace DDEN.MPfix
 
             try
             {
+                if (!MPfixPlugin.Active) return;
                 if (!MPfixPlugin.CfgDoublePurchase.Value) return;
                 if (!Mp.IsRunning || !Mp.IsServer) return;
                 if (actor == null || string.IsNullOrEmpty(_lastId)) return;

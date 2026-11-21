@@ -60,6 +60,7 @@ namespace DDEN.MPfix
         {
             try
             {
+                if (!MPfixPlugin.Active) return;
                 if (!MPfixPlugin.CfgSyncBuildingDamage.Value) return;
                 if (!Mp.IsRunning || !Mp.IsServer) return;        // 只在主机结算
                 if (attacker == null) return;

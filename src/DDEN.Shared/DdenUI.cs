@@ -24,6 +24,14 @@ namespace DDEN.Shared
 
         public static GUIStyle Title => _title ??= Make(15, FontStyle.Bold, TextAnchor.MiddleLeft);
         public static GUIStyle Sub => _sub ??= Make(11, FontStyle.Normal, TextAnchor.MiddleLeft, TextDim);
+        private static GUIStyle _tiny;
+        /// <summary>小药丸里的文字（10px 居中）。</summary>
+        public static GUIStyle Tiny => _tiny ??= Make(10, FontStyle.Normal, TextAnchor.MiddleCenter);
+
+        private static GUIStyle _disabledRow;
+        /// <summary>不可用状态的行文字（模块总开关关闭时用）。</summary>
+        public static GUIStyle DisabledRow => _disabledRow ??= Make(12, FontStyle.Normal, TextAnchor.MiddleLeft,
+            new Color(0.45f, 0.47f, 0.52f, 1f));
         public static GUIStyle Row => _row ??= Make(12, FontStyle.Normal, TextAnchor.MiddleLeft);
         public static GUIStyle Small => _small ??= Make(10, FontStyle.Normal, TextAnchor.MiddleRight, TextDim);
         public static GUIStyle Wrap => _wrap ??= Make(11, FontStyle.Normal, TextAnchor.UpperLeft, TextDim, true);
@@ -197,29 +205,44 @@ namespace DDEN.Shared
             catch { /* ignored */ }
         }
 
-        /// <summary>在窗口内画提示（自动贴边，不会跑到窗口外的游戏界面上）。</summary>
+        /// <summary>在窗口内画提示（自动贴边，不会跑到窗口外的游戏界面上）。支持多行（\n 分隔）。</summary>
         public static void DrawTooltip(Rect bounds)
         {
             if (string.IsNullOrEmpty(_tip) || Event.current == null) return;
 
             Vector2 mp = Event.current.mousePosition;
-            bool twoLine = _tip.IndexOf('\n') >= 0;
-            string[] lines = twoLine ? _tip.Split('\n') : new[] { _tip };
+            string[] lines = _tip.Split('\n');
+            const float lineH = 15f;
+
+            float maxW = Mathf.Max(160f, Mathf.Min(420f, bounds.width - 16f));
             float w = 0f;
             foreach (string line in lines) w = Mathf.Max(w, Row.CalcSize(new GUIContent(line)).x);
-            w = Mathf.Min(w + 12f, Mathf.Max(80f, bounds.width - 8f));
-            float h = twoLine ? 38f : 22f;
+            w = Mathf.Min(w + 14f, maxW);
+            float h = lines.Length * lineH + 8f;
 
             float x = Mathf.Clamp(mp.x + 16f, bounds.x, Mathf.Max(bounds.x, bounds.xMax - w - 2f));
             float y = Mathf.Clamp(mp.y + 18f, bounds.y, Mathf.Max(bounds.y, bounds.yMax - h - 2f));
             var rect = new Rect(x, y, w, h);
 
-            Fill(rect, new Color(0f, 0f, 0f, 0.88f));
+            Fill(rect, new Color(0f, 0f, 0f, 0.92f));
             Frame(rect, AccentDim);
             for (int i = 0; i < lines.Length; i++)
             {
-                GUI.Label(new Rect(rect.x + 6f, rect.y + 2f + i * 18f, rect.width - 12f, 18f),
-                    ElideToWidth(lines[i], rect.width - 12f, Row), Row);
+                // “标签：值”里的标签用强调色画，值用正常色，扫一眼就能分清五项
+                string line = lines[i];
+                int colon = line.IndexOf('：');
+                if (colon > 0 && colon <= 8)
+                {
+                    GUI.Label(new Rect(rect.x + 7f, rect.y + 4f + i * lineH, 70f, lineH),
+                        line.Substring(0, colon), Sub);
+                    GUI.Label(new Rect(rect.x + 74f, rect.y + 4f + i * lineH, rect.width - 84f, lineH),
+                        ElideToWidth(line.Substring(colon + 1), rect.width - 84f, Wrap), Wrap);
+                }
+                else
+                {
+                    GUI.Label(new Rect(rect.x + 7f, rect.y + 4f + i * lineH, rect.width - 14f, lineH),
+                        ElideToWidth(line, rect.width - 14f, Wrap), Wrap);
+                }
             }
         }
 
@@ -280,13 +303,17 @@ namespace DDEN.Shared
         }
 
         /// <summary>只画方框的复选框（像素风对勾用三段短横拼，不依赖字体里有没有 ✓）。返回点击后的值。</summary>
-        public static bool CheckBox(Rect r, bool value)
+        public static bool CheckBox(Rect r, bool value) => DrawCheckBox(r, value, true);
+
+        /// <summary>画复选框；`interactive=false` 时只画不响应点击（模块总开关关闭 → 整块变灰不可用）。</summary>
+        public static bool DrawCheckBox(Rect r, bool value, bool interactive)
         {
             float size = Mathf.Min(18f, Mathf.Max(12f, r.height));
             var box = new Rect(r.x, r.y + (r.height - size) * 0.5f, size, size);
 
-            Fill(box, value ? Accent : FieldBg);
-            Frame(box, value ? Accent : new Color(1f, 1f, 1f, 0.22f));
+            Color on = interactive ? Accent : new Color(0.42f, 0.55f, 0.66f, 1f);
+            Fill(box, value ? on : FieldBg);
+            Frame(box, value ? on : new Color(1f, 1f, 1f, interactive ? 0.22f : 0.12f));
 
             if (value)
             {
@@ -298,7 +325,19 @@ namespace DDEN.Shared
                 Fill(new Rect(box.x + size * 0.58f, baseY - u * 2.8f, u * 2.0f, u), ink);
             }
 
+            if (!interactive) return value;
             return GUI.Button(r, GUIContent.none, GUIStyle.none) ? !value : value;
+        }
+
+        /// <summary>状态小药丸：运行中/监控中/关/错误 用不同底色，一格一格摆在“运行一览”里。</summary>
+        public static void Chip(Rect r, string text, Color color)
+        {
+            Fill(r, new Color(color.r, color.g, color.b, 0.20f));
+            Frame(r, color);
+            Color old = GUI.color;
+            GUI.color = color;
+            GUI.Label(new Rect(r.x + 2f, r.y, r.width - 4f, r.height), text, Tiny);
+            GUI.color = old;
         }
 
         /// <summary>复选框 + 右侧文字（整行可点）。</summary>
@@ -368,30 +407,60 @@ namespace DDEN.Shared
         // ===== 通用配置项渲染 =====
 
         /// <summary>配置行的固定高度（上行：键 + 控件；下行：说明）。</summary>
-        public const float ConfigRowHeight = 44f;
+        /// <summary>每条配置的行高：**固定单行说明**（用户口径 2026-11：描述单行）。</summary>
+        public const float ConfigRowHeight = 46f;
+
+        /// <summary>兼容旧调用：说明固定一行，所以行高是常量。</summary>
+        public static float RowHeight(ConfigEntryBase entry, float width) => ConfigRowHeight;
 
         /// <summary>
-        /// 把 BepInEx 的 ConfigEntry 画成两行：上排“键 + 控件”，下排说明文字。
-        /// 之前把说明画在同一行底部，会压到控件和下一行上（就是“界面很乱”的主因）。
+        /// 一条配置的版式（2026-11 用户口径）：
+        ///   · 最左一道 **状态色条**（开 = 亮蓝，关 = 暗灰，实验性 = 橙）+ 交替底色 → 一眼看出这行是哪个功能、什么状态；
+        ///   · 上排「键 + 右侧固定控件」；
+        ///   · 下排**单行**说明（只写这个开关做什么），放不下就截断，**不压控件、不压下一行**；
+        ///   · 鼠标移到整行 → 提示框展开完整五项（功能 / 修复的问题 / 解决方案 / 实验性 / 性能影响）。
         /// </summary>
-        public static float ConfigRow(Rect r, ConfigEntryBase entry)
+        public static float ConfigRow(Rect r, ConfigEntryBase entry, bool interactive = true)
         {
             if (entry == null) return 0f;
 
-            const float keyW = 230f;
-            const float ctrlW = 240f;
+            const float ctrlW = 120f;
+            const float ctrlH = 18f;
+            const float barW = 3f;
 
-            // 交替底色，便于区分条目
-            Fill(r, new Color(1f, 1f, 1f, 0.02f));
-
-            string key = entry.Definition?.Key ?? "?";
-            GUI.Label(new Rect(r.x + 6f, r.y + 3f, keyW - 10f, 18f),
-                ElideToWidth(key, keyW - 10f, Row), Row);
-
-            float cx = r.x + keyW + 8f;
             object value = entry.BoxedValue;
-            Rect field = new Rect(cx, r.y + 2f, Mathf.Min(ctrlW, Mathf.Max(80f, r.width - keyW - 20f)), 20f);
+            bool isOn = value is bool b0 && b0;
+            bool experimental = DdenDocs.TryGet(entry, out DdenDocs.Doc doc)
+                                && !string.IsNullOrEmpty(doc.Experimental)
+                                && doc.Experimental.StartsWith("是", StringComparison.Ordinal);
 
+            Fill(r, new Color(1f, 1f, 1f, interactive ? (isOn ? 0.035f : 0.015f) : 0.008f));
+            Fill(new Rect(r.x, r.y, barW, r.height),
+                !interactive ? new Color(1f, 1f, 1f, 0.10f)
+                             : (experimental ? Warn : (isOn ? Accent : new Color(1f, 1f, 1f, 0.14f))));
+
+            float keyW = Mathf.Max(120f, r.width - ctrlW - 24f);
+            string key = entry.Definition?.Key ?? "?";
+            Rect keyRect = new Rect(r.x + barW + 7f, r.y + 3f, keyW, 18f);
+            GUI.Label(keyRect, ElideToWidth(key, keyW, interactive ? (isOn ? Row : Sub) : DisabledRow),
+                interactive ? (isOn ? Row : Sub) : DisabledRow);
+
+            Rect field = new Rect(r.x + r.width - ctrlW - 8f, r.y + 3f, ctrlW, ctrlH);
+
+            if (!interactive)
+            {
+                // 模块总开关关闭 → 这一行整体不可用：只画状态，不接受点击
+                if (value is bool bo)
+                {
+                    DrawCheckBox(new Rect(field.x, field.y, 18f, ctrlH), bo, false);
+                    GUI.Label(new Rect(field.x + 24f, field.y, field.width - 24f, ctrlH), bo ? "开" : "关", DisabledRow);
+                }
+                else
+                {
+                    GUI.Label(field, Convert.ToString(value), DisabledRow);
+                }
+            }
+            else
             try
             {
                 if (value is bool b)
@@ -431,17 +500,20 @@ namespace DDEN.Shared
             if (!string.IsNullOrEmpty(desc))
             {
                 desc = desc.Replace("\r", " ").Replace("\n", " ");
-                var descRect = new Rect(r.x + 6f, r.y + 23f, r.width - 12f, 18f);
-                GUI.Label(descRect, ElideToWidth(desc, r.width - 12f, Sub), Sub);
-                Hover(descRect, desc);   // 单行放不下时，悬停看完整说明
+                float descW = r.width - barW - 16f;
+                GUI.Label(new Rect(r.x + barW + 7f, r.y + 23f, descW, 17f),
+                    ElideToWidth(desc, descW, interactive ? Sub : DisabledRow), interactive ? Sub : DisabledRow);
             }
+
+            // 整行悬停：提示框展开完整五项
+            Hover(r, DdenDocs.Format(entry));
 
             Fill(new Rect(r.x, r.yMax - 1f, r.width, 1f), new Color(1f, 1f, 1f, 0.06f));
             return ConfigRowHeight;
         }
 
         /// <summary>按 Section 分组渲染一批配置（从 area 顶部开始，返回占用高度）。</summary>
-        public static float DrawConfigGrouped(Rect area, IEnumerable<ConfigEntryBase> entries)
+        public static float DrawConfigGrouped(Rect area, IEnumerable<ConfigEntryBase> entries, bool interactive = true, string alwaysInteractiveKey = null)
         {
             if (entries == null) return 0f;
 
@@ -458,8 +530,12 @@ namespace DDEN.Shared
                     Section(new Rect(area.x, area.y + y, area.width, 16f), "▸ " + sec);
                     y += 20f;
                 }
-                ConfigRow(new Rect(area.x, area.y + y, area.width, ConfigRowHeight), entry);
-                y += ConfigRowHeight;
+                float h = RowHeight(entry, area.width);
+                string fullKey = (entry.Definition?.Section ?? "") + "/" + (entry.Definition?.Key ?? "");
+                bool rowInteractive = interactive
+                                      || (!string.IsNullOrEmpty(alwaysInteractiveKey) && fullKey == alwaysInteractiveKey);
+                ConfigRow(new Rect(area.x, area.y + y, area.width, h), entry, rowInteractive);
+                y += h;
             }
             return y;
         }
@@ -474,7 +550,8 @@ namespace DDEN.Shared
                 n++;
                 sections.Add(e.Definition?.Section ?? "General");
             }
-            return n * ConfigRowHeight + sections.Count * 26f + 8f;
+            float h = 0f; foreach (ConfigEntryBase e in entries ?? Array.Empty<ConfigEntryBase>()) h += RowHeight(e, 600f);
+            return h + sections.Count * 26f + 8f;
         }
 
         private static string Truncate(string s, int max)

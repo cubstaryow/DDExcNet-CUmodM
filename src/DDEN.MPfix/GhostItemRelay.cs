@@ -85,6 +85,7 @@ namespace DDEN.MPfix
         {
             try
             {
+                if (!MPfixPlugin.Active) return;
                 if (!MPfixPlugin.CfgRelayGhostItems.Value) return;
                 if (go == null) return;
                 Item item = go.GetComponent<Item>();
@@ -137,6 +138,7 @@ namespace DDEN.MPfix
         {
             try
             {
+                if (!MPfixPlugin.Active) return;
                 if (!MPfixPlugin.CfgRelayGhostItems.Value) return;
                 if (!Mp.IsRunning || !Mp.IsClient) return;
                 JArray arr = token?["items"] as JArray;

@@ -54,6 +54,8 @@ namespace DDExcNet.CUmodM
         private const int WindowId = 0x4444454E; // 'DDEN'
         private const float SidebarWidth = 236f;
 
+        internal static ConfigEntry<bool> CfgIgnoreEnv;
+
         private void Awake()
         {
             Instance = this;
@@ -73,10 +75,26 @@ namespace DDExcNet.CUmodM
             CfgBlockerDim = Config.Bind("UI", "BlockerDim", 0.15f,
                 new ConfigDescription("挡点击时那层暗色的深浅（0 = 完全透明，只是挡住点击）。",
                     new AcceptableValueRange<float>(0f, 0.8f)));
-            CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出更详细的日志（排查问题用）。");
+            CfgIgnoreEnv = Config.Bind("兼容性", "忽略核对环境版本（IgnoreEnvVersion）", false,
+                "默认关闭。本版 DDEN 针对联机组件 5.5.4 逐行核对过；版本对不上时相关模块会停手，打开这一项才允许它们继续工作。");
+            CfgVerbose = Config.Bind("调试", "详细日志（Verbose）", false, "输出更详细的日志。");
 
             Log = DDEN.Shared.Log.For(LogSource, "CUmodM", CfgVerbose.Value);
             DDEN.Shared.Log.Attach(LogSource, "DDEN", CfgVerbose.Value);   // 共享代码（Compat/Reflect/SaveCodec）的落点
+
+            // 环境版本闸门：把用户的选择喂给共享层，模块只读
+            DdenGate.IgnoreEnv = CfgIgnoreEnv.Value;
+            DdenGate.Probe(force: true);
+            try
+            {
+                CfgIgnoreEnv.SettingChanged += (s, e) =>
+                {
+                    DdenGate.IgnoreEnv = CfgIgnoreEnv.Value;
+                    DdenGate.Probe(force: true);
+                    Log.Info($"[版本核对] 忽略核对环境版本 = {(CfgIgnoreEnv.Value ? "开" : "关")}（立即生效）");
+                };
+            }
+            catch { /* ignored */ }
 
             DdenHub.MarkManagerLoaded();
             DdenHub.OpenRequested += OnOpenRequested;
@@ -276,6 +294,9 @@ namespace DDExcNet.CUmodM
 
         private void OnGUI()
         {
+            // 主界面醒目提示（2026-11 用户口径）：版本没核对上又没被忽略时，面板关着也要一直提醒。
+            DrawEnvWarning();
+
             if (!_visible) return;
             try
             {
@@ -299,6 +320,41 @@ namespace DDExcNet.CUmodM
             {
                 Log.Exception(ex, "OnGUI");
                 _visible = false;
+            }
+        }
+
+        /// <summary>
+        /// 主界面 / 世界里的醒目提示条：`DDEN未校对此环境版本兼容性，需要打开面板处理！`
+        /// 只在“版本没核对上 + 用户没打开忽略”时出现；面板打开后由总览里的红色卡片接手。
+        /// </summary>
+        private void DrawEnvWarning()
+        {
+            try
+            {
+                // 没有任何模块声明参与版本核对时，主界面不挂提示（面板里照旧显示状态）
+                if (!CfgIgnoreEnv.Value && !DdenGate.VersionOk && DdenGate.HasParticipants)
+                {
+                    DdenGate.Probe();
+                    float scale = Mathf.Clamp(CfgScale.Value, 0.75f, 2f);
+                    Matrix4x4 old = GUI.matrix;
+                    GUI.depth = -1100;    // 压在所有 DDEN 窗口之上
+                    GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1f));
+
+                    float w = Screen.width / scale;
+                    var box = new Rect(w * 0.5f - 330f, 12f, 660f, 46f);
+                    DdenUI.Fill(box, new Color(0.45f, 0.05f, 0.05f, 0.94f));
+                    DdenUI.Frame(box, DdenUI.Bad);
+                    GUI.Label(new Rect(box.x + 10f, box.y + 4f, box.width - 20f, 20f),
+                        "<b>" + DdenGate.NoticeText + "</b>", DdenUI.Row);
+                    GUI.Label(new Rect(box.x + 10f, box.y + 24f, box.width - 20f, 18f),
+                        DdenGate.Reason + " 按 " + CfgToggleKey.Value.MainKey + " 打开面板处理。", DdenUI.Sub);
+
+                    GUI.matrix = old;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Debug("版本提示条绘制失败：" + ex.Message);
             }
         }
 
@@ -367,9 +423,21 @@ namespace DDExcNet.CUmodM
                 bool selected = _page == module.Id;
                 var r = new Rect(0, sy, area.width - 16f, 30f);
                 DdenUI.Fill(r, selected ? DdenUI.AccentDim : DdenUI.PanelAlt);
+
+                // 状态：总开关关 → “关闭”（灰）；健康度 严重 → 红；有错误 → 黄；正常 → 绿
+                bool on = Enabled(module);
+                DdenHealth hp = Health(module);
+                string dot, state, stateColor;
+                if (!on) { dot = "#8a8f96"; state = "关闭"; stateColor = "#8a8f96"; }
+                else if (hp == DdenHealth.Severe) { dot = "#e05a5a"; state = "错误：" + (HealthNote(module) ?? "已终止"); stateColor = "#e05a5a"; }
+                else if (hp == DdenHealth.Warn) { dot = "#e8c15a"; state = "注意：" + (HealthNote(module) ?? "有错误"); stateColor = "#e8c15a"; }
+                else if (!module.Ready) { dot = "#f0a"; state = module.Summary ?? "降级"; stateColor = "#f0a"; }
+                else { dot = "#8cd97c"; state = module.Summary ?? string.Empty; stateColor = "#89a"; }
+
                 DdenUI.Label(new Rect(r.x + 8f, r.y + 4f, r.width - 20f, 16f),
-                    (module.Ready ? "<color=#8cd97c>●</color> " : "<color=#f0a>●</color> ") + module.DisplayName, DdenUI.Row);
-                DdenUI.Label(new Rect(r.x + 8f, r.y + 17f, r.width - 20f, 12f), module.Summary ?? string.Empty, DdenUI.Small);
+                    "<color=" + dot + ">●</color> " + (on ? module.DisplayName : "<color=#9aa>»</color> " + module.DisplayName), DdenUI.Row);
+                DdenUI.Label(new Rect(r.x + 8f, r.y + 17f, r.width - 20f, 12f),
+                    "<color=" + stateColor + ">" + state + "</color>", DdenUI.Small);
                 if (GUI.Button(r, GUIContent.none, GUIStyle.none)) _page = module.Id;
                 sy += 32f;
             }
@@ -440,6 +508,41 @@ namespace DDExcNet.CUmodM
             }
         }
 
+        /// <summary>模块是否允许编辑配置：实现了 IDdenModuleGate 的按它的说法（总开关/版本闸门），否则一律允许。</summary>
+        private static bool Enabled(IDdenModule m)
+        {
+            var gate = m as IDdenModuleGate;
+            return gate == null || gate.ModuleEnabled;
+        }
+
+        /// <summary>模块健康度（没实现 IDdenModuleHealth 就当作正常）。</summary>
+        private static DdenHealth Health(IDdenModule m)
+        {
+            var h = m as IDdenModuleHealth;
+            return h == null ? DdenHealth.Ok : h.Health;
+        }
+
+        /// <summary>主开关的完整键名（没有就不特殊处理）。</summary>
+        private static string MasterKey(IDdenModule m)
+        {
+            var g = m as IDdenModuleGate;
+            return g?.MasterKey;
+        }
+
+        private static string HealthNote(IDdenModule m)
+        {
+            var h = m as IDdenModuleHealth;
+            return h?.HealthNote;
+        }
+
+        /// <summary>按模块 id 查门控（外部模组块只有 id 时用；查不到就当作允许）。</summary>
+        private static bool ModuleEnabled(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return true;
+            IDdenModule m = DdenHub.Find(id);
+            return m == null || Enabled(m);
+        }
+
         private void DrawOverview(Rect area)
         {
             GUI.Label(new Rect(area.x, area.y, area.width, 20f), "总览", DdenUI.Title);
@@ -447,15 +550,56 @@ namespace DDExcNet.CUmodM
                 "这里集中放各个模组的功能页和设置项。没装管理器的模组会自己开一个小窗口。", DdenUI.Sub);
 
             float y = area.y + 48f;
+
+            // ===== 环境版本核对（2026-11 用户口径：默认关、做得明显）=====
+            DdenGate.Probe();
+            if (DdenGate.Blocked)
+            {
+                var warn = new Rect(area.x, y, area.width, 64f);
+                DdenUI.Fill(warn, new Color(0.42f, 0.06f, 0.06f, 0.92f));
+                DdenUI.Frame(warn, DdenUI.Bad);
+                DdenUI.Label(new Rect(warn.x + 10f, warn.y + 6f, warn.width - 20f, 20f),
+                    "<b>" + DdenGate.NoticeText + "</b>", DdenUI.Row);
+                DdenUI.Label(new Rect(warn.x + 10f, warn.y + 28f, warn.width - 240f, 30f),
+                    DdenGate.Reason + " 打开下面的开关后这些修复才会生效。", DdenUI.Wrap);
+                if (DdenUI.Button(new Rect(warn.xMax - 224f, warn.y + 18f, 214f, 28f), "忽略核对环境版本", true))
+                {
+                    CfgIgnoreEnv.Value = true;
+                }
+                y += 72f;
+            }
+            else
+            {
+                var ok = new Rect(area.x, y, area.width, 30f);
+                DdenUI.Fill(ok, new Color(0.10f, 0.20f, 0.10f, 0.75f));
+                DdenUI.Frame(ok, DdenUI.Good);
+                DdenUI.Label(new Rect(ok.x + 10f, ok.y + 5f, ok.width - 260f, 20f),
+                    $"环境版本已核对：游戏 {DdenGate.GameVersion} · 联机组件 {DdenGate.MpVersion}", DdenUI.Row);
+                bool ignore = DdenUI.CheckBoxLabeled(new Rect(ok.xMax - 250f, ok.y + 6f, 240f, 18f),
+                    CfgIgnoreEnv.Value, "忽略核对环境版本");
+                if (ignore != CfgIgnoreEnv.Value) CfgIgnoreEnv.Value = ignore;
+                y += 38f;
+            }
+
             foreach (IDdenModule module in DdenHub.Modules)
             {
                 var card = new Rect(area.x, y, area.width, 56f);
+                bool cardOn = Enabled(module);
+                DdenHealth cardHp = Health(module);
+                Color cardEdge = !cardOn ? new Color(1f, 1f, 1f, 0.14f)
+                                : cardHp == DdenHealth.Severe ? DdenUI.Bad
+                                : cardHp == DdenHealth.Warn ? DdenUI.Warn
+                                : module.Ready ? DdenUI.AccentDim : DdenUI.Warn;
+                string cardState = !cardOn ? "<color=#8a8f96>关闭</color>"
+                                 : cardHp == DdenHealth.Severe ? "<color=#e05a5a>错误：</color>" + (HealthNote(module) ?? "已终止")
+                                 : cardHp == DdenHealth.Warn ? "<color=#e8c15a>注意：</color>" + (HealthNote(module) ?? "有错误")
+                                 : (module.Ready ? "<color=#8cd97c>正常</color>" : "<color=#f0a>功能受限</color>") + " · " + (module.Summary ?? "");
+
                 DdenUI.Fill(card, DdenUI.Panel);
-                DdenUI.Frame(card, module.Ready ? DdenUI.AccentDim : DdenUI.Warn);
+                DdenUI.Frame(card, cardEdge);
                 DdenUI.Label(new Rect(card.x + 10f, card.y + 6f, card.width - 200f, 18f),
                     module.DisplayName + $"  <size=10><color=#89a>{module.Version}</color></size>", DdenUI.Row);
-                DdenUI.Label(new Rect(card.x + 10f, card.y + 26f, card.width - 200f, 16f),
-                    (module.Ready ? "<color=#8cd97c>正常</color> · " : "<color=#f0a>功能受限</color> · ") + (module.Summary ?? ""), DdenUI.Sub);
+                DdenUI.Label(new Rect(card.x + 10f, card.y + 26f, card.width - 200f, 16f), cardState, DdenUI.Sub);
                 if (DdenUI.Button(new Rect(card.xMax - 180f, card.y + 14f, 90f, 26f), "打开界面", true)) _page = module.Id;
                 if (DdenUI.Button(new Rect(card.xMax - 84f, card.y + 14f, 74f, 26f), "配置")) _page = "config:" + module.Id;
                 y += 62f;
@@ -595,7 +739,7 @@ namespace DDExcNet.CUmodM
                 float soloH = DdenUI.ConfigListHeight(module.ConfigEntries) + 12f;
                 _configSoloScroll = GUI.BeginScrollView(solo, _configSoloScroll,
                     new Rect(0, 0, solo.width - 18f, Mathf.Max(solo.height, soloH)));
-                DdenUI.DrawConfigGrouped(new Rect(0, 0, solo.width - 18f, soloH), module.ConfigEntries);
+                DdenUI.DrawConfigGrouped(new Rect(0, 0, solo.width - 18f, soloH), module.ConfigEntries, Enabled(module), MasterKey(module));
                 GUI.EndScrollView();
                 return;
             }
@@ -628,7 +772,7 @@ namespace DDExcNet.CUmodM
                     return;
                 }
                 y += 26f;
-                y += DdenUI.DrawConfigGrouped(new Rect(0, y, w, 4000f), m.ConfigEntries);
+                y += DdenUI.DrawConfigGrouped(new Rect(0, y, w, 4000f), m.ConfigEntries, Enabled(m), MasterKey(m));
                 y += 10f;
             }
 
