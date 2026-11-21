@@ -67,6 +67,9 @@ namespace DDEN.MPfix
                 bool retirementOk = GhostItemRelay.SelfTest();
                 r.Add("离场物品身份与清理接口 = " + (retirementOk ? "PASS" : "FAIL"));
                 if (!retirementOk) pass = false;
+                bool authorityOk = MPfixPlugin.Instance != null && MPfixPlugin.Instance.CheckAuthorityConfig();
+                r.Add("主机配置白名单/序列化/临时覆盖/控制开关 = " + (authorityOk ? "PASS" : "FAIL"));
+                if (!authorityOk) pass = false;
 
                 log.Info("[SELFTEST] " + string.Join(" | ", r) + (pass ? " | 结论 PASS" : " | 结论 FAIL"));
             }

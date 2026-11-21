@@ -739,7 +739,7 @@ namespace DDExcNet.CUmodM
                 float soloH = DdenUI.ConfigListHeight(module.ConfigEntries) + 12f;
                 _configSoloScroll = GUI.BeginScrollView(solo, _configSoloScroll,
                     new Rect(0, 0, solo.width - 18f, Mathf.Max(solo.height, soloH)));
-                DdenUI.DrawConfigGrouped(new Rect(0, 0, solo.width - 18f, soloH), module.ConfigEntries, Enabled(module), MasterKey(module));
+                DdenUI.DrawConfigGrouped(new Rect(0, 0, solo.width - 18f, soloH), module.ConfigEntries, Enabled(module), MasterKey(module), module as IDdenConfigPolicy);
                 GUI.EndScrollView();
                 return;
             }
@@ -772,7 +772,7 @@ namespace DDExcNet.CUmodM
                     return;
                 }
                 y += 26f;
-                y += DdenUI.DrawConfigGrouped(new Rect(0, y, w, 4000f), m.ConfigEntries, Enabled(m), MasterKey(m));
+                y += DdenUI.DrawConfigGrouped(new Rect(0, y, w, 4000f), m.ConfigEntries, Enabled(m), MasterKey(m), m as IDdenConfigPolicy);
                 y += 10f;
             }
 

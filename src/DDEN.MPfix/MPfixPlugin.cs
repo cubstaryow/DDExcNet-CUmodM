@@ -24,7 +24,7 @@ namespace DDEN.MPfix
     [BepInPlugin(Guid, "DDEN MP Fix", "1.5.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
-    public class MPfixPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleGate, IDdenModuleHealth
+    public class MPfixPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleGate, IDdenModuleHealth, IDdenConfigPolicy
     {
         public const string Guid = "com.dden.mpfix";
         public const string Title = "多人修复";
@@ -35,38 +35,41 @@ namespace DDEN.MPfix
 
         // ===== 无芯片同步 =====
         internal static ConfigEntry<bool> CfgMasterEnabled;
-        internal static ConfigEntry<bool> CfgChipEnabled;
-        internal static ConfigEntry<bool> CfgForceHost;
-        internal static ConfigEntry<bool> CfgOverrideIndividualRule;
-        internal static ConfigEntry<float> CfgWatchdogSeconds;
-        internal static ConfigEntry<bool> CfgAnnounce;
+        internal static ConfigEntry<bool> CfgUseHostAuthority;
+        internal static AuthoritySetting<bool> CfgChipEnabled;
+        internal static AuthoritySetting<bool> CfgForceHost;
+        internal static AuthoritySetting<bool> CfgOverrideIndividualRule;
+        internal static AuthoritySetting<float> CfgWatchdogSeconds;
+        internal static AuthoritySetting<bool> CfgAnnounce;
 
         // ===== 联机物品/合成 =====
-        internal static ConfigEntry<bool> CfgFixModItemCraftSpawn;
+        internal static AuthoritySetting<bool> CfgFixModItemCraftSpawn;
 
         // ===== 穿戴兜底 =====
-        internal static ConfigEntry<bool> CfgWearFix;
-        internal static ConfigEntry<int> CfgWearFixMax;
+        internal static AuthoritySetting<bool> CfgWearFix;
+        internal static AuthoritySetting<int> CfgWearFixMax;
 
         // ===== 物品物理保险 =====
-        internal static ConfigEntry<bool> CfgPhysicsGuard;
+        internal static AuthoritySetting<bool> CfgPhysicsGuard;
 
         // ===== 联机修正（商人商品表 / 挖块 / 掉线遗留物品） =====
-        internal static ConfigEntry<bool> CfgTraderSnapshot;
-        internal static ConfigEntry<bool> CfgBlockBreakSync;
-        internal static ConfigEntry<float> CfgBlockBreakMinFraction;
-        internal static ConfigEntry<bool> CfgSyncBuildingDamage;
-        internal static ConfigEntry<bool> CfgSyncBodyDamage;
-        internal static ConfigEntry<bool> CfgAggressiveConverge;
-        internal static ConfigEntry<bool> CfgQuietTraderUIModItems;
-        internal static ConfigEntry<bool> CfgRelayGhostItems;
+        internal static AuthoritySetting<bool> CfgTraderSnapshot;
+        internal static AuthoritySetting<bool> CfgBlockBreakSync;
+        internal static AuthoritySetting<float> CfgBlockBreakMinFraction;
+        internal static AuthoritySetting<bool> CfgSyncBuildingDamage;
+        internal static AuthoritySetting<bool> CfgSyncBodyDamage;
+        internal static AuthoritySetting<bool> CfgAggressiveConverge;
+        internal static AuthoritySetting<bool> CfgQuietTraderUIModItems;
+        internal static AuthoritySetting<bool> CfgRelayGhostItems;
 
         // ===== 娱乐 =====
-        internal static ConfigEntry<bool> CfgDoublePurchase;
+        internal static AuthoritySetting<bool> CfgDoublePurchase;
 
         // ===== 其它 =====
-        internal static ConfigEntry<KeyboardShortcut> CfgStandaloneKey;
-        internal static ConfigEntry<bool> CfgVerbose;
+        internal static AuthoritySetting<KeyboardShortcut> CfgStandaloneKey;
+        internal static AuthoritySetting<bool> CfgVerbose;
+        private AuthorityOverlay _configOverlay;
+        private HostConfigSync _authority;
 
         private const float PushCooldown = 0.35f;
 
@@ -100,6 +103,67 @@ namespace DDEN.MPfix
 
         /// <summary>主开关行：模块被闸门关掉时它仍然可点（否则再也打不开）。</summary>
         public string MasterKey => "总开关/启用本模块（MasterEnabled）";
+        public string ConfigNotice => _authority?.Notice ?? "";
+        public bool CanEditConfig(ConfigEntryBase entry, bool normallyInteractive)
+            => ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgUseHostAuthority)
+                || (normallyInteractive && !(_authority?.Locked ?? false));
+        public object ConfigDisplayValue(ConfigEntryBase entry) => _configOverlay?.Display(entry) ?? entry.BoxedValue;
+
+        private void InitializeAuthority()
+        {
+            _configOverlay = new AuthorityOverlay(AuthoritySettings.All, ApplyEffectiveSettingChange);
+            _authority = new HostConfigSync(_configOverlay, () => CfgUseHostAuthority.Value, AuthorityConnection.Read,
+                () => Time.realtimeSinceStartup, token => Mp.Broadcast(HostConfigSync.NoticeChannel, token, false),
+                (token, response) => Mp.RequestServer(HostConfigSync.RequestChannel, token, response),
+                message => Log.Info("[主机配置] " + message));
+            object connection = null;
+            var requests = new Dictionary<uint, float>();
+            bool server = MpChannels.TryRegisterSender(HostConfigSync.RequestChannel, (sender, token) =>
+            {
+                var peer = AuthorityConnection.Read();
+                if (!peer.Running || !peer.Server) return null;
+                if (!ReferenceEquals(connection, peer.Connection)) { connection = peer.Connection; requests.Clear(); }
+                float now = Time.realtimeSinceStartup;
+                if (requests.TryGetValue(sender, out float previous) && now - previous < 0.25f) return new JObject { ["error"] = "rate" };
+                if (requests.Count >= 64) requests.Clear();
+                requests[sender] = now;
+                return _authority.HandleRequest(token);
+            });
+            bool client = Mp.RegisterClientHandler(HostConfigSync.NoticeChannel, token => _authority.OnNotice(token));
+            if (!server || !client || !AuthorityConnection.Available)
+                NotePatchError("主机权威配置", "配置通道或连接标识不可用");
+            else ClearPatchError("主机权威配置");
+        }
+
+        private static void ApplyEffectiveSettingChange(ConfigEntryBase entry)
+        {
+            if (ReferenceEquals(entry, CfgStandaloneKey.Local))
+            {
+                if (Instance != null) Instance._standaloneKey = CfgStandaloneKey.Value.MainKey;
+                return; // A temporary host key or restoring it must never rewrite local key preferences.
+            }
+            ApplySettingChange(entry);
+        }
+
+        internal bool CheckAuthorityConfig()
+        {
+            if (Mp.IsRunning || Game.InWorld) return true;
+            var expected = new HashSet<ConfigEntryBase>();
+            foreach (var entry in Config.Entries())
+                if (!ReferenceEquals(entry, CfgMasterEnabled) && !ReferenceEquals(entry, CfgUseHostAuthority)) expected.Add(entry);
+            var test = new AuthorityOverlay(AuthoritySettings.All, null);
+            try
+            {
+                var snapshot = test.Capture(System.Guid.NewGuid().ToString("N"), 1, true);
+                if (snapshot.Values.Count != expected.Count) return false;
+                foreach (var setting in AuthoritySettings.All) if (!expected.Remove(setting.Entry)) return false;
+                if (!AuthoritySnapshot.TryRead(snapshot.ToJson(true), out var decoded) || !test.Apply(decoded)) return false;
+                foreach (var setting in AuthoritySettings.All)
+                    if (setting.SerializeLocal() != snapshot.Values[setting.Id].Text) return false;
+                return CanEditConfig(CfgMasterEnabled, false) && CanEditConfig(CfgUseHostAuthority, false) && AuthorityConnection.Available;
+            }
+            finally { test.Release(); }
+        }
 
         /// <summary>健康度：版本核对没通过 = 严重（红）；有补丁装失败 = 有错误（黄）；其余正常。</summary>
         public DdenHealth Health
@@ -162,6 +226,10 @@ namespace DDEN.MPfix
             DdenDocs.Add("总开关", "启用本模块（MasterEnabled）",
                 "整个多人修复的总开关，关掉后所有修复都不动手。",
                 "想临时排除“是不是 DDEN 引起的”问题时用它一键停手。", "只做开关判断，不改游戏逻辑。");
+            DdenDocs.Add("总开关", "采用权威主机配置（UseHostAuthorityConfig）",
+                "主机启用后统一下发设置，客机启用后临时采用主机设置。",
+                "希望同一局使用一致的修复配置。", "进局和主机配置变化时同步；客机暂时锁定其他设置，退出或取消采用后恢复本机值。",
+                "否", "按需发送，不定时重复下发；默认关闭");
 
             DdenDocs.Add("无芯片同步", "启用（Enabled）",
                 "让本机的“无芯片模式”跟随主机。",
@@ -270,9 +338,12 @@ namespace DDEN.MPfix
         {
             Instance = this;
             LogSource = base.Logger;
+            AuthoritySettings.All.Clear();
 
             CfgMasterEnabled = Config.Bind("总开关", "启用本模块（MasterEnabled）", true,
                 "整个多人修复的总开关；关掉后所有修复都不动手。");
+            CfgUseHostAuthority = Config.Bind("总开关", "采用权威主机配置（UseHostAuthorityConfig）", false,
+                "主机统一下发设置；客机临时采用，退出联机后恢复本机配置。");
 
             CfgChipEnabled = Config.Bind("无芯片同步", "启用（Enabled）", true,
                 "让本机的“无芯片模式”跟随主机。");
@@ -374,6 +445,7 @@ namespace DDEN.MPfix
             _warmupUntil = Time.realtimeSinceStartup + 6f;      // 巡检耗时统计跳过冷启动
             DdenHub.Register(this);
             _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
+            InitializeAuthority();
 
             Log.Info("已加载：无芯片同步 + 联机物品/合成 + 穿戴兜底 + 物品物理 + 挖块收敛 + 掉线遗留物品 + 娱乐开关。");
             LogMpCompatReport();
@@ -512,6 +584,8 @@ namespace DDEN.MPfix
                     DdenGate.Reason + " 到「总览 → 忽略核对环境版本」打开后生效。", DdenUI.Sub);
             }
             y = gate.yMax + 6f;
+            if (!string.IsNullOrEmpty(ConfigNotice))
+            { DdenUI.Label(new Rect(area.x, y, area.width, 18f), DdenUI.ElideToWidth(ConfigNotice, area.width, DdenUI.Sub), DdenUI.Sub); y += 22f; }
 
             // ===== 运行一览 =====
             DdenUI.Label(new Rect(area.x, y, area.width, 16f), "运行一览", DdenUI.Sub);
@@ -860,24 +934,42 @@ namespace DDEN.MPfix
             try
             {
                 if (entry == null) return;
-                if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgRelayGhostItems))
+                var p = Instance;
+                if (p?._authority != null)
+                {
+                    p._authority.LocalChanged();
+                    // Editing/reloading the local file may update saved preferences while the temporary host value stays effective.
+                    if (p._authority.Locked && p._configOverlay.Contains(entry)) return;
+                }
+                ApplySettingChange(entry);
+            }
+            catch (Exception ex) { Log.Exception(ex, "更新主机配置状态"); }
+        }
+
+        private static void ApplySettingChange(ConfigEntryBase entry)
+        {
+            try
+            {
+                if (entry == null) return;
+                if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgRelayGhostItems.Local))
                     GhostItemRelay.Reset();
-                if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgWearFix))
+                if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgWearFix.Local))
                     WearGhostFix.Reset();
-                if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgTraderSnapshot))
+                if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgTraderSnapshot.Local))
                     TraderSnapshotFix.Reset();
 
-                if (ReferenceEquals(entry, CfgVerbose))
+                if (ReferenceEquals(entry, CfgVerbose.Local))
                 {
                     Log.Verbose = CfgVerbose.Value;
                     Log.Info($"详细日志已{(CfgVerbose.Value ? "打开" : "关闭")}（立即生效）。");
                     return;
                 }
 
-                if (ReferenceEquals(entry, CfgStandaloneKey))
+                if (ReferenceEquals(entry, CfgStandaloneKey.Local))
                 {
                     MPfixPlugin p = Instance;
-                    if (p != null) p._standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, false);
+                    if (p != null) p._standaloneKey = p._configOverlay?.Locked == true
+                        ? CfgStandaloneKey.Value.MainKey : Compat.ResolveHotkey(CfgStandaloneKey, Guid, false);
                     Log.Info($"独立面板热键已改为 {CfgStandaloneKey.Value.MainKey}（立即生效）。");
                     return;
                 }
@@ -903,6 +995,7 @@ namespace DDEN.MPfix
         {
             try
             {
+                _authority?.Tick(); // Must run even when the repair master switch or a repair branch is disabled.
                 // 闸门联动（用户口径 2026-11）：版本对不上 → 自动把总开关关掉；核对通过/被忽略 → 自动恢复。
                 if (CfgMasterEnabled != null)
                 {
@@ -1096,6 +1189,7 @@ namespace DDEN.MPfix
 
         private void OnDestroy()
         {
+            try { _authority?.Stop(); } catch (Exception ex) { Log.Debug("恢复本机配置失败：" + ex.Message); }
             GhostItemRelay.Reset();
             try { new Harmony(Guid).UnpatchSelf(); }
             catch { /* ignored */ }

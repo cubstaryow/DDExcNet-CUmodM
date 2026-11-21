@@ -196,6 +196,12 @@ dotnet build CUmod.slnx -v m                  # 只编译
   双方必须更新本次包，版本按用户要求仍是 1.5.0。代码证据、限制与三人验收见 docs/features.md 2.10。
 - **现在的周期节拍**：`WearGhostFix.Tick()`、`GhostItemRelay.Tick()`（主机攒批广播）；
   `[巡检]` 每 60 秒汇总一次（平均 ≥0.5ms 或峰值 ≥2ms 才写），状态页常驻显示 `巡检开销`。
+- **主机权威配置（v1.5.0追加）**：总开关下 `UseHostAuthorityConfig` 默认关闭；主机开启后可编辑，客机也开启且收到确认后才临时采用/锁定。
+  `CfgMasterEnabled` 和 `CfgUseHostAuthority` 保留原生ConfigEntry，其余配置使用 `AuthoritySetting<T>` 生效层；**禁止把主机值写进客机ConfigEntry或配置文件**。
+  新增MPfix配置时同步包装并纳入白名单；自检要求除两个控制开关外完整覆盖。界面通过 `IDdenConfigPolicy` 展示生效值与「（主机权威模式）」；两个控制开关始终可编辑。
+  `HostConfigSync.Tick` 在修复Active判断之前执行。仅连接就绪、主机实际配置变化、客机加入/选择采用和有界失败重试触发传输；无稳定期轮询。
+  广播仅刷新提示，主机请求回复才授权；`notice.v1/get.v1` 使用连接身份/nonce/序号/会话/修订号隔离旧回复。主机关闭仅传标记，无values。
+  退出/取消/停用恢复最新本机值；有效值变更回调不得调用会改本机偏好的热键写回。测试与协议见 docs/features.md 2.11。
 - **“一生二”重复物品（重要）**：合成 / 购买 / 生成在客机上**也会跑一遍本地预测**。
   只要客机的 `Utils.Create` 成功造出模组物品，它自己那份 + 主机同步来的那份就是两份。
   所以 `Utils_Create_ModItemPatch` 的第一道闸是 `if (Mp.IsRunning && !Mp.IsServer) return true;`
