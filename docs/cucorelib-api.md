@@ -121,4 +121,4 @@ CUCoreLib.Patches.KrokMpCompatibilityPatches / QoLUnknownCompatibilityPatches   
 2. **目标框架必须是 `netstandard2.1`**：游戏 `Assembly-CSharp.dll` 与 CUCoreLib 都编到 netstandard 2.1（`Managed/netstandard.dll` 2.1.0.0）。
    不能为兼容旧教程降到netstandard2.0而忽略现有依赖的框架要求。
 
-这些公开注册API不等于ET-HeatingCageFix当前的保存实现：该修复是对CCL内置物品提供者Capture/Restore的可选后缀挂接，不是注册一个不存在的独立provider。见 [独立修复细节](../src/外部mod/ET-HeatingCageFix/docs/features.md)。
+这些公开注册API不等于ET-Fix当前的保存实现：该修复是对CCL内置物品提供者Capture/Restore的可选后缀挂接，不是注册一个不存在的独立provider。见 [独立修复细节](../src/外部mod/ET-Fix/docs/features.md)。

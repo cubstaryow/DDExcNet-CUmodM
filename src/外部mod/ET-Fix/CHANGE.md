@@ -1,10 +1,17 @@
-# ET-HeatingCageFix 变更记录
+# ET-Fix 变更记录
+
+## v1.7.0 · 合并 ET 无电池修复
+
+- 合并原 ET-NoBatteryFix：增强钛砍刀/钛镐没有电池时也能使用（不改 condition，仍显示 0%）；
+- 装上电池后自动重新点亮工具灯；
+- 新增配置分组「EnhancedTools 无电池」（启用无电池修复 / 装电池后自动点灯 / 额外物品 id）；
+- 程序集、BepInPlugin 名称、目录统一为 `ET-Fix`，版本 1.7.0；GUID / cfg / 存档 / 网络频道不变。
 
 ## v1.6.0 · 本次文档与命名整理
 
-- 产品／程序集／项目／源码目录统一为ET-HeatingCageFix，测试归入tests/HeatingCageFixTests；namespace为HeatingCageFix，管理器标题为ET 加热笼修复。
+- 产品／程序集／项目／源码目录统一为ET-Fix，测试归入tests/HeatingCageFixTests；namespace为HeatingCageFix，管理器标题为ET 加热笼修复。
 - 原GUID com.dden.heatingcagefix、cfg、cagefix存档节点、网络频道和消息格式不变，不增加Shared硬依赖。
-- 更新构建、打包与旧名迁移：安装只保留ET-HeatingCageFix.dll，先移除CageFix.dll；部署只处理已知自有文件。
+- 更新构建、打包与旧名迁移：安装只保留ET-Fix.dll，先移除CageFix.dll；部署只处理已知自有文件。
 - README、维护约束、技术说明更新到1.6.0。历史包保留旧名，不冒充新包；本次未改腐坏／合成／保存／网络算法。
 - 本轮不部署、不改真实存档或游戏配置；检查与提交情况见仓库CHANGE。中文／English切换仅给方案，尚未实现。
 - 新名Release构建及77项离线检查通过，包含程序集名称／版本、BepInPlugin名称／GUID保持和无Shared硬依赖；真实游戏及多人仍待实测。

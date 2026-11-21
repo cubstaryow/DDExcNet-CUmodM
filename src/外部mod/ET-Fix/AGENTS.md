@@ -1,6 +1,6 @@
-# ET-HeatingCageFix 维护说明
+# ET-Fix 维护说明
 
-本目录是独立外部模组，继承仓库操作与授权边界；DDEN内部模块的Shared日志、接口和UI要求不适用于这里。保持程序集/插件名 `ET-HeatingCageFix`、GUID `com.dden.heatingcagefix`、版本 **1.6.0**。不得为接管配置而强制引入DDEN公共层。
+本目录是独立外部模组，继承仓库操作与授权边界；DDEN内部模块的Shared日志、接口和UI要求不适用于这里。保持程序集/插件名 `ET-Fix`、GUID `com.dden.heatingcagefix`、版本 **1.7.0**。不得为接管配置而强制引入DDEN公共层。
 
 ## 文件入口
 
@@ -8,6 +8,7 @@
 - `CageRuntime.cs`：登记单只笼子、原生开关、腐坏倍率与恢复修订号。
 - `CagePatches.cs`：热源匹配和CCL物品保存/恢复后缀。
 - `CageRules.cs`、`CageWire.cs`：保存字段与严格网络消息校验。
+- `ETBattery.cs`：增强钛工具无电池可用、装电池后重新点灯（`Body.UseItemInHand` / `BatteryItem.LoadBattery` 补丁）。
 - `CageNetwork.cs`：主机状态查询、通知合并、过期回包隔离与有界重试。
 - [README.md](README.md)：玩家说明；[docs/features.md](docs/features.md)：证据与实现；[CHANGE.md](CHANGE.md)：独立变更记录。
 - `tests/HeatingCageFixTests/`：离线检查。`bin/`、`obj/`、`dist/`为本地生成文件，不提交。
@@ -34,15 +35,15 @@
 从本目录执行，继承仓库 `Directory.Build.props`；换游戏路径使用 `-p:GameDir=...`：
 
 ```powershell
-dotnet build ET-HeatingCageFix.csproj -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=false
+dotnet build ET-Fix.csproj -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=false
 dotnet build tests/HeatingCageFixTests/HeatingCageFixTests.csproj -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=false
 dotnet run --no-build --project tests/HeatingCageFixTests/HeatingCageFixTests.csproj -c Release
 ```
 
-检查自动构建ET-HeatingCageFix和作为集成验证对象的Shared。DLL检查路径由构建元数据提供，不依赖执行目录。需本机游戏及ET/CCL安装文件；不随模组分发这些依赖。
+检查自动构建ET-Fix和作为集成验证对象的Shared。DLL检查路径由构建元数据提供，不依赖执行目录。需本机游戏及ET/CCL安装文件；不随模组分发这些依赖。
 
 77项离线检查覆盖真实业务逻辑及改名后的程序集／插件身份，但Unity、传输与反射边界使用模拟，不能当作Unity/Mono实际补丁执行或双机验收。游戏内检查开关、灯光/温度/腐坏、热源合成、两只不同状态笼子、存取、连续切换、晚加入、换层和重连。
 
 本文件保留独立模组的技术约束。协作方式见 [根目录agent.md](../../../agent.md)，个人工作约定按协作者身份选择 `agent/` 中的对应文件。部署、推送等操作遵守用户授权；仅处理准确列出的自有文件，不造插件备份，不碰其他模组。
 
-改名必须保留原GUID／cfg／存档键／频道，旧CageFix.dll与新ET-HeatingCageFix.dll不能同时安装；namespace为HeatingCageFix，配置桥全名为HeatingCageFix.DdenBridge。
+改名必须保留原GUID／cfg／存档键／频道，旧CageFix.dll与新ET-Fix.dll不能同时安装；namespace为HeatingCageFix，配置桥全名为HeatingCageFix.DdenBridge。

@@ -63,7 +63,7 @@ DdenDocs.Add(section, key, what, fixes, how,
              experimental: "否", perf: "低", needsRestart: false);
 ```
 
-键必须与原ConfigEntry的Section／Key一致。L1模组不硬引用这个API；可像ET-HeatingCageFix一样，仅对已经加载的Shared做可选反射注册，找不到就使用ConfigEntry自带短说明。需要重启的设置明确写出，不让玩家误以为即时生效。
+键必须与原ConfigEntry的Section／Key一致。L1模组不硬引用这个API；可像ET-Fix一样，仅对已经加载的Shared做可选反射注册，找不到就使用ConfigEntry自带短说明。需要重启的设置明确写出，不让玩家误以为即时生效。
 
 ## 2. L2：内部DDEN模块
 
@@ -110,7 +110,7 @@ CCL已负责正常注册与生成模组物品；MPfix仅在主机原生合成结
 
 ## 5. 样板与排查
 
-[ET-HeatingCageFix](../src/外部mod/ET-HeatingCageFix/README.md)展示完整L1零Shared引用配置桥、依赖禁用及可选说明；其检查工具覆盖实际扫描。`tools/TestExternalConfig`是手工验证探针，测试后不应常驻游戏插件目录。
+[ET-Fix](../src/外部mod/ET-Fix/README.md)展示完整L1零Shared引用配置桥、依赖禁用及可选说明；其检查工具覆盖实际扫描。`tools/TestExternalConfig`是手工验证探针，测试后不应常驻游戏插件目录。
 
 配置没出现时检查public static、类型public、返回值和初始化时机；页面存在但改值无效时检查模组自己的生效逻辑；配置被禁用时检查可用性原因。扫描或绘制成功不能替代功能及真实多人验收。
 

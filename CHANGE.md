@@ -14,7 +14,7 @@
 
 ### 名称、显示说明与兼容
 
-- CageFix产品／程序集／项目／目录统一为 **ET-HeatingCageFix**，独立检查归入tests/HeatingCageFixTests。管理器显示ET 加热笼修复。
+- CageFix产品／程序集／项目／目录统一为 **ET-Fix**，独立检查归入tests/HeatingCageFixTests。管理器显示ET 加热笼修复。
 - 保留GUID com.dden.heatingcagefix、cfg、cagefix存档节点和网络频道／格式，不增加DDEN公共层硬依赖。部署旧名迁移只处理已知CageFix.dll，移除脚本旧的CUmod通配清理，其他模组不动。
 - 更新MPfix的配置短说明与五项提示，不改原Section／Key或伤害／同步算法。性能导出版本改为读取插件版本，避免继续写1.5.0。
 - 修改构建／发布映射，旧包仍作为历史保留；本轮没有把旧包改名后冒充新构建，也未替换游戏插件、配置或真实存档。

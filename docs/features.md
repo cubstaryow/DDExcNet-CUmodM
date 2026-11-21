@@ -4,7 +4,7 @@
 
 ## 1. 管理器与公共层
 
-五个DDEN产物是管理器、MPfix、存档编辑器、性能跟踪器和Shared公共层；另外包含独立外部模组ET-HeatingCageFix。不是“五个插件加一个管理器”。
+五个DDEN产物是管理器、MPfix、存档编辑器、性能跟踪器和Shared公共层；另外包含独立外部模组ET-Fix。不是“五个插件加一个管理器”。
 
 `DdenHub`登记内部模块，管理器显示功能页与通用配置页。路由包括 `config:<id>`（内部配置）、`ext:<index>`（外部功能）和 `extconfig:<index>`（外部配置）。总览“配置”和全部配置“单独看”始终打开配置项，外部自绘页另有入口；总览和配置页按内容高度滚动。
 
@@ -103,6 +103,6 @@ Together主机的原合成结果经 `Utils.Create`生成；CCL已有正常模组
 
 ## 8. 独立ET加热笼修复与验证边界
 
-[ET-HeatingCageFix](../src/外部mod/ET-HeatingCageFix/README.md)独立于DDEN公共层，ET／CCL／Together通过延迟反射，缺少对应接口停用相应功能。具体腐坏、热源过滤、保存与查询协议见 [专属细节](../src/外部mod/ET-HeatingCageFix/docs/features.md)。
+[ET-Fix](../src/外部mod/ET-Fix/README.md)独立于DDEN公共层，ET／CCL／Together通过延迟反射，缺少对应接口停用相应功能。具体腐坏、热源过滤、保存与查询协议见 [专属细节](../src/外部mod/ET-Fix/docs/features.md)。
 
 本轮文档核对与改名的验证记录以 [CHANGE.md](../CHANGE.md) 为准。离线检查模拟Unity／传输边界；菜单绘制成功不等于真实多人伤害、离场清理、名字或加热笼行为已验收。

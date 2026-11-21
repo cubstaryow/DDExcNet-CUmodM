@@ -4,13 +4,13 @@
     <Reference Update="BepInEx;Newtonsoft.Json;UnityEngine;UnityEngine.CoreModule;0Harmony"><Private>true</Private></Reference>
     <Reference Include="Mono.Cecil"><HintPath>$(BepInExCoreDir)\Mono.Cecil.dll</HintPath><Private>true</Private></Reference>
     <ProjectReference Include="../../../../DDEN.Shared/DDEN.Shared.csproj" />
-    <ProjectReference Include="../../ET-HeatingCageFix.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="../../ET-Fix.csproj" ReferenceOutputAssembly="false" />
     <Compile Include="../../CageRules.cs" Link="CageRules.cs" />
     <Compile Include="../../CageWire.cs" Link="CageWire.cs" />
     <Compile Include="../../CageRuntime.cs" Link="CageRuntime.cs" />
     <Compile Include="../../CagePatches.cs" Link="CagePatches.cs" />
     <Compile Include="../../CageNetwork.cs" Link="CageNetwork.cs" />
-    <AssemblyMetadata Include="HeatingCageFixAssembly" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../bin/$(Configuration)/ET-HeatingCageFix.dll'))" />
+    <AssemblyMetadata Include="HeatingCageFixAssembly" Value="$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)../../bin/$(Configuration)/ET-Fix.dll'))" />
     <AssemblyMetadata Include="GameDir" Value="$(GameDir)" />
   </ItemGroup>
 </Project>

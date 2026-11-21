@@ -1,6 +1,6 @@
-# ET-HeatingCageFix 修复细节（v1.6.0）
+# ET-Fix 修复细节（v1.6.0）
 
-独立程序集 `ET-HeatingCageFix.dll`，插件GUID沿用 `com.dden.heatingcagefix`；修复在v1.5.0阶段独立实现，没有复制反编译参考DLL的代码，当前v1.6.0文档轮次只改名与说明。
+独立程序集 `ET-Fix.dll`，插件GUID沿用 `com.dden.heatingcagefix`；修复在v1.5.0阶段独立实现，没有复制反编译参考DLL的代码，当前v1.6.0文档轮次只改名与说明。
 仅引用游戏、BepInEx、Harmony与JSON库；不硬引用DDEN.Shared、EnhancedTools、CUCoreLib或Together。
 ET/CCL缺失或接口不匹配时功能关闭，配置桥仍可被管理器发现；缺少Together时仅关闭联机确认。
 
@@ -38,3 +38,10 @@ Shared侧适配为原有配置策略接口，旧模组没有这个成员时保�
 管理器通用入口与滚动修复见 [DDEN功能文档](../../../../docs/features.md)。
 
 产品／程序集已从CageFix改名，原GUID、cagefix存档节点和频道保持不变。安装只留一份新DLL；旧包和旧参考DLL不是本次构建，不随改名而重新部署。当前检查结论见上级CHANGE.md。
+
+
+## 无电池修复（ETBattery.cs）
+
+- `Body.UseItemInHand` 前缀：目标物品（默认 enhancedmachete / enhancedpickaxe，可配置追加）没有电池时，
+  直接调用 `Stats.useAction` 绕开 `Stats.usable` 检查；不修改 `condition`。
+- `BatteryItem.LoadBattery` 后缀：装电池后找到 `CustomLightControl` 并调用 `EnableLight`，恢复灯光。

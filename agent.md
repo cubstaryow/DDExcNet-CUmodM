@@ -22,3 +22,4 @@
 | 协作者 | 工作说明 |
 | --- | --- |
 | cubstaryow | [agent-cubstaryow.md](agent/agent-cubstaryow.md) |
+| lead | [agent-lead.md](agent/agent-lead.md) |

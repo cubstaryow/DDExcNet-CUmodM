@@ -7,6 +7,6 @@
     <Project Path="src/DDExcNet.CUmodM/DDExcNet.CUmodM.csproj" />
   </Folder>
   <Folder Name="/src/外部mod/">
-    <Project Path="src/外部mod/ET-HeatingCageFix/ET-HeatingCageFix.csproj" />
+    <Project Path="src/外部mod/ET-Fix/ET-Fix.csproj" />
   </Folder>
 </Solution>

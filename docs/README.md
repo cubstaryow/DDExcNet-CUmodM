@@ -17,7 +17,7 @@
 | 当前变更与验证记录 | [CHANGE.md](../CHANGE.md) |
 | 多协作者与各agent工作说明 | [协作入口](../agent.md) |
 | 历史对话记录，仅供追溯 | [v1.5.0阶段记录](history/conversation-v1.5.0.md) |
-| 独立ET加热笼修复 | [ET-HeatingCageFix](../src/外部mod/ET-HeatingCageFix/README.md) |
+| 独立ET加热笼修复 | [ET-Fix](../src/外部mod/ET-Fix/README.md) |
 
 维护人员先读根目录 [agent.md](../agent.md)，选择 `agent/` 中对应协作者的工作说明，并阅读各源码目录的局部技术约束。根目录 [AGENTS.md](../AGENTS.md) 保留为简短索引。
 
