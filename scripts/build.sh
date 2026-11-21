@@ -4,7 +4,7 @@
 # 用法：
 #   ./scripts/build.sh                    # Debug 构建，部署 Shared / CUmodM / MPfix（**不含存档编辑器**）
 #   ./scripts/build.sh Release            # Release 构建，同上
-#   ./scripts/build.sh Debug --with-saveeditor   # 临时把 DDEN.SaveEditor 也部署进去（开发用）
+#   ./scripts/build.sh Debug --no-saveeditor     # 这次不部署存档编辑器（默认会部署）
 #
 # 注意：本脚本**不再生成插件备份**（2026-11 按用户要求移除）。需要留旧版就在部署前自己复制一份。
 set -euo pipefail
@@ -15,7 +15,7 @@ PLUGINS="$GAME_DIR/BepInEx/plugins"
 DDEN_DIR="$PLUGINS/DDEN"
 
 CONFIG="Debug"
-WITH_SAVEEDITOR=0
+WITH_SAVEEDITOR=1
 for arg in "$@"; do
   case "$arg" in
     --with-saveeditor) WITH_SAVEEDITOR=1 ;;

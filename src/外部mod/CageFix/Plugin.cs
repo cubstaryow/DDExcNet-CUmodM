@@ -7,7 +7,7 @@ using HarmonyLib;
 
 namespace CageFix
 {
-    [BepInPlugin(Guid, "CageFix", "1.6.0")]
+    [BepInPlugin(Guid, "ET 加热笼修复", "1.6.0")]
     [BepInDependency("com.a4kk.enhancedtools", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]

@@ -18,7 +18,7 @@
 | `DDEN.NetPerfTracker.dll` | `src/DDEN.NetPerfTracker/` | **性能跟踪器**（正式名 NetPerfTracker）：管理器独立页面，帧耗时/真实可用的2D计时/自身CPU/物品清醒与休眠分开观察；手动导出 `BepInEx/config/DDEN/perf-*.log`。**零补丁**，详细场景统计默认关闭 |
 | `DDEN.Shared.dll` | `src/DDEN.Shared/` | 公共层：反射、日志、联机桥、存档编解码、**IDdenModule / DdenHub / Compat / DdenUI** |
 
-独立外部模组集中在 `src/外部mod/`；CageFix 的源码、文档、检查工具和维护约束见 [专属AGENTS.md](src/外部mod/CageFix/AGENTS.md)。它通过L1桥交配置，不使用DDEN模块接口或强制引用公共层。
+独立外部模组集中在 `src/外部mod/`；**ET 加热笼修复**（程序集仍是 `CageFix.dll`，游戏里显示名 `ET 加热笼修复`）的源码、文档、检查工具和维护约束见 [专属AGENTS.md](src/外部mod/CageFix/AGENTS.md)。它通过L1桥交配置，不使用DDEN模块接口或强制引用公共层。
 
 部署目录：**`<游戏>/BepInEx/plugins/DDEN/`**（已实测 BepInEx 会递归扫描子目录）。
 
@@ -46,8 +46,8 @@ cd L:/github/game/CUmod
 dotnet build CUmod.slnx -v m                  # 只编译
 ```
 
-- **默认不部署存档编辑器**：正常游戏带共享层 + 管理器 + MPfix + **性能跟踪器**（调试工具，`DDEN.NetPerfTracker.dll`）；
-  如果之前部署过 `plugins/DDEN/DDEN.SaveEditor.dll`，脚本会主动把它撤下来（游戏在跑导致文件被锁时会提示关游戏重跑）。
+- **默认全部部署**（2026-11 用户口径）：共享层 + 管理器 + MPfix + 性能跟踪器 + **存档编辑器** + **ET 加热笼修复**（`CageFix.dll`）。
+  只想临时不带存档编辑器时加 `--no-saveeditor`（脚本会把已部署的那份撤下来；游戏在跑导致文件被锁时会提示）。
 - **`DDEN/` 目录不是我们的私有目录**：里面可能还有别人做的修复 mod
   （实例：`ET-NoBatteryFix.dll`、`QoL-EMI-RecipeRowFix.dll`）。`scripts/build.sh` 用**白名单**
   （`OWNED=(DDEN.Shared / DDExcNet-CUmodM / DDEN.MPfix / DDEN.NetPerfTracker / DDEN.SaveEditor)`）决定写谁、删谁，
