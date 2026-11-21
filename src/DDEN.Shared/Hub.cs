@@ -32,6 +32,14 @@ namespace DDEN.Shared
         string MasterKey { get; }
     }
 
+    /// <summary>Optional per-entry policy, e.g. temporary host-authoritative values without overwriting local preferences.</summary>
+    public interface IDdenConfigPolicy
+    {
+        bool CanEditConfig(ConfigEntryBase entry, bool normallyInteractive);
+        object ConfigDisplayValue(ConfigEntryBase entry);
+        string ConfigNotice { get; }
+    }
+
     public interface IDdenModule
     {
         /// <summary>短 id（小写，唯一），用于导航与 URL 式跳转。</summary>

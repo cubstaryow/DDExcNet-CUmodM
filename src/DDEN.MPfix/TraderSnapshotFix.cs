@@ -1,5 +1,6 @@
 using System;
 using System.Reflection;
+using System.Collections.Generic;
 using DDEN.Shared;
 using HarmonyLib;
 using Newtonsoft.Json.Linq;
@@ -28,17 +29,22 @@ namespace DDEN.MPfix
     {
         private const string Channel = "ddn.mp.tradersnap";
         private static float _lastAskAt = -99f;
+        private static readonly Dictionary<uint, float> LastSent = new Dictionary<uint, float>();
+
+        internal static void Reset() { _lastAskAt = -99f; LastSent.Clear(); }
 
         [HarmonyPatch(typeof(PlayerCamera), "ToggleTradeMenu")]
         internal static class ToggleTradeMenu_Postfix
         {
-            private static void Postfix()
+            private static void Postfix(PlayerCamera __instance)
             {
                 try
                 {
                     if (!MPfixPlugin.Active) return;
-                if (!MPfixPlugin.CfgTraderSnapshot.Value) return;
+                    if (!MPfixPlugin.CfgTraderSnapshot.Value) return;
                     if (!Mp.IsRunning || !Mp.IsClient) return;
+                    if (__instance == null || __instance.tradeMenu == null || !__instance.tradeMenu.activeSelf
+                        || __instance.currentTrader == null) return;
 
                     float now = Time.unscaledTime;
                     if (now - _lastAskAt < 0.5f) return;   // 连点开合菜单不刷包
@@ -56,6 +62,7 @@ namespace DDEN.MPfix
         /// <summary>客机：向主机索取一次商人快照（含商品表）。</summary>
         internal static void AskHostForSnapshot()
         {
+            if (!MPfixPlugin.Active || !MPfixPlugin.CfgTraderSnapshot.Value || !Mp.IsRunning || !Mp.IsClient) return;
             Mp.RequestServer(Channel, new JObject { ["ask"] = "traders" }, resp =>
             {
                 if (resp == null) return;
@@ -70,7 +77,13 @@ namespace DDEN.MPfix
             {
                 try
                 {
-                    if (!Mp.IsServer) return new JObject { ["ok"] = false };
+                    if (!MPfixPlugin.Active || !MPfixPlugin.CfgTraderSnapshot.Value || !Mp.IsRunning || !Mp.IsServer)
+                        return new JObject { ["ok"] = false };
+                    if (MpChannels.BodyForClient(sender) == null) return new JObject { ["ok"] = false };
+                    float now = Time.unscaledTime;
+                    if (LastSent.TryGetValue(sender, out float last) && now - last < 0.5f)
+                        return new JObject { ["ok"] = false };
+                    LastSent[sender] = now;
 
                     Type traderSync = AccessTools.TypeByName("Together.TraderSync");
                     MethodInfo send = traderSync == null ? null : AccessTools.Method(traderSync, "SendTraderState");

@@ -421,6 +421,9 @@ namespace DDEN.Shared
         ///   · 鼠标移到整行 → 提示框展开完整五项（功能 / 修复的问题 / 解决方案 / 实验性 / 性能影响）。
         /// </summary>
         public static float ConfigRow(Rect r, ConfigEntryBase entry, bool interactive = true)
+            => ConfigRow(r, entry, interactive, null);
+
+        public static float ConfigRow(Rect r, ConfigEntryBase entry, bool interactive, IDdenConfigPolicy policy)
         {
             if (entry == null) return 0f;
 
@@ -428,7 +431,9 @@ namespace DDEN.Shared
             const float ctrlH = 18f;
             const float barW = 3f;
 
-            object value = entry.BoxedValue;
+            bool normal = interactive;
+            interactive = policy?.CanEditConfig(entry, interactive) ?? interactive;
+            object value = policy?.ConfigDisplayValue(entry) ?? entry.BoxedValue;
             bool isOn = value is bool b0 && b0;
             bool experimental = DdenDocs.TryGet(entry, out DdenDocs.Doc doc)
                                 && !string.IsNullOrEmpty(doc.Experimental)
@@ -506,7 +511,7 @@ namespace DDEN.Shared
             }
 
             // 整行悬停：提示框展开完整五项
-            Hover(r, DdenDocs.Format(entry));
+            Hover(r, (policy != null && normal && !interactive ? "（主机权威模式）由主机统一配置。\n" : "") + DdenDocs.Format(entry));
 
             Fill(new Rect(r.x, r.yMax - 1f, r.width, 1f), new Color(1f, 1f, 1f, 0.06f));
             return ConfigRowHeight;
@@ -514,6 +519,9 @@ namespace DDEN.Shared
 
         /// <summary>按 Section 分组渲染一批配置（从 area 顶部开始，返回占用高度）。</summary>
         public static float DrawConfigGrouped(Rect area, IEnumerable<ConfigEntryBase> entries, bool interactive = true, string alwaysInteractiveKey = null)
+            => DrawConfigGrouped(area, entries, interactive, alwaysInteractiveKey, null);
+
+        public static float DrawConfigGrouped(Rect area, IEnumerable<ConfigEntryBase> entries, bool interactive, string alwaysInteractiveKey, IDdenConfigPolicy policy)
         {
             if (entries == null) return 0f;
 
@@ -527,14 +535,16 @@ namespace DDEN.Shared
                 {
                     section = sec;
                     y += 6f;
-                    Section(new Rect(area.x, area.y + y, area.width, 16f), "▸ " + sec);
+                    string heading = "▸ " + sec;
+                    if (sec == "总开关" && !string.IsNullOrEmpty(policy?.ConfigNotice)) heading += "  " + policy.ConfigNotice;
+                    Section(new Rect(area.x, area.y + y, area.width, 16f), ElideToWidth(heading, area.width - 8, Sub));
                     y += 20f;
                 }
                 float h = RowHeight(entry, area.width);
                 string fullKey = (entry.Definition?.Section ?? "") + "/" + (entry.Definition?.Key ?? "");
                 bool rowInteractive = interactive
                                       || (!string.IsNullOrEmpty(alwaysInteractiveKey) && fullKey == alwaysInteractiveKey);
-                ConfigRow(new Rect(area.x, area.y + y, area.width, h), entry, rowInteractive);
+                ConfigRow(new Rect(area.x, area.y + y, area.width, h), entry, rowInteractive, policy);
                 y += h;
             }
             return y;
@@ -574,7 +584,9 @@ namespace DDEN.Shared
                 Rect inner = new Rect(0, 0, body.width - 20, Mathf.Max(body.height, 1200f));
                 if (drawSettings && !module.DrawSettings(inner))
                 {
-                    DrawConfigList(new Rect(inner.x, inner.y, inner.width, inner.height), module.ConfigEntries);
+                    var gate = module as IDdenModuleGate;
+                    DrawConfigGrouped(new Rect(inner.x, inner.y, inner.width, inner.height), module.ConfigEntries,
+                        gate?.ModuleEnabled ?? true, gate?.MasterKey, module as IDdenConfigPolicy);
                 }
                 else if (!drawSettings)
                 {
@@ -599,6 +611,8 @@ namespace DDEN.Shared
     public static class KeyCapture
     {
         private static ConfigEntryBase _target;
+        private static IDdenConfigPolicy _policy;
+        private static IDdenModuleGate _gate;
         private static float _until;
 
         public static bool Active => _target != null;
@@ -606,12 +620,22 @@ namespace DDEN.Shared
         public static void Begin(ConfigEntryBase entry)
         {
             _target = entry;
+            _policy = null; _gate = null;
+            foreach (var module in DdenHub.Modules)
+            {
+                foreach (var candidate in module.ConfigEntries)
+                    if (ReferenceEquals(candidate, entry))
+                    { _policy = module as IDdenConfigPolicy; _gate = module as IDdenModuleGate; break; }
+                if (_policy != null || _gate != null) break;
+            }
             _until = Time.realtimeSinceStartup + 5f;
         }
 
         public static void Tick()
         {
             if (_target == null) return;
+            bool editable = _gate?.ModuleEnabled ?? true;
+            if (!(_policy?.CanEditConfig(_target, editable) ?? editable)) { _target = null; return; }
             if (Time.realtimeSinceStartup > _until)
             {
                 _target = null;

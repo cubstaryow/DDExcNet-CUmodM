@@ -16,7 +16,7 @@ namespace DDEN.MPfix
     ///
     /// 复制那件必须像原版一样“走完联机的登记流程”，否则**买家根本看不到它**：
     ///  ① <c>NetObjectRegistry.Server_EnsureItemIsNetworkRegistered</c>（原版 RunBuy:142460 的同一句）
-    ///  ② 弹药类按原版随机弹匣量（144184），不是满弹匣
+    ///  ② 赠品弹药保持预制体默认满弹匣（用户指定）
     ///  ③ 拾取进买家背包；拾不进就登记好放地上（已登记，客机收得到）
     ///  ④ <c>SafeNewGO</c> 把状态推给客机
     ///
@@ -30,12 +30,12 @@ namespace DDEN.MPfix
 
         private static float _windowUntil = -99f;
         private static string _lastId;
-        private static float _lastAt = -99f;
 
         internal static bool InPurchaseWindow => Time.unscaledTime <= _windowUntil;
 
         /// <summary>赠送那件自己创建时置真：避免被「20% 合成复制」再复制一次（否则偶尔出 3 件）。</summary>
         internal static bool SuppressCraftDuplicate;
+        private sealed class BuyState { internal float Until; internal string Id; }
 
         internal static void NoteId(string id)
         {
@@ -58,7 +58,8 @@ namespace DDEN.MPfix
 
                 harmony.Patch(runBuy,
                     prefix: new HarmonyMethod(typeof(DoublePurchase), nameof(BeforeBuy)),
-                    postfix: new HarmonyMethod(typeof(DoublePurchase), nameof(AfterBuy)));
+                    postfix: new HarmonyMethod(typeof(DoublePurchase), nameof(AfterBuy)),
+                    finalizer: new HarmonyMethod(typeof(DoublePurchase), nameof(FinallyBuy)));
                 MPfixPlugin.Log.Info("已启用补丁：商人购买结算观测（供「道生一 一生二」使用）");
             }
             catch (Exception ex)
@@ -68,11 +69,15 @@ namespace DDEN.MPfix
         }
 
         /// <summary>参数名必须与 Together.TraderCommit.RunBuy(trader, actor, job) 一致，Harmony 按名字注入。</summary>
-        private static void BeforeBuy(TraderScript trader, Body actor)
+        private static void BeforeBuy(TraderScript trader, Body actor, out BuyState __state)
         {
+            __state = new BuyState { Until = _windowUntil, Id = _lastId };
             _windowUntil = Time.unscaledTime + WindowSeconds;
             _lastId = null;
         }
+
+        private static Exception FinallyBuy(Exception __exception, BuyState __state)
+        { _windowUntil = __state?.Until ?? -99f; _lastId = __state?.Id; return __exception; }
 
         private static void AfterBuy(TraderScript trader, Body actor)
         {
@@ -84,10 +89,6 @@ namespace DDEN.MPfix
                 if (!MPfixPlugin.CfgDoublePurchase.Value) return;
                 if (!Mp.IsRunning || !Mp.IsServer) return;
                 if (actor == null || string.IsNullOrEmpty(_lastId)) return;
-
-                float now = Time.unscaledTime;
-                if (now - _lastAt < 0.05f) return;      // 同一帧重复回调保护
-                _lastAt = now;
 
                 string id = _lastId;
                 _lastId = null;

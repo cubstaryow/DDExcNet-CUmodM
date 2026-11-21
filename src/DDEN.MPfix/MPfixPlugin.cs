@@ -21,10 +21,10 @@ namespace DDEN.MPfix
     ///  ⑦ 娱乐：道生一 一生二（商人购买多给一份，只在主机生效）。
     /// 界面与配置统一交给 DDExcNet-CUmodM 显示（模块 id = mpfix）。
     /// </summary>
-    [BepInPlugin(Guid, "DDEN MP Fix", "1.4.0")]
+    [BepInPlugin(Guid, "DDEN MP Fix", "1.5.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
-    public class MPfixPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleGate, IDdenModuleHealth
+    public class MPfixPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleGate, IDdenModuleHealth, IDdenConfigPolicy
     {
         public const string Guid = "com.dden.mpfix";
         public const string Title = "多人修复";
@@ -35,37 +35,41 @@ namespace DDEN.MPfix
 
         // ===== 无芯片同步 =====
         internal static ConfigEntry<bool> CfgMasterEnabled;
-        internal static ConfigEntry<bool> CfgChipEnabled;
-        internal static ConfigEntry<bool> CfgForceHost;
-        internal static ConfigEntry<bool> CfgOverrideIndividualRule;
-        internal static ConfigEntry<float> CfgWatchdogSeconds;
-        internal static ConfigEntry<bool> CfgAnnounce;
+        internal static ConfigEntry<bool> CfgUseHostAuthority;
+        internal static AuthoritySetting<bool> CfgChipEnabled;
+        internal static AuthoritySetting<bool> CfgForceHost;
+        internal static AuthoritySetting<bool> CfgOverrideIndividualRule;
+        internal static AuthoritySetting<float> CfgWatchdogSeconds;
+        internal static AuthoritySetting<bool> CfgAnnounce;
 
         // ===== 联机物品/合成 =====
-        internal static ConfigEntry<bool> CfgFixModItemCraftSpawn;
+        internal static AuthoritySetting<bool> CfgFixModItemCraftSpawn;
 
         // ===== 穿戴兜底 =====
-        internal static ConfigEntry<bool> CfgWearFix;
-        internal static ConfigEntry<int> CfgWearFixMax;
+        internal static AuthoritySetting<bool> CfgWearFix;
+        internal static AuthoritySetting<int> CfgWearFixMax;
 
         // ===== 物品物理保险 =====
-        internal static ConfigEntry<bool> CfgPhysicsGuard;
+        internal static AuthoritySetting<bool> CfgPhysicsGuard;
 
         // ===== 联机修正（商人商品表 / 挖块 / 掉线遗留物品） =====
-        internal static ConfigEntry<bool> CfgTraderSnapshot;
-        internal static ConfigEntry<bool> CfgBlockBreakSync;
-        internal static ConfigEntry<float> CfgBlockBreakMinFraction;
-        internal static ConfigEntry<bool> CfgSyncBuildingDamage;
-        internal static ConfigEntry<bool> CfgAggressiveConverge;
-        internal static ConfigEntry<bool> CfgQuietTraderUIModItems;
-        internal static ConfigEntry<bool> CfgRelayGhostItems;
+        internal static AuthoritySetting<bool> CfgTraderSnapshot;
+        internal static AuthoritySetting<bool> CfgBlockBreakSync;
+        internal static AuthoritySetting<float> CfgBlockBreakMinFraction;
+        internal static AuthoritySetting<bool> CfgSyncBuildingDamage;
+        internal static AuthoritySetting<bool> CfgSyncBodyDamage;
+        internal static AuthoritySetting<bool> CfgAggressiveConverge;
+        internal static AuthoritySetting<bool> CfgQuietTraderUIModItems;
+        internal static AuthoritySetting<bool> CfgRelayGhostItems;
 
         // ===== 娱乐 =====
-        internal static ConfigEntry<bool> CfgDoublePurchase;
+        internal static AuthoritySetting<bool> CfgDoublePurchase;
 
         // ===== 其它 =====
-        internal static ConfigEntry<KeyboardShortcut> CfgStandaloneKey;
-        internal static ConfigEntry<bool> CfgVerbose;
+        internal static AuthoritySetting<KeyboardShortcut> CfgStandaloneKey;
+        internal static AuthoritySetting<bool> CfgVerbose;
+        private AuthorityOverlay _configOverlay;
+        private HostConfigSync _authority;
 
         private const float PushCooldown = 0.35f;
 
@@ -80,6 +84,7 @@ namespace DDEN.MPfix
         private bool _forcePushNextTick;
         private int _appliedCount;
         private string _lastReason = "-";
+        private bool _repairRunning;
 
         private KeyCode _standaloneKey = KeyCode.F10;
         private bool _standaloneVisible;
@@ -98,6 +103,67 @@ namespace DDEN.MPfix
 
         /// <summary>主开关行：模块被闸门关掉时它仍然可点（否则再也打不开）。</summary>
         public string MasterKey => "总开关/启用本模块（MasterEnabled）";
+        public string ConfigNotice => _authority?.Notice ?? "";
+        public bool CanEditConfig(ConfigEntryBase entry, bool normallyInteractive)
+            => ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgUseHostAuthority)
+                || (normallyInteractive && !(_authority?.Locked ?? false));
+        public object ConfigDisplayValue(ConfigEntryBase entry) => _configOverlay?.Display(entry) ?? entry.BoxedValue;
+
+        private void InitializeAuthority()
+        {
+            _configOverlay = new AuthorityOverlay(AuthoritySettings.All, ApplyEffectiveSettingChange);
+            _authority = new HostConfigSync(_configOverlay, () => CfgUseHostAuthority.Value, AuthorityConnection.Read,
+                () => Time.realtimeSinceStartup, token => Mp.Broadcast(HostConfigSync.NoticeChannel, token, false),
+                (token, response) => Mp.RequestServer(HostConfigSync.RequestChannel, token, response),
+                message => Log.Info("[主机配置] " + message));
+            object connection = null;
+            var requests = new Dictionary<uint, float>();
+            bool server = MpChannels.TryRegisterSender(HostConfigSync.RequestChannel, (sender, token) =>
+            {
+                var peer = AuthorityConnection.Read();
+                if (!peer.Running || !peer.Server) return null;
+                if (!ReferenceEquals(connection, peer.Connection)) { connection = peer.Connection; requests.Clear(); }
+                float now = Time.realtimeSinceStartup;
+                if (requests.TryGetValue(sender, out float previous) && now - previous < 0.25f) return new JObject { ["error"] = "rate" };
+                if (requests.Count >= 64) requests.Clear();
+                requests[sender] = now;
+                return _authority.HandleRequest(token);
+            });
+            bool client = Mp.RegisterClientHandler(HostConfigSync.NoticeChannel, token => _authority.OnNotice(token));
+            if (!server || !client || !AuthorityConnection.Available)
+                NotePatchError("主机权威配置", "配置通道或连接标识不可用");
+            else ClearPatchError("主机权威配置");
+        }
+
+        private static void ApplyEffectiveSettingChange(ConfigEntryBase entry)
+        {
+            if (ReferenceEquals(entry, CfgStandaloneKey.Local))
+            {
+                if (Instance != null) Instance._standaloneKey = CfgStandaloneKey.Value.MainKey;
+                return; // A temporary host key or restoring it must never rewrite local key preferences.
+            }
+            ApplySettingChange(entry);
+        }
+
+        internal bool CheckAuthorityConfig()
+        {
+            if (Mp.IsRunning || Game.InWorld) return true;
+            var expected = new HashSet<ConfigEntryBase>();
+            foreach (var entry in Config.Entries())
+                if (!ReferenceEquals(entry, CfgMasterEnabled) && !ReferenceEquals(entry, CfgUseHostAuthority)) expected.Add(entry);
+            var test = new AuthorityOverlay(AuthoritySettings.All, null);
+            try
+            {
+                var snapshot = test.Capture(System.Guid.NewGuid().ToString("N"), 1, true);
+                if (snapshot.Values.Count != expected.Count) return false;
+                foreach (var setting in AuthoritySettings.All) if (!expected.Remove(setting.Entry)) return false;
+                if (!AuthoritySnapshot.TryRead(snapshot.ToJson(true), out var decoded) || !test.Apply(decoded)) return false;
+                foreach (var setting in AuthoritySettings.All)
+                    if (setting.SerializeLocal() != snapshot.Values[setting.Id].Text) return false;
+                return CanEditConfig(CfgMasterEnabled, false) && CanEditConfig(CfgUseHostAuthority, false) && AuthorityConnection.Available;
+            }
+            finally { test.Release(); }
+        }
 
         /// <summary>健康度：版本核对没通过 = 严重（红）；有补丁装失败 = 有错误（黄）；其余正常。</summary>
         public DdenHealth Health
@@ -160,6 +226,10 @@ namespace DDEN.MPfix
             DdenDocs.Add("总开关", "启用本模块（MasterEnabled）",
                 "整个多人修复的总开关，关掉后所有修复都不动手。",
                 "想临时排除“是不是 DDEN 引起的”问题时用它一键停手。", "只做开关判断，不改游戏逻辑。");
+            DdenDocs.Add("总开关", "采用权威主机配置（UseHostAuthorityConfig）",
+                "主机启用后统一下发设置，客机启用后临时采用主机设置。",
+                "希望同一局使用一致的修复配置。", "进局和主机配置变化时同步；客机暂时锁定其他设置，退出或取消采用后恢复本机值。",
+                "否", "按需发送，不定时重复下发；默认关闭");
 
             DdenDocs.Add("无芯片同步", "启用（Enabled）",
                 "让本机的“无芯片模式”跟随主机。",
@@ -213,12 +283,17 @@ namespace DDEN.MPfix
             DdenDocs.Add("联机修正", "修“打箱子/植物/动物”-伤害重算（SyncBuildingDamage）",
                 "主机结算客机打箱子、植物、动物时，按世界伤害倍率重算这一下。",
                 "打储物箱、植物、动物时血量掉一下又弹回去。",
-                "和挖方块同一个原因：把主机漏掉的世界伤害倍率补上。", "否", "无（只做一次乘法）");
+                "通常只补齐主机漏算的世界伤害倍率；激进模式下按客机上报重新核对这一下。", "否", "低（只在攻击时执行）");
+            DdenDocs.Add("联机修正", "修“打角色/肢体”-伤害重算（SyncBodyDamage）",
+                "主机结算客机近战打角色、肢体类敌人时，重新核对伤害。",
+                "客机近战打中角色或肢体类敌人，血量先减少又回升。",
+                "通常只补齐主机漏算的世界伤害倍率；激进模式下按客机上报重新核对这一下。",
+                "否", "低（只在攻击时执行）");
             DdenDocs.Add("联机修正", "挖掘修复-激进（实验性 · ⚠帧数影响）（AggressiveConverge）",
-                "客机碎块后向主机上报，由主机校验收敛血量。",
-                "伤害重算之后仍有极少数情况主机和客机的裂纹对不上。",
-                "客机把“这块已经碎了”攒批上报，主机校验后收敛血量。",
-                "是", "有：挖得越快上报越多（已按 0.35 秒攒批），多人同时挖时可能掉帧");
+                "对已开启的伤害修复使用客机上报重算；大量挖块时分批处理。",
+                "只补世界伤害倍率后，两边的攻击伤害仍然不一致。",
+                "方块碎掉后分批上报并分帧补齐；单位和角色的伤害随原有攻击消息上报，由主机核对。",
+                "是", "大量挖掘仍有开销；已减少消息数量并分散处理，实际影响需联机测试");
             DdenDocs.Add("联机修正", "挖块判定门槛-仅激进时生效（BlockBreakMinFraction）",
                 "激进模式下，主机账上这块至少掉这么多才接受“已挖穿”。",
                 "激进模式被拿来一镐敲穿硬墙。", "按比例做一次可信度门槛判断。",
@@ -226,8 +301,8 @@ namespace DDEN.MPfix
             DdenDocs.Add("联机修正", "离场物品广播清理（RelayGhostItems）",
                 "玩家离场时，按主机给的清单清掉客机本地的遗留副本。",
                 "一名玩家掉线后，另一台客机帧数暴跌、地上的东西还在原地闪。",
-                "主机把离场玩家的物品清单广播出来，客机按清单删掉本地那份没人管的副本。",
-                "否", "低（只在有人离场时一次）");
+                "主机记录离场物品的准确身份，其他客机核对确认后分帧清理；有人持有或内容物未确认时保留。",
+                "否", "低（只处理退场清单，大量物品分帧清理）");
             DdenDocs.Add("联机修正", "商人界面不再刷“prefab 为空”（QuietTraderUIModItems）",
                 "商人界面自检不再对模组物品报错。",
                 "打开商人界面时控制台一直刷“prefab 为空”的错误。",
@@ -263,9 +338,12 @@ namespace DDEN.MPfix
         {
             Instance = this;
             LogSource = base.Logger;
+            AuthoritySettings.All.Clear();
 
             CfgMasterEnabled = Config.Bind("总开关", "启用本模块（MasterEnabled）", true,
                 "整个多人修复的总开关；关掉后所有修复都不动手。");
+            CfgUseHostAuthority = Config.Bind("总开关", "采用权威主机配置（UseHostAuthorityConfig）", false,
+                "主机统一下发设置；客机临时采用，退出联机后恢复本机配置。");
 
             CfgChipEnabled = Config.Bind("无芯片同步", "启用（Enabled）", true,
                 "让本机的“无芯片模式”跟随主机。");
@@ -296,8 +374,10 @@ namespace DDEN.MPfix
                 "主机结算客机挖方块时，按世界伤害倍率重算这一下。");
             CfgSyncBuildingDamage = Config.Bind("联机修正", "修“打箱子/植物/动物”-伤害重算（SyncBuildingDamage）", true,
                 "主机结算客机打箱子、植物、动物时，按世界伤害倍率重算这一下。");
+            CfgSyncBodyDamage = Config.Bind("联机修正", "修“打角色/肢体”-伤害重算（SyncBodyDamage）", true,
+                "主机结算客机近战打角色、肢体类敌人时，重新核对伤害。");
             CfgAggressiveConverge = Config.Bind("联机修正", "挖掘修复-激进（实验性 · ⚠帧数影响）（AggressiveConverge）", false,
-                "客机碎块后向主机上报，由主机校验收敛血量。");
+                "对已开启的伤害修复使用客机上报重算；大量挖块时分批处理。");
             CfgBlockBreakMinFraction = Config.Bind("联机修正", "挖块判定门槛-仅激进时生效（BlockBreakMinFraction）", 0.5f,
                 new ConfigDescription("激进模式下，主机账上这块至少掉这么多才接受“已挖穿”。",
                     new AcceptableValueRange<float>(0f, 0.95f)));
@@ -349,8 +429,10 @@ namespace DDEN.MPfix
             // 不需要重启游戏（用户口径 2026-11：所有行为改完配置立刻可用）。
             TraderUIQuietFix.Install(harmony);
             TryPatch(harmony, typeof(BlockDamageSyncFix.DamageBlock_Patch), "客机挖块伤害收敛（上报）");
+            TryPatch(harmony, typeof(BlockDamageSyncFix.WorldReset_Patch), "换层清理挖掘上报");
             BlockDamageRelax.Install(harmony);
             BuildingDamageRelax.Install(harmony);
+            UnitDamageRepair.Install(harmony);
 
             MigrateOldWatchdog();
 
@@ -363,6 +445,7 @@ namespace DDEN.MPfix
             _warmupUntil = Time.realtimeSinceStartup + 6f;      // 巡检耗时统计跳过冷启动
             DdenHub.Register(this);
             _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
+            InitializeAuthority();
 
             Log.Info("已加载：无芯片同步 + 联机物品/合成 + 穿戴兜底 + 物品物理 + 挖块收敛 + 掉线遗留物品 + 娱乐开关。");
             LogMpCompatReport();
@@ -476,6 +559,14 @@ namespace DDEN.MPfix
 
         public void DrawPage(Rect area)
         {
+            bool enabled = GUI.enabled;
+            try { DrawStatusPage(area); }
+            catch (Exception ex) { Log.Exception(ex, "绘制联机修复页面"); }
+            finally { GUI.enabled = enabled; }
+        }
+
+        private void DrawStatusPage(Rect area)
+        {
             float y = area.y;
 
             // 环境版本 / 总开关状态条（2026-11 用户口径：版本对不上就在这里说清楚）
@@ -493,9 +584,11 @@ namespace DDEN.MPfix
                     DdenGate.Reason + " 到「总览 → 忽略核对环境版本」打开后生效。", DdenUI.Sub);
             }
             y = gate.yMax + 6f;
+            if (!string.IsNullOrEmpty(ConfigNotice))
+            { DdenUI.Label(new Rect(area.x, y, area.width, 18f), DdenUI.ElideToWidth(ConfigNotice, area.width, DdenUI.Sub), DdenUI.Sub); y += 22f; }
 
             // ===== 运行一览 =====
-            DdenUI.Label(new Rect(area.x, y, area.width, 16f), "运行一览（本次环境里的各项修复）", DdenUI.Sub);
+            DdenUI.Label(new Rect(area.x, y, area.width, 16f), "运行一览", DdenUI.Sub);
             y += 18f;
 
             (string name, FixState state, string note)[] fixes =
@@ -507,7 +600,9 @@ namespace DDEN.MPfix
                 ("物品物理保险", StateOf(CfgPhysicsGuard.Value, false, "物品掉落物理保险（丢出）"), null),
                 ("挖方块伤害重算", StateOf(CfgBlockBreakSync.Value), null),
                 ("打单位伤害重算", StateOf(CfgSyncBuildingDamage.Value), null),
-                ("挖掘修复-激进上报", StateOf(CfgAggressiveConverge.Value && CfgBlockBreakSync.Value), null),
+                ("打角色/肢体伤害重算", StateOf(CfgSyncBodyDamage.Value), null),
+                ("挖掘修复-激进上报", StateOf(CfgAggressiveConverge.Value &&
+                    (CfgBlockBreakSync.Value || CfgSyncBuildingDamage.Value || CfgSyncBodyDamage.Value)), null),
                 ("商人商品表对齐", StateOf(CfgTraderSnapshot.Value), null),
                 ("商人界面静音", StateOf(CfgQuietTraderUIModItems.Value, false), null),
                 ("离场物品清理", StateOf(CfgRelayGhostItems.Value), null),
@@ -541,53 +636,74 @@ namespace DDEN.MPfix
             }
             y += fixes.Length * 20f + 8f;
 
-            GUI.Label(new Rect(area.x, y, area.width, 18f), "无芯片同步", DdenUI.Sub);
-            y += 20f;
-            (string k, string v)[] rows =
+            DrawUnchippedStatus(new Rect(area.x, y, area.width, 180f));
+            y += 190f;
+            DdenUI.Label(new Rect(area.x + 4f, y, 90f, 18f), "巡检开销", DdenUI.Sub);
+            DdenUI.Label(new Rect(area.x + 96f, y, area.width - 100f, 18f), TickCostText, DdenUI.Sub);
+        }
+
+        private void DrawUnchippedStatus(Rect card)
+        {
+            bool running = Mp.IsRunning, server = running && Mp.IsServer, inWorld = Game.InWorld;
+            bool ready = Mp.CoreAvailable;
+            float left = card.x + 12f, width = card.width - 24f, half = (width - 12f) * 0.5f;
+
+            DdenUI.Fill(card, DdenUI.Panel);
+            DdenUI.Frame(card, DdenUI.AccentDim);
+            DdenUI.Fill(new Rect(card.x, card.y, 2f, card.height), DdenUI.AccentDim);
+            DdenUI.Label(new Rect(left, card.y + 9f, width - 158f, 24f), "无芯片同步", DdenUI.Title);
+            DdenUI.Chip(new Rect(card.xMax - 160f, card.y + 12f, 76f, 19f),
+                ready ? "组件就绪" : "组件缺失", ready ? DdenUI.Good : DdenUI.Bad);
+            DdenUI.Chip(new Rect(card.xMax - 76f, card.y + 12f, 64f, 19f),
+                !running ? "未联机" : server ? "主机" : "客机", running ? DdenUI.Accent : DdenUI.TextDim);
+
+            string hostValue = !running ? "等待联机" : _hasHostValue ? (_lastHostValue ? "无芯片" : "有芯片") : "等待同步";
+            string localValue = inWorld ? (WorldGeneration.world.unchippedMode ? "无芯片" : "有芯片") : "未进入世界";
+            DrawStatusValue(new Rect(left, card.y + 43f, half, 50f), "主机设置", hostValue, running && _hasHostValue);
+            DrawStatusValue(new Rect(left + half + 12f, card.y + 43f, half, 50f), "本机世界", localValue, inWorld);
+
+            DdenUI.Label(new Rect(left, card.y + 103f, 50f, 19f), "已纠正", DdenUI.Sub);
+            DdenUI.Label(new Rect(left + 52f, card.y + 103f, half - 52f, 19f), _appliedCount + " 次", DdenUI.Row);
+            DdenUI.Label(new Rect(left + half + 12f, card.y + 103f, 58f, 19f), "最近记录", DdenUI.Sub);
+            var reasonRect = new Rect(left + half + 72f, card.y + 103f, half - 60f, 19f);
+            string reason = ReasonText(_lastReason);
+            string visibleReason = DdenUI.ElideToWidth(reason, reasonRect.width, DdenUI.Sub);
+            DdenUI.Label(reasonRect, visibleReason, DdenUI.Sub);
+            if (visibleReason != reason) DdenUI.Hover(reasonRect, reason);
+
+            DdenUI.Fill(new Rect(left, card.y + 131f, width, 1f), DdenUI.AccentDim);
+            float buttonWidth = (width - 16f) / 3f;
+            var apply = new Rect(left, card.y + 141f, buttonWidth, 27f);
+            var request = new Rect(apply.xMax + 8f, apply.y, buttonWidth, apply.height);
+            var toggle = new Rect(request.xMax + 8f, apply.y, buttonWidth, apply.height);
+            bool enabled = GUI.enabled;
+            try
             {
-                ("联机组件", Mp.CoreAvailable ? "已就绪" : "未安装"),
-                ("联机状态", !Mp.IsRunning ? "未联机" : (Mp.IsServer ? "主机（我把设置同步给别人）" : "客机（跟随主机）")),
-                ("主机的设置", _hasHostValue ? (_lastHostValue ? "无芯片" : "有芯片") : "还没拿到"),
-                ("本机世界", Game.InWorld ? (WorldGeneration.world.unchippedMode ? "无芯片" : "有芯片") : "还没进世界"),
-                ("已自动纠正", _appliedCount + " 次"),
-                ("最近一次原因", ReasonText(_lastReason))
-            };
-            foreach ((string k, string v) in rows)
-            {
-                GUI.Label(new Rect(area.x, y, 190f, 18f), k, DdenUI.Sub);
-                GUI.Label(new Rect(area.x + 196f, y, area.width - 200f, 18f), v, DdenUI.Row);
-                y += 19f;
+                bool canSync = enabled && Active && running;
+                GUI.enabled = canSync;
+                if (DdenUI.Button(apply, "同步到本机", canSync)) ForceApply();
+                if (DdenUI.Button(request, "刷新主机状态")) RequestNow();
+                GUI.enabled = canSync && server && WorldGeneration.world != null;
+                if (DdenUI.Button(toggle, "切换无芯片")) ToggleHostState();
             }
+            finally { GUI.enabled = enabled; }
+            if (!running) DdenUI.Hover(new Rect(left, apply.y, width, apply.height), "联机后可使用同步操作。");
+            else if (!server) DdenUI.Hover(toggle, "仅主机可切换世界设置。");
+        }
 
-            y += 6f;
-            GUI.Label(new Rect(area.x, y, area.width, 18f), "物品 / 合成修复", DdenUI.Sub);
-            y += 20f;
-            GUI.Label(new Rect(area.x, y, area.width, 18f),
-                $"合成修复：{(CfgFixModItemCraftSpawn.Value ? "开" : "关")}     " +
-                $"打箱子/植物：{(CfgSyncBuildingDamage.Value ? "开" : "关")}", DdenUI.Row);
-            y += 22f;
-
-            if (DdenUI.Button(new Rect(area.x, y, 150f, 24f), "立即按主机同步", true)) ForceApply();
-            if (DdenUI.Button(new Rect(area.x + 158f, y, 130f, 24f), "再问一次主机")) RequestNow();
-            GUI.enabled = Mp.IsRunning && Mp.IsServer;
-            if (DdenUI.Button(new Rect(area.x + 296f, y, 140f, 24f), "在主机上切换")) ToggleHostState();
-            GUI.enabled = true;
-
-            y += 32f;
-            GUI.Label(new Rect(area.x, y, area.width, 76f),
-                "无芯片：联机时以主机的设置为准，本机自动跟着改（默认每 30 秒核对一次）。\n" +
-                "合成 / 物品：模组加的东西在联机里也能正常做出来、捡起来、穿上去。\n" +
-                $"挖块/打单位：伤害重算 {(CfgBlockBreakSync.Value || CfgSyncBuildingDamage.Value ? "开" : "关")}" +
-                (CfgAggressiveConverge.Value ? "   ⚠ 激进收敛开（帧数影响）" : "   （激进收敛关：不发额外包）") + "\n" +
-                $"巡检开销：{TickCostText}（每帧合计；数值大时日志里会有 [巡检] 明细）",
-                DdenUI.Wrap);
+        private static void DrawStatusValue(Rect area, string title, string value, bool known)
+        {
+            DdenUI.Fill(area, DdenUI.PanelAlt);
+            DdenUI.Label(new Rect(area.x + 10f, area.y + 5f, area.width - 20f, 15f), title, DdenUI.Sub);
+            DdenUI.Label(new Rect(area.x + 10f, area.y + 23f, area.width - 20f, 22f),
+                known ? value : "<color=#9ea8b8>" + value + "</color>", DdenUI.Title);
         }
 
         /// <summary>把内部原因码翻成人话（这些串只用来记原因，不该原样显示给玩家）。</summary>
         private static string ReasonText(string reason)
         {
-            if (string.IsNullOrEmpty(reason) || reason == "-") return "-";
-            if (reason.IndexOf("runSettings", StringComparison.Ordinal) >= 0) return "还没进世界（设置已记下，进局生效）";
+            if (string.IsNullOrEmpty(reason) || reason == "-") return "暂无";
+            if (reason.IndexOf("runSettings", StringComparison.Ordinal) >= 0) return "待进入世界";
             if (reason.StartsWith("request", StringComparison.Ordinal)) return "向主机查询";
             if (reason.StartsWith("push", StringComparison.Ordinal)) return "主机主动同步";
             if (reason.StartsWith("snapshot", StringComparison.Ordinal)) return "进局时同步";
@@ -603,6 +719,7 @@ namespace DDEN.MPfix
 
         public void ForceApply()
         {
+            if (!Active) return;
             if (!_hasHostValue)
             {
                 RequestNow();
@@ -615,6 +732,7 @@ namespace DDEN.MPfix
 
         public void RequestNow()
         {
+            if (!Active) return;
             Mp.RequestServer(UnchippedProtocol.RequestChannel, new JObject { ["ask"] = "unchipped" }, token =>
             {
                 if (token == null) return;
@@ -626,6 +744,7 @@ namespace DDEN.MPfix
 
         public void ToggleHostState()
         {
+            if (!Active) return;
             if (!Mp.IsRunning || !Mp.IsServer) return;
             WorldGeneration world = WorldGeneration.world;
             if (world == null) return;
@@ -654,7 +773,8 @@ namespace DDEN.MPfix
             });
             Mp.RegisterServerHandler(UnchippedProtocol.RequestChannel, _ =>
             {
-                if (!CfgChipEnabled.Value) return null;
+                if (!Active || !CfgChipEnabled.Value || !Mp.IsRunning || !Mp.IsServer)
+                    return new JObject { ["enabled"] = false };
                 bool value = Mp.IsServer ? Mp.HostUnchipped() : _lastHostValue;
                 if (Mp.IsServer) OnHostValueSeen(value);
                 return JObject.FromObject(new
@@ -669,6 +789,7 @@ namespace DDEN.MPfix
 
         private JObject CaptureState()
         {
+            if (!Active || !CfgChipEnabled.Value || !Mp.IsServer) return null;
             bool value = Mp.HostUnchipped();
             OnHostValueSeen(value);
             return new JObject
@@ -695,6 +816,7 @@ namespace DDEN.MPfix
 
         private void OnHostState(bool value, string source, bool manual = false)
         {
+            if (!Active) return;
             // 手动按钮（面板上的「立即按主机同步 / 再问一次主机」）不受「无芯片同步/启用」开关限制
             if (!CfgChipEnabled.Value && !manual) return;
 
@@ -708,6 +830,7 @@ namespace DDEN.MPfix
 
         private void ApplyLocal(bool value, string reason)
         {
+            if (!Active) return;
             if (CfgOverrideIndividualRule.Value) Mp.UnchippedIsIndividual = false;
 
             WorldGeneration world = WorldGeneration.world;
@@ -811,18 +934,42 @@ namespace DDEN.MPfix
             try
             {
                 if (entry == null) return;
+                var p = Instance;
+                if (p?._authority != null)
+                {
+                    p._authority.LocalChanged();
+                    // Editing/reloading the local file may update saved preferences while the temporary host value stays effective.
+                    if (p._authority.Locked && p._configOverlay.Contains(entry)) return;
+                }
+                ApplySettingChange(entry);
+            }
+            catch (Exception ex) { Log.Exception(ex, "更新主机配置状态"); }
+        }
 
-                if (ReferenceEquals(entry, CfgVerbose))
+        private static void ApplySettingChange(ConfigEntryBase entry)
+        {
+            try
+            {
+                if (entry == null) return;
+                if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgRelayGhostItems.Local))
+                    GhostItemRelay.Reset();
+                if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgWearFix.Local))
+                    WearGhostFix.Reset();
+                if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgTraderSnapshot.Local))
+                    TraderSnapshotFix.Reset();
+
+                if (ReferenceEquals(entry, CfgVerbose.Local))
                 {
                     Log.Verbose = CfgVerbose.Value;
                     Log.Info($"详细日志已{(CfgVerbose.Value ? "打开" : "关闭")}（立即生效）。");
                     return;
                 }
 
-                if (ReferenceEquals(entry, CfgStandaloneKey))
+                if (ReferenceEquals(entry, CfgStandaloneKey.Local))
                 {
                     MPfixPlugin p = Instance;
-                    if (p != null) p._standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, false);
+                    if (p != null) p._standaloneKey = p._configOverlay?.Locked == true
+                        ? CfgStandaloneKey.Value.MainKey : Compat.ResolveHotkey(CfgStandaloneKey, Guid, false);
                     Log.Info($"独立面板热键已改为 {CfgStandaloneKey.Value.MainKey}（立即生效）。");
                     return;
                 }
@@ -848,6 +995,7 @@ namespace DDEN.MPfix
         {
             try
             {
+                _authority?.Tick(); // Must run even when the repair master switch or a repair branch is disabled.
                 // 闸门联动（用户口径 2026-11）：版本对不上 → 自动把总开关关掉；核对通过/被忽略 → 自动恢复。
                 if (CfgMasterEnabled != null)
                 {
@@ -886,6 +1034,17 @@ namespace DDEN.MPfix
 
                 // 两个周期巡检（穿戴兜底 / 掉线遗留物品）：各自内部有节拍，这里只量"本模块每帧吃了多少"，
                 // 每 60 秒汇总一条日志 —— 让"巡检是不是卡顿源"有数据，而不是靠感觉。
+                bool repairRunning = Mp.IsRunning;
+                if (_repairRunning != repairRunning)
+                {
+                    _repairRunning = repairRunning;
+                    WearGhostFix.Reset();
+                    TraderSnapshotFix.Reset();
+                    _hasHostValue = false;
+                    _wasClient = _requested = false;
+                    _forcePushNextTick = true;
+                    _nextWatchdog = 0f;
+                }
                 float t0 = Time.realtimeSinceStartup;
                 WearGhostFix.Tick();
                 float t1 = Time.realtimeSinceStartup;
@@ -895,7 +1054,7 @@ namespace DDEN.MPfix
 
                 ReportTickCost((t2 - t0) * 1000f, (t1 - t0) * 1000f, (t2 - t1) * 1000f);
 
-                if (!CfgChipEnabled.Value) return;
+                if (!Active || !CfgChipEnabled.Value) return;
                 if (!Mp.CoreAvailable) return;
 
                 bool running = Mp.IsRunning;
@@ -928,7 +1087,7 @@ namespace DDEN.MPfix
             }
         }
 
-        private void ReportTickCost(float total, float wear, float freezer)
+        private void ReportTickCost(float total, float wear, float relayAndMining)
         {
             // 开局 6 秒是冷启动（JIT、资源加载），这段时间的数字没有参考价值，别记进来
             if (Time.realtimeSinceStartup < _warmupUntil) return;
@@ -952,7 +1111,7 @@ namespace DDEN.MPfix
             if (avg < 0.5f && peak < 2f) return;
 
             MPfixPlugin.Log.Info($"[巡检] 本模块每帧合计 平均 {avg:0.000}ms / 峰值 {peak:0.000}ms " +
-                                 $"（最近一次：穿戴兜底 {wear:0.000} / 遗留冻结 {freezer:0.000}）");
+                                 $"（最近一次：穿戴兜底 {wear:0.000} / 遗留清理和挖块 {relayAndMining:0.000}）");
         }
 
         private void TickHost()
@@ -1030,6 +1189,8 @@ namespace DDEN.MPfix
 
         private void OnDestroy()
         {
+            try { _authority?.Stop(); } catch (Exception ex) { Log.Debug("恢复本机配置失败：" + ex.Message); }
+            GhostItemRelay.Reset();
             try { new Harmony(Guid).UnpatchSelf(); }
             catch { /* ignored */ }
         }
@@ -1043,6 +1204,7 @@ namespace DDEN.MPfix
         private static void Postfix(bool unchipped)
         {
             MPfixPlugin plugin = MPfixPlugin.Instance;
+            if (!MPfixPlugin.Active) return;
             if (plugin == null || !MPfixPlugin.CfgChipEnabled.Value) return;
             if (!Mp.IsRunning || !Mp.IsServer) return;
 

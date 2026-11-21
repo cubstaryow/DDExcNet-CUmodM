@@ -16,7 +16,7 @@ namespace DDExcNet.CUmodM
     /// ① 一个窗口管全部功能界面与配置界面；② 兼容性总控（互斥检测、快捷键抢键、补丁栈、旧文件残留）；
     /// ③ 各模块仍可单独工作，管理器缺席时它们退化成独立小窗。
     /// </summary>
-    [BepInPlugin(Guid, "DDExcNet CUmod Manager", "1.4.0")]
+    [BepInPlugin(Guid, "DDExcNet CUmod Manager", "1.5.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("org.bepinex.plugins.qol_unknown", BepInDependency.DependencyFlags.SoftDependency)]
@@ -739,7 +739,7 @@ namespace DDExcNet.CUmodM
                 float soloH = DdenUI.ConfigListHeight(module.ConfigEntries) + 12f;
                 _configSoloScroll = GUI.BeginScrollView(solo, _configSoloScroll,
                     new Rect(0, 0, solo.width - 18f, Mathf.Max(solo.height, soloH)));
-                DdenUI.DrawConfigGrouped(new Rect(0, 0, solo.width - 18f, soloH), module.ConfigEntries, Enabled(module), MasterKey(module));
+                DdenUI.DrawConfigGrouped(new Rect(0, 0, solo.width - 18f, soloH), module.ConfigEntries, Enabled(module), MasterKey(module), module as IDdenConfigPolicy);
                 GUI.EndScrollView();
                 return;
             }
@@ -772,7 +772,7 @@ namespace DDExcNet.CUmodM
                     return;
                 }
                 y += 26f;
-                y += DdenUI.DrawConfigGrouped(new Rect(0, y, w, 4000f), m.ConfigEntries, Enabled(m), MasterKey(m));
+                y += DdenUI.DrawConfigGrouped(new Rect(0, y, w, 4000f), m.ConfigEntries, Enabled(m), MasterKey(m), m as IDdenConfigPolicy);
                 y += 10f;
             }
 

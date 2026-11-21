@@ -15,7 +15,7 @@
 | `DDExcNet-CUmodM.dll` | `src/DDExcNet.CUmodM/` | **管理器**：统一功能界面 + 全部配置界面 + **兼容性总控** |
 | `DDEN.MPfix.dll` | `src/DDEN.MPfix/` | 多人修复合集：无芯片同步 + 联机合成/物品生成兜底 + 物品网络登记 + 穿戴兜底 + 物品物理保险 + 挖块收敛 + 商人快照 + 掉线遗留物品清理 + 娱乐（道生一 一生二） |
 | `DDEN.SaveEditor.dll` | `src/DDEN.SaveEditor/` | 可视化存档编辑器（图标/血条点选，QoL 多存档位） |
-| `DDEN.NetPerfTracker.dll` | `src/DDEN.NetPerfTracker/` | **性能跟踪器**（正式名 NetPerfTracker，调试/观测工具）：管理器里单独一页，帧数/CPU/物理压力曲线 + 世界对象与网络状态的文字读数；同时写 `BepInEx/config/DDEN/perf-*.log`。**不打任何补丁**，随发布包一起发（玩家不用也不会影响游戏，排查掉帧时让他开着就能抓现场） |
+| `DDEN.NetPerfTracker.dll` | `src/DDEN.NetPerfTracker/` | **性能跟踪器**（正式名 NetPerfTracker）：管理器独立页面，帧耗时/真实可用的2D计时/自身CPU/物品清醒与休眠分开观察；手动导出 `BepInEx/config/DDEN/perf-*.log`。**零补丁**，详细场景统计默认关闭 |
 | `DDEN.Shared.dll` | `src/DDEN.Shared/` | 公共层：反射、日志、联机桥、存档编解码、**IDdenModule / DdenHub / Compat / DdenUI** |
 
 部署目录：**`<游戏>/BepInEx/plugins/DDEN/`**（已实测 BepInEx 会递归扫描子目录）。
@@ -103,17 +103,24 @@ dotnet build CUmod.slnx -v m                  # 只编译
   技术细节统一写进 [docs/features.md](docs/features.md)（现象 / 诱发原因 / 修复路线 + 日志表），
   README 只讲“用起来是什么样”。**新增界面文字前先问自己：玩家看得懂吗、有没有暴露内部结构。**
 - **性能跟踪器（`DDEN.NetPerfTracker`，正式名 NetPerfTracker）**：调试用的子 mod，管理器侧边栏单独一页「性能分析」。
-  **零补丁**（一个 MonoBehaviour，不装 Harmony，最坏情况只是自己不采样），所以线上排查可以放心让它跑着。
-  - 采样两档：轻采样（帧数/最差帧/CPU%/物理步每帧数，默认 1 秒）与重采样（数 `Item`/`Body`/`Rigidbody2D`/`Collider2D`、
-    反射读 `NetObjectRegistry.SyncRegistry` 与 `ScavPlayer.ClientIdToPlayerDict`，默认 **15** 秒、且**只在页面被打开过之后**才跑）；
-    **重采样耗时超过 8ms 自动关掉碰撞体计数**（观察者不许成为元凶），每次耗时记在 `costMs`。
-  - 页面：4 张曲线（帧数 / CPU / 物理压力 / 世界对象）+ 文字读数（物品·无主·无主且物理开着、刚体、碰撞体、
-    网络对象·已销毁条目、玩家数、targetFrameRate、vSync、timeScale、fixedDt）+ 暂停/清空/写日志/打开目录。
-    曲线按像素列降采样，攒几千个点也不会把这一页画卡。
-  - 日志：**只在点「导出日志」按钮时写文件**（`BepInEx/config/DDEN/perf-<时间戳>.log`，一次把内存里全部采样写出来）；
-    平时只存内存，不写盘（用户口径 2026-11）。重采样（数世界对象）默认 15 秒一次，**且只在这一页被打开过之后才跑**，
-    没打开过就一直不跑 —— 观察者不许给正常玩家制造周期性卡顿。
-  - 用途：抓「一台客机掉线 → 另一台客机巨卡」这类现场 —— 看 `sim`（无主且物理开着）、`deadsync`、`players` 的台阶。
+  **零补丁、只读**；对象清点与计时源探测只在页面被打开过之后启动，开销不宣称为零。
+  - 默认每秒记录实际墙钟帧均值/最长帧、>50ms帧数、全核心CPU、GC/托管堆、调度Hz与设定Hz、跟踪器自身CPU均值/峰值。
+    `stepsPerFrame` 是 FixedUpdate 次数除以渲染帧数，**绝不是耗时或物理压力**。
+  - `PhysicsTiming` 只接受纳秒单位的准确 `Physics2D.Simulate` 记录器；没有则用 -1/不可用，不拿CPU或补步数代替。
+  - `ItemCensus` 默认15秒复制一次 `Item.allItems` 引用，复用数组，按64件上限及共享0.4ms预算分帧清点。
+    玩家数变化后10秒内按1秒间隔补清点。区分注册/启用/无父级动态/清醒/休眠/向下运动；不把无父级等同掉落或异常。
+  - `SceneCensus` 场景树遍历和物品碰撞检查均默认关闭；详细遍历每帧至多128操作，与物品清点共用预算。
+    原生调用/复制无法抢占，超慢分片退避100ms；记录工作总耗时、最慢分片和清点起止时间。
+  - 4张曲线分别为帧耗时、2D模拟/自身CPU、物品状态、可选CPU/GPU/呈现等待，2×2排布；详细场景刚体以文字显示。
+    `FrameStages` 只连接准确的7个纳秒计时器，默认关闭；8帧预热，取不到则-1；失焦不判断渲染/GPU瓶颈。
+    环形历史、复用数组、缓存纹理；
+    每图一次贴图绘制，按真实时间绘制并保留尖峰，暂停区间留空。
+  - 红色低帧/长帧事实、橙色高开销/排查线索、蓝色状态变化、灰色缺失/关闭/预热；不能据等待或数量断言根因。
+    `PerfAlerts` 按倍数与最小增量判突变，160条事件环形缓存；重复合并，保留首次/末次时间、前后值、峰值、阈值及次数。
+    开销按每帧观测，对象按清点结束时间及前次清点时间；切世界/恢复/改设置重建基线。界面可翻看事件记录。
+  - 日志仅手动导出，缓冲写入schema=3；每点保留当时设置/计时/清点成本，不能用导出时的当前值覆盖历史。
+    事件按观测时间与性能点合并导出，后发现的旧清点事件不能错误排在更晚时间之后；原生计时延迟不得抹去。
+    显示数据年龄与清点跨度；向下运动和无实体碰撞本身不是故障证据。详细指标定义见 docs/perf-tracker.md。
   - 它**随发布包一起发**（用户 2026-11 明确要求：本地输出要包含全部模块，含存档编辑器与性能跟踪器）；
     它不打任何补丁，装不装都不影响游戏，只是排查掉帧时能直接抓现场。
   - ⚠️ `[BepInPlugin(..., "1.3.0")]` 里的版本号读不了 MSBuild 属性：**改 `<DdenVersion>` 时顺手改各插件的 `[BepInPlugin]`**。
@@ -181,27 +188,20 @@ dotnet build CUmod.slnx -v m                  # 只编译
   （重复修复导致的错位/残留/孤儿），而且“贴图残留”从未被证实存在——是上一个 agent 的推测。
   **不要再加回来**：它们会去改物品的父级与 localPosition，一旦判断错就是"身上物品乱飞/被挪走"，
   比它想解决的问题更糟。真出现“装备浮空/贴图残留”，先查是谁改了父级，别用巡检去猜。
-- **掉线后另一台客机掉帧（`GhostItemRelay` 主机点名，2026-11 第五版）**：
-  **先读 MP 自己的退场流程**（decomp/mp554）：主机 `ScavPlayer.OnDestroy` → `PlayerCheckpoint.WriteOne` →
-  `new PlayerSavedState(body)`：物品 `SetParent` 到 `SAVESTATE_<nb>` → `NetObjectRegistry.DetachSyncKeepMesh(go)` → 容器 `SetActive(false)`。
-  **`DetachSyncKeepMesh` 是 `if (!Net.IsServer) return;`，只改主机注册表、不给客机发任何消息** ——
-  客机那份副本于是没人管：`HeldSeat.Detach/Release` 把它 `SetParent(null)` 并设回 Dynamic + `simulated = true`，
-  碰撞体却停在"被抓时"的关闭状态 → 一路下坠、永远 sleep 不了（实测 82 件 / 336 刚体 / 2.55 步每帧 / 19fps）。
-  注意客机自己的 `SyncRegistry` 仍有这些条目 → `IsRegistered` 为真，所以"按注册状态判断"的写法会全部放过它们。
-  - **主修 `GhostItemRelay`**（按用户口径：主机点名、客机执行）：Harmony postfix 到
-    `Together.NetObjectRegistry.DetachSyncKeepMesh(GameObject)`（反射挂，因为 Together 不能硬引用），
-    记下 `{item.id, 坐标}`，1.2 秒攒批后用 CUCoreLib `MultiplayerBridge.Broadcast("ddn.mp.ghostitems", …)` 广播；
-    客机 `RegisterClientHandler` 收到后按 **id + 1.5m 内** 精确命中本地"无主副本"，调
-    `NetObjectRegistry.SafeDestroyObject`（MP 自己的销毁通道：先卸容器内容物 → 摘注册表 → Destroy）删掉。
-    **不用任何"是不是在下坠/还登不登记"的猜测**；开关 `联机修正/RelayGhostItems`（默认开）。
-  - **启发式已删除**（用户口径 2026-11）：`GhostItemCleaner` 连同 `CleanGhostItems` / `CleanGhostItemsMaxPerSession`
-    一起删掉。理由：判据不稳（物品可能真的掉很久、还有浮空机制），不靠猜。
-  - **卡顿应急已删除**（用户口径 2026-11）：`PerfRescue` 连同 `卡顿应急/*` 四个开关一并删掉。
-    原因：它把无主物品冻成运动学并关掉碰撞体，客机侧看起来就是**物品往天上飘**（很诡异），
-    而且它只是在掩盖症状。**别再恢复**：卡顿要么靠"主机点名清理"根治，要么不动。
-  - `NetPerfTracker` 的「活跃刚体」只数 `Dynamic`（运动学/静态刚体不算压力），指标才反映真实开销。
+- **掉线后其他客机掉帧（GhostItemRelay，v1.5.0 内修订）**：在主机保存离线背包的解绑前捕获实体 ID + Version + 资源 ID，
+  解绑成功后才记录权威清单。新频道 `ddn.mp.ghostitems.v2` 发通知，`ddn.mp.ghostitems.verify.v2` 由主机核验确认。
+  **不要再按同类物品+坐标猜副本**，也不要恢复冻结/抬升/全场搜索。广播可被 CUCoreLib 客机转发，单靠广播不授权删除。
+  客机以对象绑定索引精确匹配，8件/1ms 分帧、叶子先清，持有或未知内容物保留；ID 代次/重绑/换局取消旧任务。
+  主机确认后清理客机同步实体和准确副本，避免公开 Destroy 在客机 no-op 后重新造网格；绝不删主机保存的真实背包。
+  双方必须更新本次包，版本按用户要求仍是 1.5.0。代码证据、限制与三人验收见 docs/features.md 2.10。
 - **现在的周期节拍**：`WearGhostFix.Tick()`、`GhostItemRelay.Tick()`（主机攒批广播）；
   `[巡检]` 每 60 秒汇总一次（平均 ≥0.5ms 或峰值 ≥2ms 才写），状态页常驻显示 `巡检开销`。
+- **主机权威配置（v1.5.0追加）**：总开关下 `UseHostAuthorityConfig` 默认关闭；主机开启后可编辑，客机也开启且收到确认后才临时采用/锁定。
+  `CfgMasterEnabled` 和 `CfgUseHostAuthority` 保留原生ConfigEntry，其余配置使用 `AuthoritySetting<T>` 生效层；**禁止把主机值写进客机ConfigEntry或配置文件**。
+  新增MPfix配置时同步包装并纳入白名单；自检要求除两个控制开关外完整覆盖。界面通过 `IDdenConfigPolicy` 展示生效值与「（主机权威模式）」；两个控制开关始终可编辑。
+  `HostConfigSync.Tick` 在修复Active判断之前执行。仅连接就绪、主机实际配置变化、客机加入/选择采用和有界失败重试触发传输；无稳定期轮询。
+  广播仅刷新提示，主机请求回复才授权；`notice.v1/get.v1` 使用连接身份/nonce/序号/会话/修订号隔离旧回复。主机关闭仅传标记，无values。
+  退出/取消/停用恢复最新本机值；有效值变更回调不得调用会改本机偏好的热键写回。测试与协议见 docs/features.md 2.11。
 - **“一生二”重复物品（重要）**：合成 / 购买 / 生成在客机上**也会跑一遍本地预测**。
   只要客机的 `Utils.Create` 成功造出模组物品，它自己那份 + 主机同步来的那份就是两份。
   所以 `Utils_Create_ModItemPatch` 的第一道闸是 `if (Mp.IsRunning && !Mp.IsServer) return true;`
@@ -360,7 +360,10 @@ ilspycmd -o decomp/qol  --nested-directories "<plugins>/QoL Unknown 1.1.5 - 实�
 
 - **挖块=伤害重算（最小侵入，2026-11 定）**：BlockDamageRelax 只做一件事 —— 前缀里 `ref float hostOwnDamage *= attackdamage`
   然后 `return true`，**判定/比例/上限/拒绝退路全部交回 Together 原码**。不要再去重写 ChooseBlockDamage 的规则
-  （那是上一版的做法，已删）；BlockDamageRatio 开关也随之删除。单位同构：BuildingDamageRelax 只乘 armstrength。
+  （那是上一版的做法，已删）；BlockDamageRatio 开关也随之删除。合法的低倍率也须修正。
+  单位和角色/肢体走 UnitDamageRepair：复制 AttackInfo，只补伤害字段，不再乘 armstrength 放大击退。
 - **上报收敛=激进开关**：联机修正/挖掘修复-激进（实验性 · ⚠帧数影响）（AggressiveConverge） 默认 **关**，
-  打开后才启用 `ddn.mp.blockdmg` 上报（0.35 秒攒批）+ 主机校验收敛；只对已打开的“伤害重算”项生效。
-  平时不需要它 —— 倍率补上之后两边数字本来就一致。
+  只对已打开的“伤害重算”分支生效。方块沿用 `ddn.mp.blockdmg`（0.35 秒/64块攒批，主机16块/1.5ms分帧）；
+  单位和 Body/Limb 在原生可靠攻击消息附加24字节上报，主机在同一次攻击里校验重算，绝不另补第二次伤害。
+  原有 `SyncBlockBreak`/`SyncBuildingDamage` 保留，新增 `SyncBodyDamage`；主客机均须开启对应分支与激进模式。
+  基础倍率修正不能保证消除身体状态差异与预测覆盖；不得再写“补倍率就必定一致”。详细协议与验收见 docs/features.md 2.6。
