@@ -1,5 +1,11 @@
 # ET-Fix 变更记录
 
+## v1.7.3 · 2026-11-22
+
+- 主角装电池时客机仍卡：把“本地玩家物品”判断从 `GetComponentInParent<Body>()` 改为 `Body.HoldingItem(item)`/容器父物品判断，主机装电池时客机不再对别人的物品跑窗口或写 customData；
+- 窗口内读取 `CustomLightControl.LightOn`，灯已亮则跳过 `SetLightState`，避免重复同步；
+- 版本 1.7.3。
+
 ## v1.7.2 · 2026-11-22
 
 - 点灯校正只处理“本地玩家的物品”：联机时 `BatteryItem.LoadBattery` 会在各端同步触发，之前主机的同步调用也会启动窗口，导致一个人装电池、所有端都跑检测；现在按 `Game.LocalBody` 过滤；

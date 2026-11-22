@@ -10,7 +10,7 @@ namespace HeatingCageFix
     /// <summary>
     /// 原 ET-NoBatteryFix 的修复逻辑，并入 ET-Fix：
     ///  - 增强钛砍刀/钛镐没有电池时也能攻击（不改 condition，仍显示 0%）；
-    ///  - 装上电池后重新点亮工具灯（只处理本地玩家的物品，避免同步到所有端都跑检测）。
+    ///  - 装上电池后重新点亮工具灯（只处理本地玩家槽位里的物品，避免同步到所有端都跑检测）。
     /// </summary>
     internal static class ETBattery
     {
@@ -24,6 +24,7 @@ namespace HeatingCageFix
         private static readonly HashSet<int> Reenabling = new HashSet<int>();
         private static readonly Dictionary<Type, MethodInfo> SetLightCache = new Dictionary<Type, MethodInfo>();
         private static readonly Dictionary<Type, MethodInfo> EnableLightCache = new Dictionary<Type, MethodInfo>();
+        private static readonly Dictionary<Type, PropertyInfo> LightOnCache = new Dictionary<Type, PropertyInfo>();
 
         internal static void Install(Harmony harmony)
         {
@@ -92,8 +93,8 @@ namespace HeatingCageFix
             if (item == null || !TargetIds.Contains(item.id)) return;
             if (!__instance.hasBattery) return;
 
-            // 联机时 BatteryItem.LoadBattery 会在主机/各端被同步调用；只处理“本地玩家自己的物品”，
-            // 避免一个人装电池、所有端都起身跑点灯检测。
+            // 联机时 BatteryItem.LoadBattery 会在主机/各端被同步调用；只处理“本地玩家槽位里的物品”，
+            // 避免主机装电池时客机也跑点灯检测/写 customData 同步。
             if (!IsLocalPlayerItem(item)) return;
 
             // condition 为 0 时 EnhancedTools 的 EnableLight/Update 会拒绝点亮：装电池后先恢复一个可点亮的最小耐久。
@@ -112,15 +113,21 @@ namespace HeatingCageFix
                 Plugin.Instance.StartCoroutine(ReenableWindowRoutine(item, id));
         }
 
-        /// <summary>物品是否属于本地玩家（手/背包/装备）。单机或无法判断时按 true 处理。</summary>
+        /// <summary>物品是否在本地玩家的槽位（手/背包）；容器内的物品再检查其父物品。</summary>
         private static bool IsLocalPlayerItem(Item item)
         {
             try
             {
                 Body local = PlayerCamera.main != null ? PlayerCamera.main.body : null;
                 if (local == null) return true;
-                Body owner = item.transform.GetComponentInParent<Body>();
-                return owner == null || owner == local;
+                if (local.HoldingItem(item)) return true;
+                Container cont;
+                if (item.TryGetParentContainer(out cont) && cont != null)
+                {
+                    Item parent = cont.GetComponent<Item>();
+                    if (parent != null && (local.HoldingItem(parent) || local.HasWearable(parent.id))) return true;
+                }
+                return false;
             }
             catch
             {
@@ -128,7 +135,7 @@ namespace HeatingCageFix
             }
         }
 
-        /// <summary>窗口内每 0.3 秒检查一次（最多 6 次）；只在“有电池且耐久可点亮”时校正，避免强制常亮。</summary>
+        /// <summary>窗口内每 0.3 秒检查一次（最多 6 次）；灯已亮则跳过，避免重复写 customData/同步。</summary>
         private static IEnumerator ReenableWindowRoutine(Item item, int id)
         {
             int applied = 0;
@@ -143,6 +150,7 @@ namespace HeatingCageFix
                     if (item == null || item.battery == null || !item.battery.hasBattery) yield break;
                     if (item.condition <= 0f) continue;
                     if (cage == null) { cage = FindLightControl(item); if (cage == null) break; }
+                    if (IsLightOn(cage)) continue;
                     if (ApplyLightOn(cage)) applied++;
                 }
             }
@@ -170,7 +178,28 @@ namespace HeatingCageFix
         internal static bool Reenable(Item item)
         {
             var cage = FindLightControl(item);
-            return cage != null && ApplyLightOn(cage);
+            if (cage == null) return false;
+            if (IsLightOn(cage)) return true;
+            return ApplyLightOn(cage);
+        }
+
+        private static bool IsLightOn(MonoBehaviour c)
+        {
+            if (c == null) return false;
+            var type = c.GetType();
+            if (!LightOnCache.TryGetValue(type, out var prop))
+            {
+                prop = type.GetProperty("LightOn", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                LightOnCache[type] = prop;
+            }
+            try
+            {
+                return prop != null && (bool)prop.GetValue(c);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool ApplyLightOn(MonoBehaviour c)
