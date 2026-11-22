@@ -11,6 +11,7 @@
 | `DDEN.NetPerfTracker` | 只读性能采样／图表／日志，无Harmony补丁 |
 | `外部mod/ET-Fix` | 独立ET加热笼修复，专属文档及检查在其目录内 |
 | `外部mod/JDI-DDEN` | 独立工具撬石果修复，专属文档及检查在其目录内 |
+| `外部mod/DS Tool Extension` | 独立工具扩展（CCL 物品），专属文档在其目录内 |
 
 DDEN内部模块引用Shared，实现IDdenModule并在DdenHub登记；只把界面交给管理器，管理器缺席时用DdenUI.DrawStandalone兜底。统一DdenUI控件、图标比例、输入隔离与日志通道，生命周期／绘制异常留痕。跨Together／QoL与其它DDEN模块用反射或契约，不硬引用其程序集。
 
