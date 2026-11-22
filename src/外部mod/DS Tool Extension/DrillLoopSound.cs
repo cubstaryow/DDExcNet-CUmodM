@@ -16,7 +16,7 @@ namespace DsToolExtension
         {
             item = GetComponent<Item>();
             source = gameObject.AddComponent<AudioSource>();
-            source.clip = Resources.Load<AudioClip>("drillLoop");
+            source.clip = LoadDrillClip();
             source.loop = true;
             source.volume = 0f;
             source.playOnAwake = false;
@@ -27,6 +27,24 @@ namespace DsToolExtension
                 Plugin.LogWarning("[DS Tool Extension] DrillLoopSound: 未找到音效 'drillLoop'。");
             else
                 Plugin.LogInfo($"[DS Tool Extension] DrillLoopSound ready: clip={source.clip.name}, item={(item != null ? item.id : "null")}");
+        }
+
+
+        /// <summary>优先从原生 heavydrill prefab 复制 AudioSource.clip，失败再回退 Resources 路径。</summary>
+        private static AudioClip LoadDrillClip()
+        {
+            try
+            {
+                GameObject prefab = Resources.Load<GameObject>("heavydrill");
+                if (prefab != null)
+                {
+                    AudioSource prefabSource = prefab.GetComponent<AudioSource>();
+                    if (prefabSource != null && prefabSource.clip != null)
+                        return prefabSource.clip;
+                }
+            }
+            catch { }
+            return Resources.Load<AudioClip>("drillLoop");
         }
 
         private void Update()
