@@ -123,3 +123,9 @@ versions.open={0} · Press {1} to view Overview
 
 versions.minimumPair=Manager ≥ {0} / Shared ≥ {1}
 versions.sharedOld=Requires Shared ≥ {1}; installed {0}. Please update Shared.
+
+# Overview activity markers
+cards.loaded=Loaded · idle
+cards.running=Running
+cards.problem=Needs attention
+cards.notReady=Module dependencies are not ready.

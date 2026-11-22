@@ -36,27 +36,13 @@ namespace DDExcNet.CUmodM
                 if (result.SharedTooOld) text.Warning = (text.Warning == null ? "" : text.Warning + "\n") + T("versions.sharedOld", DdenApi.SharedVersion, minimumShared);
                 if (result.ApiMismatch) text.Warning = (text.Warning == null ? "" : text.Warning + "\n") + T("versions.apiMismatch", result.RequiredApi, DdenApi.CurrentVersion);
                 if (result.InvalidDeclaration) text.Warning = (text.Warning == null ? "" : text.Warning + "\n") + T("versions.invalid");
-                text.Details = T("versions.installed", result.Installed ?? T("versions.unspecified"), result.Recorded ?? T("versions.unspecified")) + "\n" + text.Requirements;
+                text.Details = text.Summary + "\n" + T("versions.installed", result.Installed ?? T("versions.unspecified"), result.Recorded ?? T("versions.unspecified")) + "\n" + text.Requirements;
                 if (text.Warning != null) text.Details += "\n" + text.Warning;
                 text.Details += "\n" + T("versions.localCatalog");
             }
             text.Caption = (text.Warning ?? text.Summary).Replace('\n', ' ');
             text.Content.text = text.Warning == null ? text.Requirements : text.Warning + "\n" + text.Requirements;
             _versionText[module] = text; return text;
-        }
-        private void DrawModuleVersionLine(Rect rect, IDdenModule module)
-        {
-            var text = VersionText(module);
-            string caption = text.Caption;
-            Color old = GUI.contentColor;
-            try
-            {
-                GUI.contentColor = text.Result.HasCompatibilityWarning ? DdenUI.Bad : text.Result.ReleaseStatus == DdenReleaseStatus.Older || text.Result.ReleaseStatus == DdenReleaseStatus.Unknown ? DdenUI.Warn
-                    : text.Result.ReleaseStatus == DdenReleaseStatus.Current ? DdenUI.Good : text.Result.ReleaseStatus == DdenReleaseStatus.Newer ? DdenUI.Accent : DdenUI.TextDim;
-                GUI.Label(rect, DdenUI.ElideToWidth(caption, rect.width, DdenUI.Sub), DdenUI.Sub);
-            }
-            finally { GUI.contentColor = old; }
-            DdenUI.Hover(rect, text.Details);
         }
         private float DrawModuleVersionBand(Rect rect, IDdenModule module, bool warningsOnly = false)
         {

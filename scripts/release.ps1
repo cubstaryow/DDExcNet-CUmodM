@@ -42,11 +42,13 @@ try {
         if ($values.Count -ne 1 -or $values[0] -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw "项目未声明明确的独立版本：$relativePath" }
         return $values[0]
     }
-    $sourceVersion = Read-ProjectVersion 'src/DDExcNet.CUmodM/DDExcNet.CUmodM.csproj'
+    # 发布包版本跟 **MPfix（DDEN.MPfix）** 走；各组件各自独立版本，不再要求与管理器同号。
+    $packageSource = 'src/DDEN.MPfix/DDEN.MPfix.csproj'
+    $sourceVersion = Read-ProjectVersion $packageSource
     if (-not $Version) { $Version = $sourceVersion }
-    if ($Version -ne $sourceVersion) { throw "发布包版本需与管理器项目一致：$Version / $sourceVersion" }
+    if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw "发布包版本格式不合法：$Version" }
     $Tag = "v$Version"
-    Write-Host "== 版本: $Version（tag $Tag）" -ForegroundColor Cyan
+    Write-Host "== 版本: $Version（tag $Tag，按 MPfix 版本；管理器 $((Read-ProjectVersion 'src/DDExcNet.CUmodM/DDExcNet.CUmodM.csproj'))）" -ForegroundColor Cyan
 
     # ===== 2. 构建 =====
     if (-not $SkipBuild) {

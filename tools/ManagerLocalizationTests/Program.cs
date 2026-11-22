@@ -299,4 +299,36 @@ foreach (string binary in new[] { "DDEN.MPfix", "DDEN.NetPerfTracker", "DDEN.Sav
 Check(!ModuleVersionCatalog.Check(new EmptyVersionFixture()).Checked, "empty requirements are exempt before accessing a potentially unsupported release getter");
 Check(shared.CustomAttributes.Any(a => a.AttributeType.Name == "AssemblyMetadataAttribute" && (string)a.ConstructorArguments[0].Value == "DDEN.ApiVersion" && (string)a.ConstructorArguments[1].Value == "1"), "API generation is recorded separately in Shared assembly metadata");
 
+// Card states use activity flags rather than localized summaries or "enabled" alone.
+var currentCardVersion = DdenVersionPolicy.Evaluate("1.7.4", "1.7.4", "2.0", "2.0", new VersionedModuleFixture { MinimumManagerVersion = "2.0", MinimumSharedVersion = "2.0" }, 1);
+Check(OverviewCardStyle.State(currentCardVersion, true, true, false, DdenHealth.Ok) == OverviewCardState.Loaded, "offline or paused enabled module is blue/loaded");
+Check(OverviewCardStyle.State(currentCardVersion, true, true, true, DdenHealth.Ok) == OverviewCardState.Running, "active work is green/running");
+Check(OverviewCardStyle.State(currentCardVersion, true, false, true, DdenHealth.Ok) == OverviewCardState.Loaded, "disabled gate cannot remain green");
+Check(OverviewCardStyle.State(currentCardVersion, false, true, true, DdenHealth.Ok) == OverviewCardState.Problem, "missing dependencies override active state");
+Check(OverviewCardStyle.State(currentCardVersion, true, true, true, DdenHealth.Warn) == OverviewCardState.Problem, "runtime problem overrides active state");
+foreach (string installed in new[] { "1.7.3", "1.7.5", "unreadable" })
+{
+    var mismatch = DdenVersionPolicy.Evaluate(installed, "1.7.4", "2.0", "2.0", new VersionedModuleFixture { MinimumManagerVersion = "2.0" }, 1);
+    Check(OverviewCardStyle.State(mismatch, true, true, true, DdenHealth.Ok) == OverviewCardState.Problem, "record mismatch is red and described in tooltip: " + installed);
+}
+Check(!OverviewCardStyle.VersionMismatch(DdenReleaseStatus.NotChecked) && !OverviewCardStyle.VersionMismatch(DdenReleaseStatus.Unrecorded), "exempt and unrecorded modules are not falsely marked mismatched");
+Check(OverviewCardStyle.State(oldShared, true, true, true, DdenHealth.Ok) == OverviewCardState.Problem, "Shared requirement mismatch overrides green");
+var overviewBody = plugin.Methods.Single(m => m.Name == "DrawOverview").Body.Instructions;
+var rectHeights = overviewBody.Select((instruction, index) => (instruction,index))
+    .Where(v => v.index > 0 && v.instruction.Operand is MethodReference method && method.Name == ".ctor" && method.DeclaringType.Name == "Rect")
+    .Select(v => overviewBody[v.index - 1].Operand).OfType<float>().ToArray();
+Check(rectHeights.Contains(56f) && rectHeights.Contains(50f) && !rectHeights.Contains(78f) && !rectHeights.Contains(74f), "compiled overview restores original module/utility card heights");
+Check(overviewBody.Any(i => i.Operand is MethodReference m && m.Name == "DrawCardLine") && overviewBody.Any(i => i.Operand is MethodReference m && m.Name == "DescribeModuleCard"), "compiled overview uses full-height status stripes and hover descriptions");
+Check(!overviewBody.Any(i => i.Operand is MethodReference m && m.Name == "DrawModuleVersionLine"), "version diagnostics no longer add a visible third row");
+var drawStripe = plugin.Methods.Single(m => m.Name == "DrawCardLine").Body.Instructions;
+Check(drawStripe.Any(i => i.Operand is MethodReference m && m.Name == "get_height"), "stripe uses the entire card height");
+foreach (string binary in new[] { "DDEN.MPfix", "DDEN.NetPerfTracker" })
+{
+    using var component = AssemblyDefinition.ReadAssembly(Path.Combine(root, "src", binary, "bin/Release", binary + ".dll"));
+    var moduleType = component.MainModule.Types.Single(t => t.Interfaces.Any(i => i.InterfaceType.Name == "IDdenModule"));
+    Check(moduleType.Interfaces.Any(i => i.InterfaceType.Name == "IDdenModuleActivity"), "explicit activity contract: " + binary);
+    var getter = moduleType.Methods.Single(m => m.Name == "get_IsRunning").Body.Instructions;
+    Check(getter.Any(i => i.Operand is MethodReference m && m.Name == (binary == "DDEN.MPfix" ? "get_IsRunning" : "get_Recording")), "activity follows live MP state or actual sampling: " + binary);
+}
+
 Console.WriteLine($"PASS {checks} manager localization checks (catalog, real cfg entries, markers, routes, versions); GUI input simulated");

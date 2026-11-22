@@ -14,6 +14,7 @@
     <Compile Include="$(ManagerSourceDir)/ManagerConfigUI.cs" Link="ManagerConfigUI.cs" />
     <Compile Include="../../src/DDEN.Shared/ModuleVersions.cs" Link="ModuleVersions.cs" />
     <Compile Include="$(ManagerSourceDir)/ModuleVersionCatalog.cs" Link="ModuleVersionCatalog.cs" />
+    <Compile Include="$(ManagerSourceDir)/OverviewCardStyle.cs" Link="OverviewCardStyle.cs" />
     <Compile Include="$(ManagerSourceDir)/ConfigNavigation.cs" Link="ConfigNavigation.cs" />
     <Compile Include="../../src/DDEN.Shared/ExternalConfig.cs" Link="ExternalConfig.cs" />
     <Compile Include="../../src/DDEN.Shared/DdenLocalization.cs" Link="DdenLocalization.cs" />

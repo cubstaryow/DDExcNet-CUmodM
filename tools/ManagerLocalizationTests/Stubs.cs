@@ -27,6 +27,7 @@ namespace DDEN.Shared
 {
     public static class DdenHub { public static event Action Changed; public static void Notify() => Changed?.Invoke(); }
     public interface IDdenModule { string Id { get; } string Version { get; } }
+    public enum DdenHealth { Ok, Warn, Severe }
     public interface IDdenConfigAvailability { string ConfigUnavailableReason(ConfigEntryBase entry); }
     public static class ConfigExt { public static IEnumerable<ConfigEntryBase> Entries(ConfigFile cfg) => cfg.Select(pair => pair.Value); }
     public static class Log { public static void Debug(string text) {} public static void Info(string text) {} }

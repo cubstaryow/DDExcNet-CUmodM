@@ -18,7 +18,7 @@ namespace DDEN.NetPerfTracker
     /// <summary>Read-only, zero patches. Wall-frame timing, optional exact 2D marker and budgeted object censuses.</summary>
     [BepInPlugin(Guid, "DDEN NetPerfTracker", "2.0.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
-    public class NetPerfTrackerPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleVersion, IDdenModuleGate
+    public class NetPerfTrackerPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleVersion, IDdenModuleActivity, IDdenModuleGate
     {
         public const string Guid = "com.dden.perf";
         public const string Title = "性能分析";
@@ -81,6 +81,7 @@ namespace DDEN.NetPerfTracker
         public string TestedSharedVersion => "2.0.0";
         public int RequiredSharedApiVersion => DdenApi.Version;
         public string Version => Info.Metadata.Version.ToString();
+        public bool IsRunning => Recording;
         public bool Ready => true;
         public bool ModuleEnabled => CfgEnabled != null && CfgEnabled.Value;
         public string MasterKey => "总开关/启用采样（Enabled）";

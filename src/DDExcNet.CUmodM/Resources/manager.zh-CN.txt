@@ -123,3 +123,9 @@ versions.open={0} · 按 {1} 查看总览
 
 versions.minimumPair=管理器 ≥ {0} / Shared ≥ {1}
 versions.sharedOld=需要 Shared ≥ {1}；当前为 {0}，请更新公共层。
+
+# Overview activity markers
+cards.loaded=已加载 · 待用
+cards.running=正在运行
+cards.problem=需要核对
+cards.notReady=模块依赖尚未就绪。

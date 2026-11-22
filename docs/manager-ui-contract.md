@@ -152,3 +152,5 @@ Section／Key必须匹配原配置。`DdenPerformanceImpact.Unspecified`表示�
 ## 组件版本与适配声明
 
 Shared当前为产品v2.0.0、公共API v1；显示规范v1不等于管理器／Shared产品版本。模块通过可选IDdenModuleVersion分别声明最低管理器、最低Shared、两者已校对版本及API代际；未声明或外置L1配置免检。接口、比较规则与维护位置见[组件版本与适配校对](component-versions.md)。管理器仅提示，不借此改动功能开关。
+
+总览活动标记通过可选`IDdenModuleActivity.IsRunning`声明，状态独立于语言和功能说明。版本校对或运行问题优先红线，明确活动为绿线，其余已加载为蓝线；L1未提供活动状态默认蓝线，不解析摘要猜测。版本详情在卡片悬停中展开，保持原始卡片高度，见[总览状态规则](component-versions.md#总览运行状态)。

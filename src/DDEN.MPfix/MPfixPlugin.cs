@@ -25,7 +25,7 @@ namespace DDEN.MPfix
     [BepInPlugin(Guid, "DDEN MP Fix", "1.7.4")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
-    public class MPfixPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleVersion, IDdenModuleGate, IDdenModuleHealth, IDdenConfigPolicy, IDdenConfigAvailability
+    public class MPfixPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleVersion, IDdenModuleActivity, IDdenModuleGate, IDdenModuleHealth, IDdenConfigPolicy, IDdenConfigAvailability
     {
         public const string Guid = "com.dden.mpfix";
         public const string Title = "多人修复";
@@ -351,6 +351,7 @@ namespace DDEN.MPfix
         public string TestedSharedVersion => "2.0.0";
         public int RequiredSharedApiVersion => DdenApi.Version;
         public string Version => Info.Metadata.Version.ToString();
+        public bool IsRunning => Active && Ready && Mp.IsRunning;
         public bool Ready => Mp.CoreAvailable;
         public string Summary
         {

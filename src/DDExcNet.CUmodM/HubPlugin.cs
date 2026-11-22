@@ -617,8 +617,8 @@ namespace DDExcNet.CUmodM
 
             DdenGate.Probe();
             var viewport = new Rect(area.x, area.y + 48, area.width, Mathf.Max(1, area.height - 48));
-            float contentHeight = (DdenGate.Blocked ? 72 : 38) + DdenHub.Modules.Count * 84 + DdenExternal.Blocks.Count * 56
-                + 80 + 38 + Math.Min(8, Compat.Rows.Count) * 16;
+            float contentHeight = (DdenGate.Blocked ? 72 : 38) + DdenHub.Modules.Count * OverviewCardStyle.ModuleStep + DdenExternal.Blocks.Count * OverviewCardStyle.UtilityStep
+                + OverviewCardStyle.UtilityStep + 38 + Math.Min(8, Compat.Rows.Count) * 16;
             _overviewScroll = DdenUI.BeginScrollView(viewport, _overviewScroll, new Rect(0, 0, viewport.width - 18, Mathf.Max(viewport.height, contentHeight)));
             try
             {
@@ -657,52 +657,64 @@ namespace DDExcNet.CUmodM
 
             foreach (IDdenModule module in DdenHub.Modules)
             {
-                var card = new Rect(area.x, y, area.width, 78f);
+                var card = new Rect(area.x, y, area.width, OverviewCardStyle.ModuleHeight);
                 bool cardOn = Enabled(module);
                 DdenHealth cardHp = Health(module);
-                Color cardEdge = !cardOn ? new Color(1f, 1f, 1f, 0.14f)
-                                : cardHp == DdenHealth.Severe ? DdenUI.Bad
-                                : cardHp == DdenHealth.Warn ? DdenUI.Warn
-                                : module.Ready ? DdenUI.AccentDim : DdenUI.Warn;
-                string cardState = !cardOn ? "<color=#8a8f96>" + T("state.off") + "</color>"
-                                 : cardHp == DdenHealth.Severe ? "<color=#e05a5a>" + T("state.error") + "</color>" + (HealthNote(module) ?? T("state.stopped"))
-                                 : cardHp == DdenHealth.Warn ? "<color=#e8c15a>" + T("state.warning") + "</color>" + (HealthNote(module) ?? T("state.errors"))
-                                 : (module.Ready ? "<color=#8cd97c>" + T("state.normal") + "</color>" : "<color=#f0a>" + T("state.limited") + "</color>") + " · " + (module.Summary ?? "");
+                bool ready = module.Ready;
+                var cardActivity = OverviewCardStyle.State(ModuleVersionCatalog.Check(module), ready, cardOn, ModuleRunning(module), cardHp);
+                string summary = module.Summary ?? "";
+                string cardState = !cardOn ? T("state.off")
+                    : cardHp == DdenHealth.Severe ? T("state.error") + (HealthNote(module) ?? T("state.stopped"))
+                    : cardHp == DdenHealth.Warn ? T("state.warning") + (HealthNote(module) ?? T("state.errors"))
+                    : CardActivityText(cardActivity);
+                if (!string.IsNullOrEmpty(summary)) cardState += " · " + summary;
 
                 DdenUI.Fill(card, DdenUI.Panel);
-                DdenUI.Frame(card, cardEdge);
-                DdenUI.Label(new Rect(card.x + 10f, card.y + 6f, card.width - 200f, 18f),
+                DdenUI.Frame(card, DdenUI.AccentDim);
+                DrawCardLine(card, cardActivity);
+                DdenUI.Label(new Rect(card.x + 10f, card.y + 9f, card.width - 200f, 18f),
                     ModuleName(module) + $"  <size=10><color=#89a>{module.Version}</color></size>", DdenUI.Row);
-                DdenUI.Label(new Rect(card.x + 10f, card.y + 26f, card.width - 200f, 16f), cardState, DdenUI.Sub);
+                DdenUI.Label(new Rect(card.x + 10f, card.y + 29f, card.width - 200f, 16f), cardState, DdenUI.Sub);
                 if (DdenUI.Button(new Rect(card.xMax - 180f, card.y + 14f, 90f, 26f), T("action.open"), true)) _page = module.Id;
                 if (DdenUI.Button(new Rect(card.xMax - 84f, card.y + 14f, 74f, 26f), T("action.config"))) _page = "config:" + module.Id;
-                DrawModuleVersionLine(new Rect(card.x + 10, card.y + 49, card.width - 20, 18), module);
-                y += 84f;
+                DescribeModuleCard(card, module, cardActivity, summary, ready, cardHp);
+                y += OverviewCardStyle.ModuleStep;
             }
 
-            var managerCard = new Rect(area.x, y, area.width, 74f);
+            var managerCard = new Rect(area.x, y, area.width, OverviewCardStyle.UtilityHeight);
+            var managerActivity = GetManagerCardState();
             DdenUI.Fill(managerCard, DdenUI.Panel);
             DdenUI.Frame(managerCard, DdenUI.AccentDim);
-            DdenUI.Label(new Rect(managerCard.x + 10, managerCard.y + 5, managerCard.width - 110, 18), T("config.manager"), DdenUI.Row);
-            DdenUI.Label(new Rect(managerCard.x + 10, managerCard.y + 25, managerCard.width - 110, 16), T("versions.managerShared", Info.Metadata.Version, DdenApi.SharedVersion, DdenApi.CurrentVersion), DdenUI.Sub);
-            DdenUI.Label(new Rect(managerCard.x + 10, managerCard.y + 47, managerCard.width - 20, 18), T("versions.sharedStatus", ModuleVersionCatalog.SharedRelease, ReleaseText(DdenVersionPolicy.CompareRelease(DdenApi.SharedVersion, ModuleVersionCatalog.SharedRelease))), DdenUI.Sub);
-            if (DdenUI.Button(new Rect(managerCard.xMax - 84, managerCard.y + 11, 74, 26), T("action.config"))) _page = ConfigNavigation.Manager;
-            y += 80f;
+            DrawCardLine(managerCard, managerActivity);
+            DdenUI.Label(new Rect(managerCard.x + 10, managerCard.y + 7, managerCard.width - 110, 18), T("config.manager") + "  <size=10><color=#89a>" + Info.Metadata.Version + "</color></size>", DdenUI.Row);
+            DdenUI.Label(new Rect(managerCard.x + 10, managerCard.y + 27, managerCard.width - 110, 16), CardActivityText(managerActivity), DdenUI.Sub);
+            if (DdenUI.Button(new Rect(managerCard.xMax - 84, managerCard.y + 12, 74, 26), T("action.config"))) _page = ConfigNavigation.Manager;
+            if (CardHovered(managerCard))
+            {
+                string managerDetails = T("versions.managerShared", Info.Metadata.Version, DdenApi.SharedVersion, DdenApi.CurrentVersion)
+                + "\n" + T("versions.installed", Info.Metadata.Version, ModuleVersionCatalog.ManagerRelease)
+                + "\n" + T("versions.sharedStatus", ModuleVersionCatalog.SharedRelease, ReleaseText(DdenVersionPolicy.CompareRelease(DdenApi.SharedVersion, ModuleVersionCatalog.SharedRelease)));
+                if (DdenApi.CurrentVersion != ModuleVersionCatalog.SupportedApi) managerDetails += "\n" + T("versions.apiMismatch", ModuleVersionCatalog.SupportedApi, DdenApi.CurrentVersion);
+                DdenUI.Hover(managerCard, managerDetails + "\n" + T("versions.localCatalog"));
+            }
+            y += OverviewCardStyle.UtilityStep;
 
             // 外部模组（只交配置、没有 IDdenModule 的）：也给一张卡，点进去就是它自己的页
             for (int i = 0; i < DdenExternal.Blocks.Count; i++)
             {
                 DdenExternal.Block b = DdenExternal.Blocks[i];
-                var card = new Rect(area.x, y, area.width, 50f);
+                var card = new Rect(area.x, y, area.width, OverviewCardStyle.UtilityHeight);
                 DdenUI.Fill(card, DdenUI.Panel);
                 DdenUI.Frame(card, DdenUI.AccentDim);
-                DdenUI.Label(new Rect(card.x + 10f, card.y + 5f, card.width - 200f, 18f),
+                DrawCardLine(card, OverviewCardState.Loaded);
+                DdenUI.Label(new Rect(card.x + 10f, card.y + 7f, card.width - 200f, 18f),
                     "<color=#89a>" + T("external.prefix") + " </color>" + ExternalText(b, b.Title ?? b.Owner ?? T("external.default")), DdenUI.Row);
-                DdenUI.Label(new Rect(card.x + 10f, card.y + 24f, card.width - 200f, 16f),
+                DdenUI.Label(new Rect(card.x + 10f, card.y + 27f, card.width - 200f, 16f),
                     string.IsNullOrEmpty(b.CurrentSummary) ? T("external.description") : ExternalText(b, b.CurrentSummary), DdenUI.Sub);
                 if (b.Draw != null && DdenUI.Button(new Rect(card.xMax - 180f, card.y + 11f, 90f, 26f), T("action.open"))) _page = "ext:" + i;
                 if (DdenUI.Button(new Rect(card.xMax - 84f, card.y + 11f, 74f, 26f), T("action.config"), true)) _page = "extconfig:" + i;
-                y += 56f;
+                if (CardHovered(card)) DdenUI.Hover(card, ExternalText(b, b.Title ?? b.Owner) + "\n" + T("cards.loaded") + "\n" + ExternalText(b, b.CurrentSummary) + "\n" + T("versions.release.NotChecked"));
+                y += OverviewCardStyle.UtilityStep;
             }
 
             if (y + 60f < area.yMax)
