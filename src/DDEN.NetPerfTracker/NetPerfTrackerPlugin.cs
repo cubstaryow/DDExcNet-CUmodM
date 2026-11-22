@@ -1,3 +1,4 @@
+using static DDEN.NetPerfTracker.ModuleText;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -15,9 +16,9 @@ using UnityEngine;
 namespace DDEN.NetPerfTracker
 {
     /// <summary>Read-only, zero patches. Wall-frame timing, optional exact 2D marker and budgeted object censuses.</summary>
-    [BepInPlugin(Guid, "DDEN NetPerfTracker", "1.7.3")]
+    [BepInPlugin(Guid, "DDEN NetPerfTracker", "2.0.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
-    public class NetPerfTrackerPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleGate
+    public class NetPerfTrackerPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleVersion, IDdenModuleGate
     {
         public const string Guid = "com.dden.perf";
         public const string Title = "性能分析";
@@ -67,21 +68,42 @@ namespace DDEN.NetPerfTracker
         private float _indicatorHeight, _recentHeight;
         private float _textWidth, _topHeight = 20, _detailHeight = 57, _scheduleHeight = 34;
         private readonly GUIContent _measureText = new GUIContent();
+        private int _languageRevision = -1;
         private static readonly string[] Titles = { "帧耗时 ms", "2D模拟 / 跟踪器 ms", "物品状态（区间清点）", "CPU / GPU / 呈现等待 ms" };
         private bool Recording => CfgEnabled != null && CfgEnabled.Value && !_paused && !_stopped;
         private static double ElapsedMs(long start) => (Stopwatch.GetTimestamp() - start) * 1000.0 / Stopwatch.Frequency;
 
         public string Id => "perf";
-        public string DisplayName => Title;
+        public string DisplayName => L(Title);
+        public string MinimumManagerVersion => "2.0.0";
+        public string TestedManagerVersion => "2.0.0";
+        public string MinimumSharedVersion => "2.0.0";
+        public string TestedSharedVersion => "2.0.0";
+        public int RequiredSharedApiVersion => DdenApi.Version;
         public string Version => Info.Metadata.Version.ToString();
         public bool Ready => true;
         public bool ModuleEnabled => CfgEnabled != null && CfgEnabled.Value;
         public string MasterKey => "总开关/启用采样（Enabled）";
-        public string Summary => _stopped ? "已停止" : _paused ? "已暂停" : _summary;
+        private int _summaryVersion = -1, _summaryLanguage = -1;
+        public string Summary
+        {
+            get
+            {
+                if (_stopped) return L("已停止");
+                if (_paused) return L("已暂停");
+                if (_summaryVersion != _version || _summaryLanguage != DdenLocalization.Revision)
+                {
+                    _summaryVersion = _version; _summaryLanguage = DdenLocalization.Revision;
+                    _summary = _buf.Count == 0 ? L("等待采样") : LF($"{_buf[_buf.Count - 1].Fps:0} fps · {_buf.Count} 点");
+                }
+                return _summary;
+            }
+        }
         public IEnumerable<ConfigEntryBase> ConfigEntries => Config.Entries();
 
         private void Awake()
         {
+            DdenLocalization.Register(Config, ModuleText.Catalog);
             try
             {
                 Instance = this; LogSource = Logger;
@@ -118,10 +140,30 @@ namespace DDEN.NetPerfTracker
         }
         private void RegisterDocs()
         {
-            DdenDocs.Add("总开关", "启用采样（Enabled）", "是否记录新的性能数据。", "需要停止观察者自身的采样工作。", "关闭后停止计时和对象清点，保留已有记录。", "否", "关闭后不再采样");
-            DdenDocs.Add("详细统计", "场景物理对象", "分帧统计场景中的刚体和碰撞体。", "需要区分清醒、休眠和仅启用模拟的物体。", "遍历场景树，按每帧预算暂停，不在一帧搜索全场。", "否", "高于轻量跟踪；默认关闭，统计结果有时间范围");
-            DdenDocs.Add("详细统计", "物品碰撞检查", "检查清醒自由物品是否有实体碰撞。", "需要进一步判断遗留副本的状态。", "只检查正在模拟的清醒自由物品；无碰撞或向下运动不直接判为故障。", "否", "额外开销；默认关闭");
-            DdenDocs.Add("诊断", "CPU与GPU阶段计时", "分开观察CPU、GPU和等待计时。", "避免把等待或低帧直接归因于物理。", "只连接准确的引擎计时器；结果可能延迟数帧，缺失明确显示。", "否", "有额外成本，默认关闭；不提供具体函数调用栈");
+            DdenDocs.AddStructured("总开关",
+                "启用采样（Enabled）",
+                "是否记录新的性能数据。",
+                "需要停止观察者自身的采样工作。",
+                "关闭后停止计时和对象清点，保留已有记录。",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.Low, performanceNote: "关闭后不再采样");
+            DdenDocs.AddStructured("详细统计",
+                "场景物理对象",
+                "分帧统计场景中的刚体和碰撞体。",
+                "需要区分清醒、休眠和仅启用模拟的物体。",
+                "遍历场景树，按每帧预算暂停，不在一帧搜索全场。",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.Medium, performanceNote: "高于轻量跟踪；默认关闭，统计结果有时间范围");
+            DdenDocs.AddStructured("详细统计",
+                "物品碰撞检查",
+                "检查清醒自由物品是否有实体碰撞。",
+                "需要进一步判断遗留副本的状态。",
+                "只检查正在模拟的清醒自由物品；无碰撞或向下运动不直接判为故障。",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.Medium, performanceNote: "额外开销；默认关闭");
+            DdenDocs.AddStructured("诊断",
+                "CPU与GPU阶段计时",
+                "分开观察CPU、GPU和等待计时。",
+                "避免把等待或低帧直接归因于物理。",
+                "只连接准确的引擎计时器；结果可能延迟数帧，缺失明确显示。",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.Medium, performanceNote: "有额外成本，默认关闭；不提供具体函数调用栈");
         }
         private void ConfigureAlerts()
         { _alerts.Ratio = _spikeRatio.Value; _alerts.MinMs = _spikeMs.Value; _alerts.CountDelta = _spikeCount.Value; _alerts.Cooldown = _spikeCooldown.Value; }
@@ -305,8 +347,9 @@ namespace DDEN.NetPerfTracker
                     _nextObjects = Time.realtimeSinceStartup;
                 }
                 float now = Time.realtimeSinceStartup;
-                if (now >= _nextText || _textWidth != area.width)
+                if (now >= _nextText || _textWidth != area.width || _languageRevision != DdenLocalization.Revision)
                 {
+                    _languageRevision = DdenLocalization.Revision;
                     _nextText = now + 0.5f; _textWidth = area.width; RefreshText(now);
                     _measureText.text = _top; _topHeight = DdenUI.Wrap.CalcHeight(_measureText, area.width);
                     _measureText.text = _detail; _detailHeight = DdenUI.Wrap.CalcHeight(_measureText, area.width);
@@ -316,9 +359,9 @@ namespace DDEN.NetPerfTracker
                     if (_showEvents) RefreshEventRows(area.width - 20);
                 }
                 float y = area.y;
-                GUI.Label(new Rect(area.x, y, area.width, 20), "性能分析 · 耗时与物品状态", DdenUI.Title); y += 23;
+                GUI.Label(new Rect(area.x, y, area.width, 20), L("性能分析 · 耗时与物品状态"), DdenUI.Title); y += 23;
                 GUI.Label(new Rect(area.x, y, area.width, _topHeight), _top, DdenUI.Wrap); y += _topHeight + 2;
-                GUI.Label(new Rect(area.x, y, area.width, 18), "物理步数是调度读数，不能判断物理耗时；“不可用”不代表耗时为零。", DdenUI.Sub); y += 21;
+                GUI.Label(new Rect(area.x, y, area.width, 18), L("物理步数是调度读数，不能判断物理耗时；“不可用”不代表耗时为零。"), DdenUI.Sub); y += 21;
                 DdenUI.Fill(new Rect(area.x, y, area.width, _indicatorHeight + 8), new Color(0.04f, 0.06f, 0.08f, 0.9f));
                 GUI.Label(new Rect(area.x + 4, y + 4, area.width - 8, _indicatorHeight), _indicators, DdenUI.Wrap); y += _indicatorHeight + 12;
                 if (_showEvents)
@@ -346,11 +389,11 @@ namespace DDEN.NetPerfTracker
                     float half = (area.width - 8) / 2;
                     for (int i = 0; i < 4; i++)
                     {
-                        _charts[i].Draw(new Rect(area.x + (i % 2) * (half + 8), y + (i / 2) * (height + 4), half, height), Titles[i], _times, _events, _cacheCount, _version, begin, end);
+                        _charts[i].Draw(new Rect(area.x + (i % 2) * (half + 8), y + (i / 2) * (height + 4), half, height), L(Titles[i]), _times, _events, _cacheCount, _version, begin, end);
                     }
                     y += 2 * (height + 4);
                 }
-                else { GUI.Label(new Rect(area.x, y, area.width, 30), "等待新的记录…", DdenUI.Sub); y += 33; }
+                else { GUI.Label(new Rect(area.x, y, area.width, 30), L("等待新的记录…"), DdenUI.Sub); y += 33; }
                 float footerY = Math.Max(y, area.yMax - 88);
                 DrawText(area, _detail, _detailHeight, footerY, ref y);
                 DrawText(area, _schedule, _scheduleHeight, footerY, ref y);
@@ -369,22 +412,21 @@ namespace DDEN.NetPerfTracker
         }
         private void RefreshText(float now)
         {
-            if (_buf.Count == 0) { _top = "等待采样"; _detail = _schedule = _indicators = _recent = ""; return; }
+            if (_buf.Count == 0) { _top = L("等待采样"); _detail = _schedule = _indicators = _recent = ""; return; }
             var s = _buf[_buf.Count - 1];
-            _top = $"记录于{s.T:0.0}s（距今{Math.Max(0, now - _startedAt - s.T):0.0}s）· {s.Fps:0} fps · 平均{s.MeanMs:0.0}ms / 最长{s.WorstMs:0.0}ms · 2D {Milliseconds(s.PhysicsMs)} · 自身{s.SelfMs:0.00}ms / 峰{s.SelfPeakMs:0.00}ms";
+            _top = LF($"记录于{s.T:0.0}s（距今{Math.Max(0, now - _startedAt - s.T):0.0}s）· {s.Fps:0} fps · 平均{s.MeanMs:0.0}ms / 最长{s.WorstMs:0.0}ms · 2D {Milliseconds(s.PhysicsMs)} · 自身{s.SelfMs:0.00}ms / 峰{s.SelfPeakMs:0.00}ms");
             var o = s.Objects; var scene = s.Scene;
             _indicators = PerfIndicators.Report(s, _referenceFps.Value, CfgSlowFps.Value);
             _recent = _alerts.Recent(2);
-            _stageButton = _stageTiming.Value ? "阶段计时：开" : "阶段计时：关";
-            _eventsButton = (_showEvents ? "返回曲线" : "突变记录：" + _alerts.Events.Count);
-            string objectText = o.Valid ? $"物品 {o.Total}（启用 {o.Active}）· 自由动态 {o.Simulated}（清醒 {o.Awake} / 休眠 {o.Sleeping}）· 向下运动 {o.Downward} · 无实体碰撞 {(o.CollisionChecked ? o.NoSolid.ToString() : "未检查")}" : "物品清点：等待完成";
-            string age = o.Valid ? $"物品数据距今 {Math.Max(0, now - o.Ended):0.0}s，清点跨度 {o.Ended - o.Started:0.00}s" : "物品状态尚无完整记录";
-            _detail = objectText + "\n" + $"玩家 {s.Players} · 网络条目 {s.Sync} · CPU {Value(s.Cpu)}%（全核心平均）· GC {s.GC0}/{s.GC1}/{s.GC2} · 托管堆 {s.HeapMb:0.0}MB\n" + age;
-            if (scene.Valid) _detail += $"；场景清醒 {scene.Awake} / 休眠 {scene.Sleeping}，碰撞体 {scene.Colliders}";
-            _schedule = $"物理调度：{s.StepsPerSecond:0.0}步/秒 / 设定 {s.ExpectedStepsPerSecond:0.0}，{s.StepsPerFrame:0.00}步/帧（非耗时）" +
-                $"；每帧清点预算 {_budgetMs.Value:0.0}ms，最近分片 {_lastPumpMs:0.00}ms" +
-                (_items.Running ? $"；物品清点中 {_items.Progress} 件" : "") + (_scene.Running ? $"；场景清点中 {_scene.Progress} 个对象" : "") +
-                (scene.Valid ? $"；场景数据距今 {Math.Max(0, now - scene.Ended):0.0}s" : "");
+
+            string objectText = o.Valid ? LF($"物品 {o.Total}（启用 {o.Active}）· 自由动态 {o.Simulated}（清醒 {o.Awake} / 休眠 {o.Sleeping}）· 向下运动 {o.Downward} · 无实体碰撞 {(o.CollisionChecked ? o.NoSolid.ToString() : L("未检查"))}") : L("物品清点：等待完成");
+            string age = o.Valid ? LF($"物品数据距今 {Math.Max(0, now - o.Ended):0.0}s，清点跨度 {o.Ended - o.Started:0.00}s") : L("物品状态尚无完整记录");
+            _detail = objectText + "\n" + LF($"玩家 {s.Players} · 网络条目 {s.Sync} · CPU {Value(s.Cpu)}%（全核心平均）· GC {s.GC0}/{s.GC1}/{s.GC2} · 托管堆 {s.HeapMb:0.0}MB\n") + age;
+            if (scene.Valid) _detail += LF($"；场景清醒 {scene.Awake} / 休眠 {scene.Sleeping}，碰撞体 {scene.Colliders}");
+            _schedule = LF($"物理调度：{s.StepsPerSecond:0.0}步/秒 / 设定 {s.ExpectedStepsPerSecond:0.0}，{s.StepsPerFrame:0.00}步/帧（非耗时）") +
+                LF($"；每帧清点预算 {_budgetMs.Value:0.0}ms，最近分片 {_lastPumpMs:0.00}ms") +
+                (_items.Running ? LF($"；物品清点中 {_items.Progress} 件") : "") + (_scene.Running ? LF($"；场景清点中 {_scene.Progress} 个对象") : "") +
+                (scene.Valid ? LF($"；场景数据距今 {Math.Max(0, now - scene.Ended):0.0}s") : "");
         }
         private void RefreshEventRows(float width)
         {
@@ -399,30 +441,32 @@ namespace DDEN.NetPerfTracker
         }
         private void DrawButtons(Rect area, ref float y)
         {
-            if (DdenUI.Button(new Rect(area.x, y, 65, 23), _stopped ? "清空重启" : _paused ? "继续" : "暂停", true))
+            _stageButton = _stageTiming.Value ? L("阶段计时：开") : L("阶段计时：关");
+            _eventsButton = _showEvents ? L("返回曲线") : L("突变记录：") + _alerts.Events.Count;
+            if (DdenUI.Button(new Rect(area.x, y, 65, 23), _stopped ? L("清空重启") : _paused ? L("继续") : L("暂停"), true))
             {
                 if (_stopped) { _buf.Clear(); _alerts.Clear(); _version++; _startedAt = Time.realtimeSinceStartup; _nextObjects = _nextScene = _startedAt; _items.Reset(); _scene.Reset(); _stopped = _paused = false; }
                 else _paused = !_paused;
                 _nextText = 0;
             }
-            if (DdenUI.Button(new Rect(area.x + 70, y, 65, 23), "清空")) { _buf.Clear(); _alerts.Clear(); _version++; _nextText = 0; _summary = "等待采样"; }
-            if (DdenUI.Button(new Rect(area.x + 140, y, 100, 23), "标记并清点")) { _event |= 16; _nextObjects = _nextScene = Time.realtimeSinceStartup; }
-            if (DdenUI.Button(new Rect(area.x + 245, y, 110, 23), _detailed.Value ? "详细统计：开" : "详细统计：关")) _detailed.Value = !_detailed.Value;
-            if (DdenUI.Button(new Rect(area.x + 360, y, 90, 23), "导出日志")) ExportLog();
-            if (DdenUI.Button(new Rect(area.x + 455, y, 90, 23), "打开目录"))
+            if (DdenUI.Button(new Rect(area.x + 70, y, 65, 23), L("清空"))) { _buf.Clear(); _alerts.Clear(); _version++; _nextText = 0; _summary = L("等待采样"); }
+            if (DdenUI.Button(new Rect(area.x + 140, y, 100, 23), L("标记并清点"))) { _event |= 16; _nextObjects = _nextScene = Time.realtimeSinceStartup; }
+            if (DdenUI.Button(new Rect(area.x + 245, y, 110, 23), _detailed.Value ? L("详细统计：开") : L("详细统计：关"))) _detailed.Value = !_detailed.Value;
+            if (DdenUI.Button(new Rect(area.x + 360, y, 90, 23), L("导出日志"))) ExportLog();
+            if (DdenUI.Button(new Rect(area.x + 455, y, 90, 23), L("打开目录")))
             {
                 string dir = Path.Combine(Paths.ConfigPath, "DDEN"); Directory.CreateDirectory(dir);
                 Process.Start(new ProcessStartInfo { FileName = dir, UseShellExecute = true });
             }
             y += 27;
-            if (DdenUI.Button(new Rect(area.x, y, 110, 23), _stageButton)) _stageTiming.Value = !_stageTiming.Value;
-            if (DdenUI.Button(new Rect(area.x + 115, y, 125, 23), _eventsButton)) { _showEvents = !_showEvents; _nextText = 0; }
+            if (DdenUI.Button(new Rect(area.x, y, 150, 23), _stageButton)) _stageTiming.Value = !_stageTiming.Value;
+            if (DdenUI.Button(new Rect(area.x + 155, y, 155, 23), _eventsButton)) { _showEvents = !_showEvents; _nextText = 0; }
             y += 27;
-            GUI.Label(new Rect(area.x, y, area.width, 31), "默认轻量记录；详细统计与碰撞检查可选。只在点“导出日志”时写文件。向下运动或无碰撞本身不证明物品异常。", DdenUI.Wrap);
+            GUI.Label(new Rect(area.x, y, area.width, 31), L("默认轻量记录；详细统计与碰撞检查可选。只在点“导出日志”时写文件。向下运动或无碰撞本身不证明物品异常。"), DdenUI.Wrap);
         }
         public bool DrawSettings(Rect area) => false;
-        private static string Value(float value) => value < 0 ? "不可用" : value.ToString("0.##", CultureInfo.InvariantCulture);
-        private static string Milliseconds(float value) => value < 0 ? "不可用" : value.ToString("0.##", CultureInfo.InvariantCulture) + "ms";
+        private static string Value(float value) => value < 0 ? L("不可用") : value.ToString("0.##", CultureInfo.InvariantCulture);
+        private static string Milliseconds(float value) => value < 0 ? L("不可用") : value.ToString("0.##", CultureInfo.InvariantCulture) + "ms";
         private void BuildCache()
         {
             if (_cacheVersion == _version) return;
@@ -541,6 +585,7 @@ namespace DDEN.NetPerfTracker
         }
         private void OnDestroy()
         {
+            DdenLocalization.Unregister(Config);
             try { _physics.Dispose(); _stages.Dispose(); _items.Cancel(); _scene.Cancel(); foreach (var chart in _charts) chart?.Dispose(); _process?.Dispose(); }
             catch (Exception ex) { Log.Debug("结束跟踪失败：" + ex.Message); }
         }

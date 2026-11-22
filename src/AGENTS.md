@@ -1,6 +1,6 @@
 # 源码局部约束
 
-遵守 [根协作约定](../agent.md)，并按协作者身份阅读 `agent/` 中对应的工作说明。当前工作树v1.7.2（部分源码尚未提交），结构与构建见 [development.md](../docs/development.md)。
+遵守 [根协作约定](../agent.md)，并按协作者身份阅读 `agent/` 中对应的工作说明。DDEN组件版本独立，产品版本与API代际分别维护，见[版本契约](../docs/component-versions.md)；结构与构建见 [development.md](../docs/development.md)。
 
 | 目录 | 职责 |
 | --- | --- |
@@ -16,4 +16,4 @@ DDEN内部模块引用Shared，实现IDdenModule并在DdenHub登记；只把界�
 
 独立外部模组不套用内部模块的Shared依赖要求，参照 [ET修复约束](外部mod/ET-Fix/AGENTS.md)，用L1桥交配置即可。
 
-新增或修改功能时先核对 [features.md](../docs/features.md) 的不变量，更新配置短说明、DdenDocs、玩家说明及相关技术文档，记录已验证和未验证范围。保持cfg键／网络协议／存档字段稳定；显示翻译不得改变逻辑身份。中文／English切换本轮只提方案，不偷偷加入未完成的语言选项。
+新增或修改功能时先核对 [features.md](../docs/features.md) 的不变量，更新配置短说明、DdenDocs、玩家说明及相关技术文档，记录已验证和未验证范围。保持cfg键／网络协议／存档字段稳定；显示翻译不得改变逻辑身份。管理器、MPfix与性能跟踪器已支持中文／English，显示规范见docs/manager-ui-contract.md；保持旧模块及L1外部配置免检兼容。

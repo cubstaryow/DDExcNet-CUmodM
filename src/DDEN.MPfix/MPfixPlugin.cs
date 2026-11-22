@@ -1,3 +1,4 @@
+using static DDEN.MPfix.ModuleText;
 using System;
 using System.Collections.Generic;
 using BepInEx;
@@ -21,10 +22,10 @@ namespace DDEN.MPfix
     ///  ⑦ 娱乐：道生一 一生二（商人购买多给一份，只在主机生效）。
     /// 界面与配置统一交给 DDExcNet-CUmodM 显示（模块 id = mpfix）。
     /// </summary>
-    [BepInPlugin(Guid, "DDEN MP Fix", "1.7.3")]
+    [BepInPlugin(Guid, "DDEN MP Fix", "1.7.4")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
-    public class MPfixPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleGate, IDdenModuleHealth, IDdenConfigPolicy, IDdenConfigAvailability
+    public class MPfixPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleVersion, IDdenModuleGate, IDdenModuleHealth, IDdenConfigPolicy, IDdenConfigAvailability
     {
         public const string Guid = "com.dden.mpfix";
         public const string Title = "多人修复";
@@ -101,8 +102,8 @@ namespace DDEN.MPfix
 
         /// <summary>主开关行：模块被闸门关掉时它仍然可点（否则再也打不开）。</summary>
         public string MasterKey => "总开关/启用本模块（MasterEnabled）";
-        public string ConfigNotice => !string.IsNullOrEmpty(_authority?.Notice) ? _authority.Notice
-            : _dependencies?.BlockedCount > 0 ? "部分功能缺少前置，已停用" : "";
+        public string ConfigNotice => !string.IsNullOrEmpty(_authority?.Notice) ? L(_authority.Notice)
+            : _dependencies?.BlockedCount > 0 ? L("部分功能缺少前置，已停用") : "";
         public bool CanEditConfig(ConfigEntryBase entry, bool normallyInteractive)
             => (_dependencies?.Available(entry) ?? true) && (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgUseHostAuthority)
                 || (normallyInteractive && !(_authority?.Locked ?? false)));
@@ -216,111 +217,155 @@ namespace DDEN.MPfix
             catch { return false; }
         }
 
+        private static string GateReason => LF($"当前游戏 {L(DdenGate.GameVersion)} · 联机组件 {L(DdenGate.MpVersion)}；本版是针对联机组件 {DdenGate.ExpectedMp} 做的修复。");
+
         /// <summary>给界面用的一句话状态。</summary>
         internal static string GateText =>
-            !Compat.PluginLoaded("CasualtiesMP") ? "未安装多人联机组件，相关功能已停用"
+            !Compat.PluginLoaded("CasualtiesMP") ? L("未安装多人联机组件，相关功能已停用")
             : DdenGate.Blocked
-                ? DdenGate.NoticeText + "（" + DdenGate.Reason + "）"
-                : "版本核对通过：" + DdenGate.GameVersion + " / 联机 " + DdenGate.MpVersion;
+                ? L(DdenGate.NoticeText) + "（" + GateReason + "）"
+                : L("版本核对通过：") + DdenGate.GameVersion + L(" / 联机 ") + DdenGate.MpVersion;
 
         /// <summary>把每个开关的完整说明登记给提示框（功能 / 修复的问题 / 解决方案 / 实验性 / 性能影响）。</summary>
         private static void RegisterDocs()
         {
-            DdenDocs.Add("总开关", "启用本模块（MasterEnabled）",
+            DdenDocs.AddStructured("总开关",
+                "启用本模块（MasterEnabled）",
                 "整个多人修复的总开关，关掉后所有修复都不动手。",
-                "想临时排除“是不是 DDEN 引起的”问题时用它一键停手。", "只做开关判断，不改游戏逻辑。");
-            DdenDocs.Add("总开关", "采用权威主机配置（UseHostAuthorityConfig）",
+                "想临时排除“是不是 DDEN 引起的”问题时用它一键停手。",
+                "只做开关判断，不改游戏逻辑。",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.None);
+            DdenDocs.AddStructured("总开关",
+                "采用权威主机配置（UseHostAuthorityConfig）",
                 "主机启用后统一下发设置，客机启用后临时采用主机设置。",
-                "希望同一局使用一致的修复配置。", "进局和主机配置变化时同步；客机暂时锁定其他设置，退出或取消采用后恢复本机值。",
-                "否", "按需发送，不定时重复下发；默认关闭");
+                "希望同一局使用一致的修复配置。",
+                "进局和主机配置变化时同步；客机暂时锁定其他设置，退出或取消采用后恢复本机值。",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.Low, performanceNote: "按需发送，不定时重复下发；默认关闭");
 
-            DdenDocs.Add("无芯片同步", "启用（Enabled）",
+            DdenDocs.AddStructured("无芯片同步",
+                "启用（Enabled）",
                 "同步主机无芯片规则，修正主机无芯片而客机仍有芯片。",
                 "联机时主机开了无芯片，自己这边却没跟着变（或反过来）。",
-                "应用主机的实际规则与本地玩家状态；进局、主机变更和主动请求均可同步。", "否", "无");
-            DdenDocs.Add("无芯片同步", "强制跟随主机（ForceHostUnchipped）",
+                "应用主机的实际规则与本地玩家状态；进局、主机变更和主动请求均可同步。",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.None);
+            DdenDocs.AddStructured("无芯片同步",
+                "强制跟随主机（ForceHostUnchipped）",
                 "按已收到的主机状态持续纠正本地无芯片规则。",
                 "主机已开无芯片，客机规则仍被本地状态覆盖。",
-                "收到主机值时应用，并按核对间隔纠正本地漂移；关闭后仍会接受首次、变化和请求结果。", "否", "无");
-            DdenDocs.Add("无芯片同步", "全员显示一致（OverrideIndividualRule）",
+                "收到主机值时应用，并按核对间隔纠正本地漂移；关闭后仍会接受首次、变化和请求结果。",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.None);
+            DdenDocs.AddStructured("无芯片同步",
+                "全员显示一致（OverrideIndividualRule）",
                 "关闭各自选择模式的规则，让无芯片设置统一跟随主机。",
                 "个人无芯片选项使客机与主机的实际规则不同。",
-                "将联机组件的个人无芯片规则关闭，再统一世界与本地玩家状态。", "否", "无");
-            DdenDocs.Add("无芯片同步", "核对间隔秒（WatchdogSeconds）",
+                "将联机组件的个人无芯片规则关闭，再统一世界与本地玩家状态。",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.None);
+            DdenDocs.AddStructured("无芯片同步",
+                "核对间隔秒（WatchdogSeconds）",
                 "本地规则与最近主机状态的核对间隔；0关闭此项纠正。",
                 "本地无芯片规则在同步后又发生漂移。",
-                "按间隔对照已缓存的主机状态，发现不同则纠正；不是按此间隔发网络请求。", "否", "极低");
-            DdenDocs.Add("无芯片同步", "纠正时提示（AnnounceToOtherPlayers）",
+                "按间隔对照已缓存的主机状态，发现不同则纠正；不是按此间隔发网络请求。",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.Low, performanceNote: "极低");
+            DdenDocs.AddStructured("无芯片同步",
+                "纠正时提示（AnnounceToOtherPlayers）",
                 "被自动纠正时在控制台提示一行。",
-                "排查时不知道有没有触发纠正。", "只在纠正发生时打印一行说明。", "否", "无");
+                "排查时不知道有没有触发纠正。",
+                "只在纠正发生时打印一行说明。",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.None);
 
-            DdenDocs.Add("联机合成", "修“无法生成物品”（FixModItemCraftSpawn）",
+            DdenDocs.AddStructured("联机合成",
+                "修“无法生成物品”（FixModItemCraftSpawn）",
                 "尝试重建失效模板，并补救合成生成失败。",
                 "联机合成模组加的配方时提示“无法生成物品”，东西出不来。",
-                "联机时仅清除已失效且仍有注册资料的模板缓存，由CCL重建；主机合成未生成结果时才尝试补救，不额外发放。", "是 · 需多人实测", "失效模板重建有冷却");
-            DdenDocs.Add("玩家名称", "尝试修复名称显示（FixPlayerNames）",
+                "联机时仅清除已失效且仍有注册资料的模板缓存，由CCL重建；主机合成未生成结果时才尝试补救，不额外发放。",
+                isExperimental: true, performanceImpact: DdenPerformanceImpact.Low, experimentalNote: "需多人实测", performanceNote: "失效模板重建有冷却");
+            DdenDocs.AddStructured("玩家名称",
+                "尝试修复名称显示（FixPlayerNames）",
                 "尝试恢复中文名字，修正空名字、问号和数字名字。",
                 "中文名字被截掉、变成问号或长串数字，主机名字为空。",
                 "名牌、方向提示、列表和聊天共用显示名称缓存；昵称恢复后更新聊天历史，只使用游戏字体，缺字显示 ?，不改存档身份。",
-                "否", "缓存名称与字体；不会逐帧扫描场景");
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.Low, performanceNote: "缓存名称与字体；不会逐帧扫描场景");
 
-            DdenDocs.Add("物品物理", "丢弃物解除穿墙（GuardDropPhysics）",
+            DdenDocs.AddStructured("物品物理",
+                "丢弃物解除穿墙（GuardDropPhysics）",
                 "玩家亲手丢出物品时，补开被关掉的碰撞体。",
                 "丢出去的物品穿过地板和墙体一路掉出地图。",
                 "只在“丢出”这一下把被关掉的碰撞体打开；不挪位置、不改物理模式，正压在实体里时不动。",
-                "否", "无（只在丢东西那一下执行）");
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.None, performanceNote: "只在丢东西那一下执行");
 
-            DdenDocs.Add("联机修正", "打开商人时对齐商品表（TraderSnapshotOnOpen）",
+            DdenDocs.AddStructured("联机修正",
+                "打开商人时对齐商品表（TraderSnapshotOnOpen）",
                 "每次打开商人界面，向主机要一份最新的商品表。",
                 "看到的商品和主机不一样，付了钱却拿不到东西。",
-                "打开界面时请主机重发一次完整商品表。", "否", "极低（只在开界面时一次）");
-            DdenDocs.Add("联机修正", "修“挖方块”-伤害重算（SyncBlockBreak）",
+                "打开界面时请主机重发一次完整商品表。",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.Low, performanceNote: "只在开界面时一次");
+            DdenDocs.AddStructured("联机修正",
+                "修“挖方块”-伤害重算（SyncBlockBreak）",
                 "默认补齐主机挖块漏算的世界伤害倍率。",
                 "挖方块时血量掉一截又弹回去，或者挖掉的方块过一会儿又长回来。",
                 "主机替客机结算时漏了一个世界伤害倍率，这里把它补上再交给联机框架原本的判定。",
-                "否", "极低（主机攻击时补算，保留原判定）");
-            DdenDocs.Add("联机修正", "修“打箱子/植物/动物”-伤害重算（SyncBuildingDamage）",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.Low, performanceNote: "主机攻击时补算，保留原判定");
+            DdenDocs.AddStructured("联机修正",
+                "修“打箱子/植物/动物”-伤害重算（SyncBuildingDamage）",
                 "默认补齐主机近战漏算的世界伤害倍率。",
                 "打储物箱、植物、动物时血量掉一下又弹回去。",
-                "主机使用该客机的远端角色状态补齐倍率，保留原结算。", "否", "低（只在攻击时执行）");
-            DdenDocs.Add("联机修正", "修“打角色/肢体”-伤害重算（SyncBodyDamage）",
+                "主机使用该客机的远端角色状态补齐倍率，保留原结算。",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.Low, performanceNote: "只在攻击时执行");
+            DdenDocs.AddStructured("联机修正",
+                "修“打角色/肢体”-伤害重算（SyncBodyDamage）",
                 "默认补齐角色肢体近战的世界伤害倍率。",
                 "客机近战打中角色或肢体类敌人，血量先减少又回升。",
                 "主机使用该客机的远端角色状态补齐倍率，保留原结算。",
-                "否", "低（只在攻击时执行）");
-            DdenDocs.Add("联机修正", "商人界面不再刷“prefab 为空”（QuietTraderUIModItems）",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.Low, performanceNote: "只在攻击时执行");
+            DdenDocs.AddStructured("联机修正",
+                "商人界面不再刷“prefab 为空”（QuietTraderUIModItems）",
                 "商人界面自检不再对模组物品报错。",
                 "打开商人界面时控制台一直刷“prefab 为空”的错误。",
-                "只对“模组物品不在游戏资源里”这种情况静音，真出错照常报警。", "否", "无");
+                "只对“模组物品不在游戏资源里”这种情况静音，真出错照常报警。",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.None);
 
-            DdenDocs.Add("娱乐", "道生一 一生二（DoublePurchase）",
+            DdenDocs.AddStructured("娱乐",
+                "道生一 一生二（DoublePurchase）",
                 "商人购买必定给两个；其它造物品行为有 20% 概率多一件。",
-                "不需要修什么，纯玩法开关。", "购买后补一件给买家；造物时按概率多生成一件。",
-                "否（玩法）", "低（多一件物品）");
-            DdenDocs.Add("界面", "独立面板热键（StandaloneKey）",
-                "没有管理器时，用它打开修复面板。", "只装了本模块没装管理器时没有界面。",
-                "按下这个键打开独立小面板。", "否", "无");
-            DdenDocs.Add("调试", "详细日志（Verbose）",
-                "输出更详细的日志。", "排查问题需要更多现场信息。", "把调试级日志也写进 BepInEx 日志。",
-                "否", "低（只在开日志时）");
+                "不需要修什么，纯玩法开关。",
+                "购买后补一件给买家；造物时按概率多生成一件。",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.Low, experimentalNote: "玩法", performanceNote: "多一件物品");
+            DdenDocs.AddStructured("界面",
+                "独立面板热键（StandaloneKey）",
+                "没有管理器时，用它打开修复面板。",
+                "只装了本模块没装管理器时没有界面。",
+                "按下这个键打开独立小面板。",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.None);
+            DdenDocs.AddStructured("调试",
+                "详细日志（Verbose）",
+                "输出更详细的日志。",
+                "排查问题需要更多现场信息。",
+                "把调试级日志也写进 BepInEx 日志。",
+                isExperimental: false, performanceImpact: DdenPerformanceImpact.Low, performanceNote: "只在开日志时");
         }
 
-        public string DisplayName => Title;
+        public string DisplayName => L(Title);
+        public string MinimumManagerVersion => "2.0.0";
+        public string TestedManagerVersion => "2.0.0";
+        public string MinimumSharedVersion => "2.0.0";
+        public string TestedSharedVersion => "2.0.0";
+        public int RequiredSharedApiVersion => DdenApi.Version;
         public string Version => Info.Metadata.Version.ToString();
         public bool Ready => Mp.CoreAvailable;
         public string Summary
         {
             get
             {
-                if (!Mp.CoreAvailable) return "缺少联机组件";
-                if (!Mp.IsRunning) return "未联机";
-                return Mp.IsServer ? "主机 · 同步中" : "客机 · 跟随中";
+                if (!Mp.CoreAvailable) return L("缺少联机组件");
+                if (!Mp.IsRunning) return L("未联机");
+                return Mp.IsServer ? L("主机 · 同步中") : L("客机 · 跟随中");
             }
         }
         public IEnumerable<ConfigEntryBase> ConfigEntries => Config.Entries();
 
         private void Awake()
         {
+            DdenLocalization.Register(Config, ModuleText.Catalog);
             Instance = this;
             LogSource = base.Logger;
             AuthoritySettings.All.Clear();
@@ -387,7 +432,7 @@ namespace DDEN.MPfix
             }
             else if (DdenGate.Blocked)
             {
-                Log.Warn($"[版本核对] {DdenGate.Reason}");
+                Log.Warn($"[版本核对] {GateReason}");
                 Log.Warn("[版本核对] 本模块暂不动手。到管理器「总览 → 忽略核对环境版本」打开它才会生效。");
             }
             else
@@ -561,37 +606,37 @@ namespace DDEN.MPfix
                                                : new Color(0.10f, 0.18f, 0.10f, 0.7f));
             DdenUI.Frame(gate, DdenGate.Blocked ? DdenUI.Bad : DdenUI.Good);
             DdenUI.Label(new Rect(gate.x + 8f, gate.y + 3f, gate.width - 16f, 18f),
-                DdenGate.Blocked ? "<b>" + DdenGate.NoticeText + "</b>"
-                                 : "本模块已启用 · " + GateText,
+                DdenGate.Blocked ? "<b>" + L(DdenGate.NoticeText) + "</b>"
+                                 : L("本模块已启用 · ") + GateText,
                 DdenUI.Row);
             if (DdenGate.Blocked)
             {
                 DdenUI.Label(new Rect(gate.x + 8f, gate.y + 22f, gate.width - 16f, 18f),
-                    DdenGate.Reason + " 到「总览 → 忽略核对环境版本」打开后生效。", DdenUI.Sub);
+                    GateReason + L(" 到「总览 → 忽略核对环境版本」打开后生效。"), DdenUI.Sub);
             }
             y = gate.yMax + 6f;
             if (!string.IsNullOrEmpty(ConfigNotice))
             { DdenUI.Label(new Rect(area.x, y, area.width, 18f), DdenUI.ElideToWidth(ConfigNotice, area.width, DdenUI.Sub), DdenUI.Sub); y += 22f; }
 
             // ===== 运行一览 =====
-            DdenUI.Label(new Rect(area.x, y, area.width, 16f), "运行一览", DdenUI.Sub);
+            DdenUI.Label(new Rect(area.x, y, area.width, 16f), L("运行一览"), DdenUI.Sub);
             y += 18f;
 
             (string name, FixState state, string note)[] fixes =
             {
-                ("无芯片同步", StateOf(CfgChipEnabled.Value), null),
-                ("联机生成（模组物品）", StateOf(CfgFixModItemCraftSpawn.Value, true, "联机合成/物品生成兜底"), null),
-                ("玩家名称显示", StateOf(CfgFixPlayerNames.Value, true, "玩家名称"), null),
-                ("物品网络登记", StateOf(true, false), null),
-                ("物品物理保险", StateOf(CfgPhysicsGuard.Value, false, "物品掉落物理保险（丢出）"), null),
-                ("挖方块伤害重算", StateOf(CfgBlockBreakSync.Value), null),
-                ("打单位伤害重算", StateOf(CfgSyncBuildingDamage.Value), null),
-                ("打角色/肢体伤害重算", StateOf(CfgSyncBodyDamage.Value), null),
-                ("商人商品表对齐", StateOf(CfgTraderSnapshot.Value), null),
-                ("商人界面静音", StateOf(CfgQuietTraderUIModItems.Value, false), null),
-                ("娱乐：一生二", StateOf(CfgDoublePurchase.Value, false), null),
-                ("环境版本核对", !Compat.PluginLoaded("CasualtiesMP") ? FixState.Off : DdenGate.Blocked ? FixState.Error : FixState.Running,
-                    DdenGate.Blocked ? DdenGate.Reason : null)
+                (L("无芯片同步"), StateOf(CfgChipEnabled.Value), null),
+                (L("联机生成（模组物品）"), StateOf(CfgFixModItemCraftSpawn.Value, true, "联机合成/物品生成兜底"), null),
+                (L("玩家名称显示"), StateOf(CfgFixPlayerNames.Value, true, "玩家名称"), null),
+                (L("物品网络登记"), StateOf(true, false), null),
+                (L("物品物理保险"), StateOf(CfgPhysicsGuard.Value, false, "物品掉落物理保险（丢出）"), null),
+                (L("挖方块伤害重算"), StateOf(CfgBlockBreakSync.Value), null),
+                (L("打单位伤害重算"), StateOf(CfgSyncBuildingDamage.Value), null),
+                (L("打角色/肢体伤害重算"), StateOf(CfgSyncBodyDamage.Value), null),
+                (L("商人商品表对齐"), StateOf(CfgTraderSnapshot.Value), null),
+                (L("商人界面静音"), StateOf(CfgQuietTraderUIModItems.Value, false), null),
+                (L("娱乐：一生二"), StateOf(CfgDoublePurchase.Value, false), null),
+                (L("环境版本核对"), !Compat.PluginLoaded("CasualtiesMP") ? FixState.Off : DdenGate.Blocked ? FixState.Error : FixState.Running,
+                    DdenGate.Blocked ? GateReason : null)
             };
 
             for (int i = 0; i < fixes.Length; i++)
@@ -601,27 +646,27 @@ namespace DDEN.MPfix
 
                 DdenUI.Fill(cell, new Color(1f, 1f, 1f, i % 2 == 0 ? 0.02f : 0.005f));
                 DdenUI.Label(new Rect(cell.x + 6f, cell.y, cell.width - 100f, cell.height),
-                    item.name, DdenUI.Sub);
+                    L(item.name), DdenUI.Sub);
 
                 (Color c, string t) style = item.state switch
                 {
-                    FixState.Running => (DdenUI.Good, "运行中"),
-                    FixState.Watching => (DdenUI.Accent, "监控中"),
-                    FixState.Error => (DdenUI.Bad, "错误"),
-                    _ => (new Color(0.6f, 0.62f, 0.66f, 1f), "关")
+                    FixState.Running => (DdenUI.Good, L("运行中")),
+                    FixState.Watching => (DdenUI.Accent, L("监控中")),
+                    FixState.Error => (DdenUI.Bad, L("错误")),
+                    _ => (new Color(0.6f, 0.62f, 0.66f, 1f), L("关"))
                 };
                 DdenUI.Chip(new Rect(cell.xMax - 88f, cell.y + 1f, 82f, 16f), style.t, style.c);
 
                 if (item.state == FixState.Error && !string.IsNullOrEmpty(item.note))
                 {
-                    DdenUI.Hover(cell, "错误：" + item.note);
+                    DdenUI.Hover(cell, L("错误：") + item.note);
                 }
             }
             y += fixes.Length * 20f + 8f;
 
             DrawUnchippedStatus(new Rect(area.x, y, area.width, 180f));
             y += 190f;
-            DdenUI.Label(new Rect(area.x + 4f, y, 90f, 18f), "巡检开销", DdenUI.Sub);
+            DdenUI.Label(new Rect(area.x + 4f, y, 90f, 18f), L("巡检开销"), DdenUI.Sub);
             DdenUI.Label(new Rect(area.x + 96f, y, area.width - 100f, 18f), TickCostText, DdenUI.Sub);
         }
 
@@ -634,21 +679,21 @@ namespace DDEN.MPfix
             DdenUI.Fill(card, DdenUI.Panel);
             DdenUI.Frame(card, DdenUI.AccentDim);
             DdenUI.Fill(new Rect(card.x, card.y, 2f, card.height), DdenUI.AccentDim);
-            DdenUI.Label(new Rect(left, card.y + 9f, width - 158f, 24f), "无芯片同步", DdenUI.Title);
+            DdenUI.Label(new Rect(left, card.y + 9f, width - 158f, 24f), L("无芯片同步"), DdenUI.Title);
             DdenUI.Chip(new Rect(card.xMax - 160f, card.y + 12f, 76f, 19f),
-                ready ? "组件就绪" : "组件缺失", ready ? DdenUI.Good : DdenUI.Bad);
+                ready ? L("组件就绪") : L("组件缺失"), ready ? DdenUI.Good : DdenUI.Bad);
             DdenUI.Chip(new Rect(card.xMax - 76f, card.y + 12f, 64f, 19f),
-                !running ? "未联机" : server ? "主机" : "客机", running ? DdenUI.Accent : DdenUI.TextDim);
+                !running ? L("未联机") : server ? L("主机") : L("客机"), running ? DdenUI.Accent : DdenUI.TextDim);
 
-            string hostValue = !running ? "等待联机" : _hasHostValue ? (_lastHostValue ? "无芯片" : "有芯片") : "等待同步";
-            string localValue = inWorld ? (WorldGeneration.world.unchippedMode ? "无芯片" : "有芯片") : "未进入世界";
-            DrawStatusValue(new Rect(left, card.y + 43f, half, 50f), "主机设置", hostValue, running && _hasHostValue);
-            DrawStatusValue(new Rect(left + half + 12f, card.y + 43f, half, 50f), "本机世界", localValue, inWorld);
+            string hostValue = !running ? L("等待联机") : _hasHostValue ? (_lastHostValue ? L("无芯片") : L("有芯片")) : L("等待同步");
+            string localValue = inWorld ? (WorldGeneration.world.unchippedMode ? L("无芯片") : L("有芯片")) : L("未进入世界");
+            DrawStatusValue(new Rect(left, card.y + 43f, half, 50f), L("主机设置"), hostValue, running && _hasHostValue);
+            DrawStatusValue(new Rect(left + half + 12f, card.y + 43f, half, 50f), L("本机世界"), localValue, inWorld);
 
-            DdenUI.Label(new Rect(left, card.y + 103f, 50f, 19f), "已纠正", DdenUI.Sub);
-            DdenUI.Label(new Rect(left + 52f, card.y + 103f, half - 52f, 19f), _appliedCount + " 次", DdenUI.Row);
-            DdenUI.Label(new Rect(left + half + 12f, card.y + 103f, 58f, 19f), "最近记录", DdenUI.Sub);
-            var reasonRect = new Rect(left + half + 72f, card.y + 103f, half - 60f, 19f);
+            DdenUI.Label(new Rect(left, card.y + 103f, 76f, 19f), L("已纠正"), DdenUI.Sub);
+            DdenUI.Label(new Rect(left + 78f, card.y + 103f, half - 78f, 19f), _appliedCount.ToString() + L(" 次"), DdenUI.Row);
+            DdenUI.Label(new Rect(left + half + 12f, card.y + 103f, 76f, 19f), L("最近记录"), DdenUI.Sub);
+            var reasonRect = new Rect(left + half + 92f, card.y + 103f, half - 80f, 19f);
             string reason = ReasonText(_lastReason);
             string visibleReason = DdenUI.ElideToWidth(reason, reasonRect.width, DdenUI.Sub);
             DdenUI.Label(reasonRect, visibleReason, DdenUI.Sub);
@@ -664,14 +709,14 @@ namespace DDEN.MPfix
             {
                 bool canSync = enabled && Active && running;
                 GUI.enabled = canSync;
-                if (DdenUI.Button(apply, "同步到本机", canSync)) ForceApply();
-                if (DdenUI.Button(request, "刷新主机状态")) RequestNow();
+                if (DdenUI.Button(apply, L("同步到本机"), canSync)) ForceApply();
+                if (DdenUI.Button(request, L("刷新主机状态"))) RequestNow();
                 GUI.enabled = canSync && server && WorldGeneration.world != null;
-                if (DdenUI.Button(toggle, "切换无芯片")) ToggleHostState();
+                if (DdenUI.Button(toggle, L("切换无芯片"))) ToggleHostState();
             }
             finally { GUI.enabled = enabled; }
-            if (!running) DdenUI.Hover(new Rect(left, apply.y, width, apply.height), "联机后可使用同步操作。");
-            else if (!server) DdenUI.Hover(toggle, "仅主机可切换世界设置。");
+            if (!running) DdenUI.Hover(new Rect(left, apply.y, width, apply.height), L("联机后可使用同步操作。"));
+            else if (!server) DdenUI.Hover(toggle, L("仅主机可切换世界设置。"));
         }
 
         private static void DrawStatusValue(Rect area, string title, string value, bool known)
@@ -685,15 +730,15 @@ namespace DDEN.MPfix
         /// <summary>把内部原因码翻成人话（这些串只用来记原因，不该原样显示给玩家）。</summary>
         private static string ReasonText(string reason)
         {
-            if (string.IsNullOrEmpty(reason) || reason == "-") return "暂无";
-            if (reason.IndexOf("runSettings", StringComparison.Ordinal) >= 0) return "待进入世界";
-            if (reason.StartsWith("request", StringComparison.Ordinal)) return "向主机查询";
-            if (reason.StartsWith("push", StringComparison.Ordinal)) return "主机主动同步";
-            if (reason.StartsWith("snapshot", StringComparison.Ordinal)) return "进局时同步";
-            if (reason.StartsWith("watchdog", StringComparison.Ordinal)) return "定时核对";
-            if (reason.StartsWith("manual", StringComparison.Ordinal)) return "手动纠正";
-            if (reason.StartsWith("seed-only", StringComparison.Ordinal)) return "只跟主机初始值";
-            return "已同步";
+            if (string.IsNullOrEmpty(reason) || reason == "-") return L("暂无");
+            if (reason.IndexOf("runSettings", StringComparison.Ordinal) >= 0) return L("待进入世界");
+            if (reason.StartsWith("request", StringComparison.Ordinal)) return L("向主机查询");
+            if (reason.StartsWith("push", StringComparison.Ordinal)) return L("主机主动同步");
+            if (reason.StartsWith("snapshot", StringComparison.Ordinal)) return L("进局时同步");
+            if (reason.StartsWith("watchdog", StringComparison.Ordinal)) return L("定时核对");
+            if (reason.StartsWith("manual", StringComparison.Ordinal)) return L("手动纠正");
+            if (reason.StartsWith("seed-only", StringComparison.Ordinal)) return L("只跟主机初始值");
+            return L("已同步");
         }
 
         public bool DrawSettings(Rect area) => false;
@@ -1059,8 +1104,8 @@ namespace DDEN.MPfix
             get
             {
                 MPfixPlugin p = Instance;
-                if (p == null || p._tickCount <= 0) return "热身中…";
-                return $"{p._tickSum / p._tickCount:0.000}ms / 峰值 {p._tickMax:0.000}ms";
+                if (p == null || p._tickCount <= 0) return L("热身中…");
+                return LF($"{p._tickSum / p._tickCount:0.000}ms / 峰值 {p._tickMax:0.000}ms");
             }
         }
 
@@ -1166,6 +1211,7 @@ namespace DDEN.MPfix
 
         private void OnDestroy()
         {
+            DdenLocalization.Unregister(Config);
             try { _authority?.Stop(); } catch (Exception ex) { Log.Debug("恢复本机配置失败：" + ex.Message); }
             PlayerNameRepair.Stop();
             try { new Harmony(Guid).UnpatchSelf(); }

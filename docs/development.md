@@ -40,7 +40,7 @@ docs/history/                     明确过时的历史记录
 dotnet build DDExcNet.slnx -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=false
 ```
 
-`DeployOnBuild`默认false；单纯构建不应写游戏目录。中文路径项目与嵌套检查项目已纳入解决方案／相对引用。五个发布组件版本由 `DdenVersion`统一（外部模组保持各自项目版本），目前工作树为1.7.2（部分代码尚未提交）；各插件 `BepInPlugin`中的字面版本也要同步，不能只改props。
+`DeployOnBuild`默认false；单纯构建不应写游戏目录。中文路径项目与嵌套检查项目已纳入解决方案／相对引用。DDEN组件均在各自csproj维护独立版本，不再使用DdenVersion统一属性：Shared 2.0.0（API v1）、管理器2.0.0、MPfix 1.7.4、性能跟踪器2.0.0、存档编辑器2.0.0-alpha。Alpha的加载器声明使用数字版2.0.0，发行元数据及模块显示保留alpha；外部模组版本不变。产品版本、两个适配最低要求和API代际见[版本契约](component-versions.md)。
 
 ## 部署与改名迁移
 
@@ -72,7 +72,8 @@ dotnet run --no-build --project tools/DamageRepairTests/DamageRepairTests.csproj
 | `MPfixSafetyTests` | 生成兜底、依赖、身份与名称安全约束 |
 | `HostAuthorityTests` | 临时配置层、本机恢复与有界同步 |
 | `NameFontTests` | 游戏字库策略、Unicode缺字与恢复 |
-| `PerfTrackerTests` | 性能采样、分帧清点、告警与日志逻辑 |
+| `PerfTrackerTests` | 性能采样、分帧清点、告警与日志逻辑，切换语言保留事件和原始日志证据 |
+| `ManagerLocalizationTests` | 双语目录／格式参数、原配置身份及控件、规范化显示标记、旧L1反射签名、外部语言桥、导航与折叠高度；GUI边界模拟 |
 | `EditorTests` | 原始字段保留、物品附加属性、容量与保存边界 |
 | `src/外部mod/ET-Fix/tests/HeatingCageFixTests` | 腐坏／配方／保存／网络状态与实际L1扫描，Unity和传输边界模拟 |
 

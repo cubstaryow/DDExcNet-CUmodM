@@ -15,7 +15,7 @@
       指定版本号与一段自定义说明。
 
 .NOTES
-  · 默认读取 DdenVersion；改版本还须同步各插件BepInPlugin字面版本，-Version不会改源码版本。
+  · 包版本默认读取管理器项目；每个DLL按自身项目版本验证，-Version不会修改源码。
   发布包内容 = DDEN 五个组件（公共层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器）+ 许可与说明文件。
   · 不会自动 push 分支；分支推送、创建tag及线上Release各自按用户授权处理。
 #>
@@ -36,15 +36,15 @@ $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Push-Location $Root
 try {
     # ===== 1. 版本号 =====
-    if (-not $Version) {
-        $props = Get-Content 'Directory.Build.props' -Raw
-        $m = [regex]::Match($props, '<DdenVersion>([^<]+)</DdenVersion>')
-        if (-not $m.Success) { throw 'Directory.Build.props 里没有找到 <DdenVersion>，请先补上或用 -Version 指定。' }
-        $Version = $m.Groups[1].Value.Trim()
+    function Read-ProjectVersion([string]$relativePath) {
+        [xml]$project = [IO.File]::ReadAllText((Join-Path $Root $relativePath))
+        $values = @($project.SelectNodes('/Project/PropertyGroup/Version') | ForEach-Object { $_.InnerText.Trim() } | Where-Object { $_ })
+        if ($values.Count -ne 1 -or $values[0] -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw "项目未声明明确的独立版本：$relativePath" }
+        return $values[0]
     }
-    if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw '版本号必须为主.次.补丁数字。' }
-    $sourceVersion = [regex]::Match([IO.File]::ReadAllText((Join-Path $Root 'Directory.Build.props')), '<DdenVersion>([^<]+)</DdenVersion>').Groups[1].Value.Trim()
-    if ($Version -ne $sourceVersion) { throw "版本参数与源码不符：$Version / $sourceVersion" }
+    $sourceVersion = Read-ProjectVersion 'src/DDExcNet.CUmodM/DDExcNet.CUmodM.csproj'
+    if (-not $Version) { $Version = $sourceVersion }
+    if ($Version -ne $sourceVersion) { throw "发布包版本需与管理器项目一致：$Version / $sourceVersion" }
     $Tag = "v$Version"
     Write-Host "== 版本: $Version（tag $Tag）" -ForegroundColor Cyan
 
@@ -67,8 +67,14 @@ try {
     # 本脚本不会构建或部署外部模组；JDI-DDEN同样不随包发布。
     foreach ($pair in $releaseBin.GetEnumerator()) {
         if (-not (Test-Path -LiteralPath $pair.Value -PathType Leaf)) { throw "缺少产物：$($pair.Value)（先构建 Release）" }
+        $projectName = if ($pair.Key -eq 'DDExcNet-CUmodM.dll') { 'DDExcNet.CUmodM' } else { [IO.Path]::GetFileNameWithoutExtension($pair.Key) }
+        $componentVersion = Read-ProjectVersion "src/$projectName/$projectName.csproj"
+        $expectedAssemblyVersion = ($componentVersion -split '-')[0] + '.0'
         $assemblyVersion = [Reflection.AssemblyName]::GetAssemblyName((Join-Path $Root $pair.Value)).Version.ToString()
-        if ($assemblyVersion -ne "$Version.0") { throw "程序集版本不匹配：$($pair.Key) = $assemblyVersion，预期 $Version.0" }
+        $productVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $Root $pair.Value)).ProductVersion
+        if (-not $productVersion -or ($productVersion -split '\+')[0] -ne $componentVersion) { throw "组件发行版本不匹配：$($pair.Key) = $productVersion，项目 $componentVersion" }
+        if ($assemblyVersion -ne $expectedAssemblyVersion) { throw "组件版本不匹配：$($pair.Key) = $assemblyVersion，项目 $componentVersion（预期 $expectedAssemblyVersion）" }
+
     }
 
     # ===== 3. 组装发布目录 =====

@@ -16,11 +16,11 @@ namespace DDExcNet.CUmodM
     /// ① 一个窗口管全部功能界面与配置界面；② 兼容性总控（互斥检测、快捷键抢键、补丁栈、旧文件残留）；
     /// ③ 各模块仍可单独工作，管理器缺席时它们退化成独立小窗。
     /// </summary>
-    [BepInPlugin(Guid, "DDExcNet CUmod Manager", "1.7.3")]
+    [BepInPlugin(Guid, "DDExcNet CUmod Manager", "2.0.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("org.bepinex.plugins.qol_unknown", BepInDependency.DependencyFlags.SoftDependency)]
-    public class HubPlugin : BaseUnityPlugin
+    public partial class HubPlugin : BaseUnityPlugin
     {
         public const string Guid = "com.dden.cumodm";
 
@@ -35,6 +35,10 @@ namespace DDExcNet.CUmodM
         internal static ConfigEntry<bool> CfgModalBlocker;
         internal static ConfigEntry<float> CfgBlockerDim;
         internal static ConfigEntry<bool> CfgVerbose;
+        internal static ConfigEntry<ManagerLanguage> CfgLanguage;
+        private bool _languageChanged;
+        private static string T(string key, params object[] args) => ManagerText.Get(key, args);
+        private static string ModuleName(IDdenModule module) => ManagerText.ModuleName(module.Id, module.DisplayName);
 
         private Rect _rect = new Rect(80f, 70f, 1180f, 760f);
         private Vector2 _sideScroll;
@@ -58,6 +62,12 @@ namespace DDExcNet.CUmodM
 
         internal static ConfigEntry<bool> CfgIgnoreEnv;
 
+        private void OnLanguageChanged()
+        {
+            CfgLanguage.Value = ManagerText.Language;
+            _about = null; _languageChanged = true;
+        }
+
         private void Awake()
         {
             Instance = this;
@@ -80,6 +90,11 @@ namespace DDExcNet.CUmodM
             CfgIgnoreEnv = Config.Bind("兼容性", "忽略核对环境版本（IgnoreEnvVersion）", false,
                 "默认关闭。本版 DDEN 针对联机组件 5.5.4 逐行核对过；版本对不上时相关模块会停手，打开这一项才允许它们继续工作。");
             CfgVerbose = Config.Bind("调试", "详细日志（Verbose）", false, "输出更详细的日志。");
+            CfgLanguage = Config.Bind("UI", "Language", ManagerLanguage.Chinese,
+                "界面语言 / UI language: Chinese, English. 管理器、MPfix、性能跟踪器共用；不改游戏语言、配置键或联机设置。");
+            ManagerText.Language = CfgLanguage.Value;
+            CfgLanguage.SettingChanged += (s, e) => { ManagerText.Language = CfgLanguage.Value; };
+            DdenLocalization.Changed += OnLanguageChanged;
 
             Log = DDEN.Shared.Log.For(LogSource, "CUmodM", CfgVerbose.Value);
             DDEN.Shared.Log.Attach(LogSource, "DDEN", CfgVerbose.Value);   // 共享代码（Compat/Reflect/SaveCodec）的落点
@@ -226,6 +241,7 @@ namespace DDExcNet.CUmodM
         private void OnDestroy()
         {
             DdenHub.OpenRequested -= OnOpenRequested;
+            DdenLocalization.Changed -= OnLanguageChanged;
         }
 
         private void OnOpenRequested(string id)
@@ -299,6 +315,7 @@ namespace DDExcNet.CUmodM
         {
             // 主界面醒目提示（2026-11 用户口径）：版本没核对上又没被忽略时，面板关着也要一直提醒。
             DrawEnvWarning();
+            DrawModuleVersionWarning();
 
             if (!_visible) return;
             try
@@ -330,6 +347,35 @@ namespace DDExcNet.CUmodM
         /// 主界面 / 世界里的醒目提示条：`DDEN未校对此环境版本兼容性，需要打开面板处理！`
         /// 只在“版本没核对上 + 用户没打开忽略”时出现；面板打开后由总览里的红色卡片接手。
         /// </summary>
+        private void DrawLanguageSelector(Rect r)
+        {
+            if (DdenUI.Button(new Rect(r.x, r.y, 84, r.height), "简体中文", !ManagerText.IsEnglish)) CfgLanguage.Value = ManagerLanguage.Chinese;
+            if (DdenUI.Button(new Rect(r.x + 88, r.y, 86, r.height), "English", ManagerText.IsEnglish)) CfgLanguage.Value = ManagerLanguage.English;
+            DdenUI.Hover(r, T("language.label"));
+        }
+        private static string DisplayVersion(string raw) => raw == "未知" ? T("value.unknown")
+            : raw == "未安装联机组件" ? T("value.noMP") : raw;
+        private static string EnvironmentReason() => T("env.reason", DisplayVersion(DdenGate.GameVersion), DisplayVersion(DdenGate.MpVersion), DdenGate.ExpectedMp);
+        private static string CompatibilityNote(string raw) => ManagerText.CompatibilityNote(raw);
+        private static string CompatibilityVersion(string raw) => ManagerText.CompatibilityVersion(raw);
+        private static string CompatibilityLevel(CompatLevel level)
+        {
+            switch (level)
+            {
+                case CompatLevel.Ok: return "<color=#8cd97c>" + T("compat.ok") + "</color>";
+                case CompatLevel.Info: return "<color=#9ad>" + T("compat.info") + "</color>";
+                case CompatLevel.Warn: return "<color=#f0a>" + T("compat.warn") + "</color>";
+                default: return "<color=#f66>" + T("compat.problem") + "</color>";
+            }
+        }
+        private static string CompatibilityHeadline()
+        {
+            int problems = Compat.Rows.Count(row => row.Level == CompatLevel.Problem);
+            int warnings = Compat.Rows.Count(row => row.Level == CompatLevel.Warn);
+            if (problems > 0) return "<color=#f66>" + T("compat.conflicts", problems, warnings) + "</color>";
+            if (warnings > 0) return "<color=#f0a>" + T("compat.warnings", warnings) + "</color>";
+            return "<color=#8cd97c>" + T("compat.none") + "</color>";
+        }
         private void DrawEnvWarning()
         {
             try
@@ -348,9 +394,9 @@ namespace DDExcNet.CUmodM
                     DdenUI.Fill(box, new Color(0.45f, 0.05f, 0.05f, 0.94f));
                     DdenUI.Frame(box, DdenUI.Bad);
                     GUI.Label(new Rect(box.x + 10f, box.y + 4f, box.width - 20f, 20f),
-                        "<b>" + DdenGate.NoticeText + "</b>", DdenUI.Row);
+                        "<b>" + T("env.notice") + "</b>", DdenUI.Row);
                     GUI.Label(new Rect(box.x + 10f, box.y + 24f, box.width - 20f, 18f),
-                        DdenGate.Reason + " 按 " + CfgToggleKey.Value.MainKey + " 打开面板处理。", DdenUI.Sub);
+                        T("env.open", EnvironmentReason(), CfgToggleKey.Value.MainKey), DdenUI.Sub);
 
                     GUI.matrix = old;
                 }
@@ -363,6 +409,11 @@ namespace DDExcNet.CUmodM
 
         private void DrawWindow(int id)
         {
+            if (_languageChanged)
+            {
+                _sideScroll = _compatScroll = _configScroll = _configSoloScroll = _extScroll = _overviewScroll = Vector2.zero;
+                _languageChanged = false;
+            }
             DdenUI.BeginFrame();
             DdenUI.Fill(new Rect(0, 0, _rect.width, _rect.height), DdenUI.Bg);
 
@@ -372,8 +423,9 @@ namespace DDExcNet.CUmodM
             DdenUI.Fill(new Rect(0, header.yMax - 1f, header.width, 1f), DdenUI.AccentDim);
             Texture2D logo = Logo;
             if (logo != null) DdenUI.DrawTex(new Rect(9f, 7f, 22f, 22f), logo);   // 16×16 放大到 22（Point 过滤，硬像素）
-            GUI.Label(new Rect(logo != null ? 37f : 12f, 6, 320, 24), "DDEN 模组管理器", DdenUI.Title);
-            GUI.Label(new Rect(340, 9, _rect.width - 360, 20), Compat.Headline(), DdenUI.Sub);
+            GUI.Label(new Rect(logo != null ? 37f : 12f, 6, 300, 24), T("window.title") + "  <size=10>" + Info.Metadata.Version + "</size>", DdenUI.Title);
+            GUI.Label(new Rect(340, 9, Mathf.Max(0, _rect.width - 570), 20), CompatibilityHeadline(), DdenUI.Sub);
+            DrawLanguageSelector(new Rect(_rect.width - 216, 8, 174, 20));
             if (DdenUI.Button(new Rect(_rect.width - 30f, 8f, 22f, 20f), "×", false)) _visible = false;
 
             // 侧边栏
@@ -388,7 +440,7 @@ namespace DDExcNet.CUmodM
             // 底栏
             DdenUI.Fill(new Rect(0, _rect.height - 24f, _rect.width, 24f), DdenUI.Panel);
             GUI.Label(new Rect(12, _rect.height - 23f, _rect.width - 24f, 20),
-                $"快捷键 {_effectiveKey} 开关 · 缩放 {CfgScale.Value:0.00} · 模块 {DdenHub.Modules.Count} 个 · 拖动标题栏移动", DdenUI.Sub);
+                T("footer", _effectiveKey, CfgScale.Value, DdenHub.Modules.Count), DdenUI.Sub);
 
             GUI.DragWindow(new Rect(0, 0, _rect.width, 36f));
             DdenUI.DrawTooltip(new Rect(0, 0, _rect.width, _rect.height));
@@ -398,23 +450,19 @@ namespace DDExcNet.CUmodM
         {
             float y = area.y;
 
-            y += NavButton(new Rect(area.x, y, area.width, 28f), "overview", "总览");
-            y += NavButton(new Rect(area.x, y, area.width, 28f), "compat", "兼容性  " + Compat.Headline());
-            y += NavButton(new Rect(area.x, y, area.width, 28f), "config", "全部配置");
-            y += NavButton(new Rect(area.x, y, area.width, 28f), AboutPage, "关于 DDExcNet");
+            y += NavButton(new Rect(area.x, y, area.width, 28f), "overview", T("nav.overview"));
+            y += NavButton(new Rect(area.x, y, area.width, 28f), "compat", T("nav.compat") + "  " + CompatibilityHeadline());
+            y += NavButton(new Rect(area.x, y, area.width, 28f), "config", T("nav.config"));
+            y += NavButton(new Rect(area.x, y, area.width, 28f), AboutPage, T("nav.about"));
             y += 10f;
 
-            DdenUI.Label(new Rect(area.x, y, area.width, 18f), "模组", DdenUI.Sub);
+            DdenUI.Label(new Rect(area.x, y, area.width, 18f), T("nav.modules"), DdenUI.Sub);
             y += 20f;
 
-            if (DdenHub.Modules.Count == 0 && DdenExternal.Blocks.Count == 0)
-            {
-                GUI.Label(new Rect(area.x, y, area.width, 40f), "还没有可显示的模组\n（确认它们装在同一目录里）", DdenUI.Wrap);
-            }
 
             // 模组 + 外部模组一起滚：外部模组（只交配置、没有 IDdenModule 的）也要能单独点开
             float listH = Mathf.Max(24f, area.yMax - y);
-            float contentH = DdenHub.Modules.Count * 32f;
+            float contentH = (DdenHub.Modules.Count + 1) * 32f;
             if (DdenExternal.Blocks.Count > 0) contentH += 22f + DdenExternal.Blocks.Count * 32f;
             contentH = Mathf.Max(contentH, listH - 2f);
 
@@ -423,9 +471,14 @@ namespace DDExcNet.CUmodM
             try
             {
             float sy = 0f;
+            var managerRow = new Rect(0, sy, area.width - 16, 30);
+            DdenUI.Fill(managerRow, _page == ConfigNavigation.Manager ? DdenUI.AccentDim : DdenUI.PanelAlt);
+            DdenUI.Label(new Rect(8, sy + 5, managerRow.width - 16, 20), T("config.manager"), DdenUI.Row);
+            if (GUI.Button(managerRow, GUIContent.none, GUIStyle.none)) _page = ConfigNavigation.Manager;
+            sy += 32f;
             foreach (IDdenModule module in DdenHub.Modules)
             {
-                bool selected = _page == module.Id;
+                bool selected = ConfigNavigation.Selected(_page, module.Id);
                 var r = new Rect(0, sy, area.width - 16f, 30f);
                 DdenUI.Fill(r, selected ? DdenUI.AccentDim : DdenUI.PanelAlt);
 
@@ -433,14 +486,14 @@ namespace DDExcNet.CUmodM
                 bool on = Enabled(module);
                 DdenHealth hp = Health(module);
                 string dot, state, stateColor;
-                if (!on) { dot = "#8a8f96"; state = "关闭"; stateColor = "#8a8f96"; }
-                else if (hp == DdenHealth.Severe) { dot = "#e05a5a"; state = "错误：" + (HealthNote(module) ?? "已终止"); stateColor = "#e05a5a"; }
-                else if (hp == DdenHealth.Warn) { dot = "#e8c15a"; state = "注意：" + (HealthNote(module) ?? "有错误"); stateColor = "#e8c15a"; }
-                else if (!module.Ready) { dot = "#f0a"; state = module.Summary ?? "降级"; stateColor = "#f0a"; }
+                if (!on) { dot = "#8a8f96"; state = T("state.off"); stateColor = "#8a8f96"; }
+                else if (hp == DdenHealth.Severe) { dot = "#e05a5a"; state = T("state.error") + (HealthNote(module) ?? T("state.stopped")); stateColor = "#e05a5a"; }
+                else if (hp == DdenHealth.Warn) { dot = "#e8c15a"; state = T("state.warning") + (HealthNote(module) ?? T("state.errors")); stateColor = "#e8c15a"; }
+                else if (!module.Ready) { dot = "#f0a"; state = module.Summary ?? T("state.degraded"); stateColor = "#f0a"; }
                 else { dot = "#8cd97c"; state = module.Summary ?? string.Empty; stateColor = "#89a"; }
 
                 DdenUI.Label(new Rect(r.x + 8f, r.y + 4f, r.width - 20f, 16f),
-                    "<color=" + dot + ">●</color> " + (on ? module.DisplayName : "<color=#9aa>»</color> " + module.DisplayName), DdenUI.Row);
+                    "<color=" + dot + ">●</color> " + (on ? ModuleName(module) : "<color=#9aa>»</color> " + ModuleName(module)), DdenUI.Row);
                 DdenUI.Label(new Rect(r.x + 8f, r.y + 17f, r.width - 20f, 12f),
                     "<color=" + stateColor + ">" + state + "</color>", DdenUI.Small);
                 if (GUI.Button(r, GUIContent.none, GUIStyle.none)) _page = module.Id;
@@ -449,7 +502,7 @@ namespace DDExcNet.CUmodM
 
             if (DdenExternal.Blocks.Count > 0)
             {
-                DdenUI.Label(new Rect(0, sy, area.width - 16f, 18f), "其它模组的设置", DdenUI.Sub);
+                DdenUI.Label(new Rect(0, sy, area.width - 16f, 18f), T("nav.external"), DdenUI.Sub);
                 sy += 22f;
 
                 for (int i = 0; i < DdenExternal.Blocks.Count; i++)
@@ -460,10 +513,10 @@ namespace DDExcNet.CUmodM
                     var r = new Rect(0, sy, area.width - 16f, 30f);
                     DdenUI.Fill(r, selected ? DdenUI.AccentDim : DdenUI.PanelAlt);
                     DdenUI.Label(new Rect(r.x + 8f, r.y + 4f, r.width - 20f, 16f),
-                        "<color=#89a>◇</color> " + (b.Title ?? b.Owner ?? "外部模组"), DdenUI.Row);
+                        "<color=#89a>◇</color> " + ExternalText(b, b.Title ?? b.Owner ?? T("external.default")), DdenUI.Row);
                     DdenUI.Label(new Rect(r.x + 8f, r.y + 17f, r.width - 20f, 12f),
-                        string.IsNullOrEmpty(b.CurrentSummary) ? (b.Owner ?? string.Empty) : b.CurrentSummary, DdenUI.Small);
-                    if (GUI.Button(r, GUIContent.none, GUIStyle.none)) _page = page;
+                        string.IsNullOrEmpty(b.CurrentSummary) ? (b.Owner ?? string.Empty) : ExternalText(b, b.CurrentSummary), DdenUI.Small);
+                    if (GUI.Button(r, GUIContent.none, GUIStyle.none)) _page = b.Draw != null ? page : "extconfig:" + i;
                     sy += 32f;
                 }
             }
@@ -476,7 +529,9 @@ namespace DDExcNet.CUmodM
         {
             bool selected = _page == page;
             DdenUI.Fill(r, selected ? DdenUI.AccentDim : DdenUI.PanelAlt);
-            DdenUI.Label(new Rect(r.x + 8f, r.y + 5f, r.width - 12f, 18f), label, DdenUI.Row);
+            // Keep rich status tags intact; the original style clips rich labels within the navigation row.
+            string caption = label.IndexOf('<') >= 0 ? label : DdenUI.ElideToWidth(label, r.width - 12f, DdenUI.Row);
+            DdenUI.Label(new Rect(r.x + 8f, r.y + 5f, r.width - 12f, 18f), caption, DdenUI.Row);
             if (GUI.Button(r, GUIContent.none, GUIStyle.none)) _page = page;
             return 30f;
         }
@@ -556,14 +611,14 @@ namespace DDExcNet.CUmodM
 
         private void DrawOverview(Rect area)
         {
-            GUI.Label(new Rect(area.x, area.y, area.width, 20f), "总览", DdenUI.Title);
+            GUI.Label(new Rect(area.x, area.y, area.width, 20f), T("nav.overview"), DdenUI.Title);
             GUI.Label(new Rect(area.x, area.y + 22f, area.width, 18f),
-                "这里集中放各个模组的功能页和设置项。没装管理器的模组会自己开一个小窗口。", DdenUI.Sub);
+                T("overview.description"), DdenUI.Sub);
 
             DdenGate.Probe();
             var viewport = new Rect(area.x, area.y + 48, area.width, Mathf.Max(1, area.height - 48));
-            float contentHeight = (DdenGate.Blocked ? 72 : 38) + DdenHub.Modules.Count * 62 + DdenExternal.Blocks.Count * 56
-                + 38 + Math.Min(8, Compat.Rows.Count) * 16;
+            float contentHeight = (DdenGate.Blocked ? 72 : 38) + DdenHub.Modules.Count * 84 + DdenExternal.Blocks.Count * 56
+                + 80 + 38 + Math.Min(8, Compat.Rows.Count) * 16;
             _overviewScroll = DdenUI.BeginScrollView(viewport, _overviewScroll, new Rect(0, 0, viewport.width - 18, Mathf.Max(viewport.height, contentHeight)));
             try
             {
@@ -578,10 +633,10 @@ namespace DDExcNet.CUmodM
                 DdenUI.Fill(warn, new Color(0.42f, 0.06f, 0.06f, 0.92f));
                 DdenUI.Frame(warn, DdenUI.Bad);
                 DdenUI.Label(new Rect(warn.x + 10f, warn.y + 6f, warn.width - 20f, 20f),
-                    "<b>" + DdenGate.NoticeText + "</b>", DdenUI.Row);
+                    "<b>" + T("env.notice") + "</b>", DdenUI.Row);
                 DdenUI.Label(new Rect(warn.x + 10f, warn.y + 28f, warn.width - 240f, 30f),
-                    DdenGate.Reason + " 打开下面的开关后这些修复才会生效。", DdenUI.Wrap);
-                if (DdenUI.Button(new Rect(warn.xMax - 224f, warn.y + 18f, 214f, 28f), "忽略核对环境版本", true))
+                    T("env.enable", EnvironmentReason()), DdenUI.Wrap);
+                if (DdenUI.Button(new Rect(warn.xMax - 224f, warn.y + 18f, 214f, 28f), T("env.ignore"), true))
                 {
                     CfgIgnoreEnv.Value = true;
                 }
@@ -593,36 +648,46 @@ namespace DDExcNet.CUmodM
                 DdenUI.Fill(ok, new Color(0.10f, 0.20f, 0.10f, 0.75f));
                 DdenUI.Frame(ok, DdenUI.Good);
                 DdenUI.Label(new Rect(ok.x + 10f, ok.y + 5f, ok.width - 260f, 20f),
-                    $"环境版本已核对：游戏 {DdenGate.GameVersion} · 联机组件 {DdenGate.MpVersion}", DdenUI.Row);
+                    T("env.verified", DisplayVersion(DdenGate.GameVersion), DisplayVersion(DdenGate.MpVersion)), DdenUI.Row);
                 bool ignore = DdenUI.CheckBoxLabeled(new Rect(ok.xMax - 250f, ok.y + 6f, 240f, 18f),
-                    CfgIgnoreEnv.Value, "忽略核对环境版本");
+                    CfgIgnoreEnv.Value, T("env.ignore"));
                 if (ignore != CfgIgnoreEnv.Value) CfgIgnoreEnv.Value = ignore;
                 y += 38f;
             }
 
             foreach (IDdenModule module in DdenHub.Modules)
             {
-                var card = new Rect(area.x, y, area.width, 56f);
+                var card = new Rect(area.x, y, area.width, 78f);
                 bool cardOn = Enabled(module);
                 DdenHealth cardHp = Health(module);
                 Color cardEdge = !cardOn ? new Color(1f, 1f, 1f, 0.14f)
                                 : cardHp == DdenHealth.Severe ? DdenUI.Bad
                                 : cardHp == DdenHealth.Warn ? DdenUI.Warn
                                 : module.Ready ? DdenUI.AccentDim : DdenUI.Warn;
-                string cardState = !cardOn ? "<color=#8a8f96>关闭</color>"
-                                 : cardHp == DdenHealth.Severe ? "<color=#e05a5a>错误：</color>" + (HealthNote(module) ?? "已终止")
-                                 : cardHp == DdenHealth.Warn ? "<color=#e8c15a>注意：</color>" + (HealthNote(module) ?? "有错误")
-                                 : (module.Ready ? "<color=#8cd97c>正常</color>" : "<color=#f0a>功能受限</color>") + " · " + (module.Summary ?? "");
+                string cardState = !cardOn ? "<color=#8a8f96>" + T("state.off") + "</color>"
+                                 : cardHp == DdenHealth.Severe ? "<color=#e05a5a>" + T("state.error") + "</color>" + (HealthNote(module) ?? T("state.stopped"))
+                                 : cardHp == DdenHealth.Warn ? "<color=#e8c15a>" + T("state.warning") + "</color>" + (HealthNote(module) ?? T("state.errors"))
+                                 : (module.Ready ? "<color=#8cd97c>" + T("state.normal") + "</color>" : "<color=#f0a>" + T("state.limited") + "</color>") + " · " + (module.Summary ?? "");
 
                 DdenUI.Fill(card, DdenUI.Panel);
                 DdenUI.Frame(card, cardEdge);
                 DdenUI.Label(new Rect(card.x + 10f, card.y + 6f, card.width - 200f, 18f),
-                    module.DisplayName + $"  <size=10><color=#89a>{module.Version}</color></size>", DdenUI.Row);
+                    ModuleName(module) + $"  <size=10><color=#89a>{module.Version}</color></size>", DdenUI.Row);
                 DdenUI.Label(new Rect(card.x + 10f, card.y + 26f, card.width - 200f, 16f), cardState, DdenUI.Sub);
-                if (DdenUI.Button(new Rect(card.xMax - 180f, card.y + 14f, 90f, 26f), "打开界面", true)) _page = module.Id;
-                if (DdenUI.Button(new Rect(card.xMax - 84f, card.y + 14f, 74f, 26f), "配置")) _page = "config:" + module.Id;
-                y += 62f;
+                if (DdenUI.Button(new Rect(card.xMax - 180f, card.y + 14f, 90f, 26f), T("action.open"), true)) _page = module.Id;
+                if (DdenUI.Button(new Rect(card.xMax - 84f, card.y + 14f, 74f, 26f), T("action.config"))) _page = "config:" + module.Id;
+                DrawModuleVersionLine(new Rect(card.x + 10, card.y + 49, card.width - 20, 18), module);
+                y += 84f;
             }
+
+            var managerCard = new Rect(area.x, y, area.width, 74f);
+            DdenUI.Fill(managerCard, DdenUI.Panel);
+            DdenUI.Frame(managerCard, DdenUI.AccentDim);
+            DdenUI.Label(new Rect(managerCard.x + 10, managerCard.y + 5, managerCard.width - 110, 18), T("config.manager"), DdenUI.Row);
+            DdenUI.Label(new Rect(managerCard.x + 10, managerCard.y + 25, managerCard.width - 110, 16), T("versions.managerShared", Info.Metadata.Version, DdenApi.SharedVersion, DdenApi.CurrentVersion), DdenUI.Sub);
+            DdenUI.Label(new Rect(managerCard.x + 10, managerCard.y + 47, managerCard.width - 20, 18), T("versions.sharedStatus", ModuleVersionCatalog.SharedRelease, ReleaseText(DdenVersionPolicy.CompareRelease(DdenApi.SharedVersion, ModuleVersionCatalog.SharedRelease))), DdenUI.Sub);
+            if (DdenUI.Button(new Rect(managerCard.xMax - 84, managerCard.y + 11, 74, 26), T("action.config"))) _page = ConfigNavigation.Manager;
+            y += 80f;
 
             // 外部模组（只交配置、没有 IDdenModule 的）：也给一张卡，点进去就是它自己的页
             for (int i = 0; i < DdenExternal.Blocks.Count; i++)
@@ -632,22 +697,22 @@ namespace DDExcNet.CUmodM
                 DdenUI.Fill(card, DdenUI.Panel);
                 DdenUI.Frame(card, DdenUI.AccentDim);
                 DdenUI.Label(new Rect(card.x + 10f, card.y + 5f, card.width - 200f, 18f),
-                    "<color=#89a>其它模组 · </color>" + (b.Title ?? b.Owner ?? "外部模组"), DdenUI.Row);
+                    "<color=#89a>" + T("external.prefix") + " </color>" + ExternalText(b, b.Title ?? b.Owner ?? T("external.default")), DdenUI.Row);
                 DdenUI.Label(new Rect(card.x + 10f, card.y + 24f, card.width - 200f, 16f),
-                    string.IsNullOrEmpty(b.CurrentSummary) ? "它把自己的设置交给管理器显示" : b.CurrentSummary, DdenUI.Sub);
-                if (b.Draw != null && DdenUI.Button(new Rect(card.xMax - 180f, card.y + 11f, 90f, 26f), "打开界面")) _page = "ext:" + i;
-                if (DdenUI.Button(new Rect(card.xMax - 84f, card.y + 11f, 74f, 26f), "配置", true)) _page = "extconfig:" + i;
+                    string.IsNullOrEmpty(b.CurrentSummary) ? T("external.description") : ExternalText(b, b.CurrentSummary), DdenUI.Sub);
+                if (b.Draw != null && DdenUI.Button(new Rect(card.xMax - 180f, card.y + 11f, 90f, 26f), T("action.open"))) _page = "ext:" + i;
+                if (DdenUI.Button(new Rect(card.xMax - 84f, card.y + 11f, 74f, 26f), T("action.config"), true)) _page = "extconfig:" + i;
                 y += 56f;
             }
 
             if (y + 60f < area.yMax)
             {
-                GUI.Label(new Rect(area.x, y + 6f, area.width, 18f), "兼容性摘要", DdenUI.Sub);
+                GUI.Label(new Rect(area.x, y + 6f, area.width, 18f), T("compat.summary"), DdenUI.Sub);
                 float ry = y + 26f;
                 foreach (CompatRow row in Compat.Rows.Take(8))
                 {
                     GUI.Label(new Rect(area.x, ry, area.width, 16f),
-                        $"{row.LevelText}  {row.Name}  <color=#89a>{row.Version}</color>  {row.Note}", DdenUI.Sub);
+                        $"{CompatibilityLevel(row.Level)}  {row.Name}  <color=#89a>{CompatibilityVersion(row.Version)}</color>  {CompatibilityNote(row.Note)}", DdenUI.Sub);
                     ry += 18f;
                 }
             }
@@ -657,9 +722,9 @@ namespace DDExcNet.CUmodM
 
         private void DrawCompat(Rect area)
         {
-            GUI.Label(new Rect(area.x, area.y, area.width, 20f), "兼容性", DdenUI.Title);
+            GUI.Label(new Rect(area.x, area.y, area.width, 20f), T("nav.compat"), DdenUI.Title);
 
-            if (DdenUI.Button(new Rect(area.xMax - 100f, area.y, 100f, 24f), "重新扫描", true))
+            if (DdenUI.Button(new Rect(area.xMax - 100f, area.y, 100f, 24f), T("action.rescan"), true))
             {
                 try { Compat.Rescan(); } catch (Exception ex) { Log.Exception(ex, "Rescan"); }
             }
@@ -677,9 +742,10 @@ namespace DDExcNet.CUmodM
                 var r = new Rect(0, y, list.width - 18f, rowH - 4f);
                 DdenUI.Fill(r, y % 68f < 34f ? DdenUI.Panel : DdenUI.PanelAlt);
                 DdenUI.Label(new Rect(r.x + 6f, r.y + 2f, 250f, 16f), row.Name, DdenUI.Row);
-                DdenUI.Label(new Rect(r.x + 6f, r.y + 17f, 250f, 12f), row.LevelText, DdenUI.Small);
-                DdenUI.Label(new Rect(r.x + 262f, r.y + 2f, r.width - 268f, 14f), row.Version, DdenUI.Sub);
-                DdenUI.Label(new Rect(r.x + 262f, r.y + 15f, r.width - 268f, 14f), row.Note, DdenUI.Sub);
+                DdenUI.Label(new Rect(r.x + 6f, r.y + 17f, 250f, 12f), CompatibilityLevel(row.Level), DdenUI.Small);
+                DdenUI.Label(new Rect(r.x + 262f, r.y + 2f, r.width - 268f, 14f), CompatibilityVersion(row.Version), DdenUI.Sub);
+                DdenUI.Label(new Rect(r.x + 262f, r.y + 15f, r.width - 268f, 14f), CompatibilityNote(row.Note), DdenUI.Sub);
+                DdenUI.Hover(r, row.Name + "\n" + CompatibilityLevel(row.Level) + " · " + CompatibilityVersion(row.Version) + "\n" + CompatibilityNote(row.Note));
                 y += rowH;
             }
             }
@@ -700,12 +766,12 @@ namespace DDExcNet.CUmodM
             string key = (settingsOnly ? "settings:" : "page:") + index;
             if (_externalFor != key) { _externalFor = key; _extScroll = Vector2.zero; }
             GUI.Label(new Rect(area.x, area.y, area.width - 220f, 20f),
-                DdenUI.ElideToWidth((block.Title ?? block.Owner ?? "其它模组") + (settingsOnly ? " · 配置" : ""), area.width - 220, DdenUI.Title), DdenUI.Title);
-            if (block.Draw != null && DdenUI.Button(new Rect(area.xMax - 208, area.y, 80, 22), settingsOnly ? "功能页" : "配置"))
+                DdenUI.ElideToWidth(ExternalText(block, block.Title ?? block.Owner ?? T("external.default")) + (settingsOnly ? " · " + T("action.config") : ""), area.width - 220, DdenUI.Title), DdenUI.Title);
+            if (block.Draw != null && DdenUI.Button(new Rect(area.xMax - 208, area.y, 80, 22), settingsOnly ? T("action.functions") : T("action.config")))
             { _page = (settingsOnly ? "ext:" : "extconfig:") + index; return; }
-            if (DdenUI.Button(new Rect(area.xMax - 120f, area.y, 120f, 22f), "← 看全部配置"))
+            if (DdenUI.Button(new Rect(area.xMax - 120f, area.y, 120f, 22f), T("action.back")))
             {
-                _page = "config";
+                _page = settingsOnly && block.Draw != null ? "ext:" + index : "overview";
                 return;
             }
 
@@ -729,106 +795,97 @@ namespace DDExcNet.CUmodM
             catch (Exception ex)
             {
                 Log.Exception(ex, "外部页面绘制失败：" + block.Title);
-                DdenUI.Label(body, "该外部页面绘制失败：" + ex.Message, DdenUI.Wrap);
+                DdenUI.Label(body, T("error.external", ex.Message), DdenUI.Wrap);
             }
+        }
+
+        private readonly ConfigFolds _configFolds = new ConfigFolds();
+        private static string ExternalText(DdenExternal.Block b, string text) => b.Localize(text, DdenLocalization.Language == DdenLanguage.English ? "en" : "zh-CN");
+        private static string ExternalFoldKey(DdenExternal.Block b) => "external:" + b.Type?.AssemblyQualifiedName + "/" + b.Owner;
+
+        private bool ConfigHeader(float y, float width, string key, string caption, string route)
+        {
+            DdenUI.Fill(new Rect(0, y, width, 22), DdenUI.AccentDim);
+            bool expanded = _configFolds.Expanded(key);
+            var toggle = new Rect(0, y, width - 86, 22);
+            GUI.Label(new Rect(6, y + 2, width - 96, 18), (expanded ? "▼ " : "▶ ") + caption, DdenUI.Row);
+            if (GUI.Button(toggle, GUIContent.none, GUIStyle.none)) _configFolds.Toggle(key);
+            DdenUI.Hover(toggle, T(expanded ? "action.collapse" : "action.expand"));
+            if (DdenUI.Button(new Rect(width - 78, y + 2, 70, 18), T("action.separate")))
+            { _page = route; return true; }
+            return false;
         }
 
         private void DrawAllConfig(Rect area)
         {
-            string moduleId = _page.StartsWith("config:") ? _page.Substring(7) : null;
-            IDdenModule module = DdenHub.Find(moduleId);
+            bool manager = _page == ConfigNavigation.Manager;
+            string moduleId = _page.StartsWith("config:", StringComparison.Ordinal) ? _page.Substring(7) : null;
+            IDdenModule module = manager ? null : DdenHub.Find(moduleId);
+            bool single = manager || module != null;
+            GUI.Label(new Rect(area.x, area.y, area.width - 130, 20),
+                manager ? T("config.manager") : module == null ? T("config.all") : T("config.title", ModuleName(module)), DdenUI.Title);
+            if (single && DdenUI.Button(new Rect(area.xMax - 110, area.y, 110, 22), T("action.back")))
+            { _page = ConfigNavigation.Back(module?.Id, module != null); return; }
 
-            GUI.Label(new Rect(area.x, area.y, area.width - 130f, 20f),
-                module == null ? "全部配置（所有模块 + 管理器）" : module.DisplayName + " · 配置", DdenUI.Title);
-
-            if (module != null && DdenUI.Button(new Rect(area.xMax - 110f, area.y, 110f, 22f), "← 看全部"))
+            if (single)
             {
-                _page = "config";
-                return;
-            }
-
-            // 单模块配置
-            if (module != null)
-            {
-                Rect solo = new Rect(area.x, area.y + 26f, area.width, area.height - 26f);
-
-                // 换了一个模块看配置时把滚动条归零（否则会带着上一个模块的位置落到底部）
-                if (_soloConfigFor != module.Id)
-                {
-                    _soloConfigFor = module.Id;
-                    _configSoloScroll = Vector2.zero;
-                    Log.Info($"[CFG] 单独查看配置：{module.DisplayName}（{module.Id}，{module.ConfigEntries.Count()} 条）");
-                }
-
+                string key = manager ? ConfigNavigation.Manager : module.Id;
+                float versionHeight = module == null ? 0 : DrawModuleVersionBand(new Rect(area.x, area.y + 26, area.width, area.height - 26), module);
+                Rect solo = new Rect(area.x, area.y + 26 + versionHeight, area.width, area.height - 26 - versionHeight);
+                if (_soloConfigFor != key) { _soloConfigFor = key; _configSoloScroll = Vector2.zero; }
                 bool handled = false;
-                try { handled = module.DrawSettings(solo); }
-                catch (Exception ex) { DdenUI.Label(solo, "配置绘制失败：" + ex.Message, DdenUI.Wrap); handled = true; }
+                if (!manager)
+                    try { handled = module.DrawSettings(solo); }
+                    catch (Exception ex) { DdenUI.Label(solo, T("error.settings", ex.Message), DdenUI.Wrap); handled = true; }
                 if (handled) return;
-
-                float soloH = DdenUI.ConfigListHeight(module.ConfigEntries) + 12f;
-                _configSoloScroll = DdenUI.BeginScrollView(solo, _configSoloScroll,
-                    new Rect(0, 0, solo.width - 18f, Mathf.Max(solo.height, soloH)));
-                try { DdenUI.DrawConfigGrouped(new Rect(0, 0, solo.width - 18f, soloH), module.ConfigEntries, Enabled(module), MasterKey(module), module as IDdenConfigPolicy); }
+                var entries = (manager ? Config.Entries() : module.ConfigEntries).ToArray();
+                float height = DdenUI.ConfigListHeight(entries) + 12;
+                _configSoloScroll = DdenUI.BeginScrollView(solo, _configSoloScroll, new Rect(0, 0, solo.width - 18, Mathf.Max(solo.height, height)));
+                try
+                {
+                    if (manager) ManagerConfigUI.Draw(new Rect(0, 0, solo.width - 18, height), entries);
+                    else DdenUI.DrawConfigGrouped(new Rect(0, 0, solo.width - 18, height), entries, Enabled(module), MasterKey(module), module as IDdenConfigPolicy);
+                }
                 finally { DdenUI.EndScrollView(); }
                 return;
             }
             _soloConfigFor = null;
-
-            // 全部模块 + 管理器自身，一次滚到底
-            Rect body = new Rect(area.x, area.y + 26f, area.width, area.height - 26f);
-            // 每块实际占用 = 22(标题条) + 4 + 配置区 + 10(间距) = 36 + 配置区；
-            // 原来按 28 算，模块一多就差出几十像素 → 最底下的配置行滚不到。
-            const float blockOverhead = 36f;
-            float total = 40f;
-            foreach (IDdenModule m in DdenHub.Modules) total += blockOverhead + DdenUI.ConfigListHeight(m.ConfigEntries);
-            total += blockOverhead + DdenUI.ConfigListHeight(Config.Entries());
-            foreach (DdenExternal.Block b in DdenExternal.Blocks) total += blockOverhead + DdenUI.ConfigListHeight(b.Entries);
-
-            float w = body.width - 18f;
-            _configScroll = DdenUI.BeginScrollView(body, _configScroll,
-                new Rect(0, 0, w, Mathf.Max(body.height, total)));
+            GUI.Label(new Rect(area.x, area.y + 22, area.width, 30), T("config.scope"), DdenUI.Wrap);
+            Rect body = new Rect(area.x, area.y + 54, area.width, area.height - 54);
+            var modules = DdenHub.Modules.ToArray();
+            var externals = DdenExternal.Blocks.ToArray();
+            var moduleEntries = modules.Select(m => m.ConfigEntries.ToArray()).ToArray();
+            var externalEntries = externals.Select(b => b.Entries.ToArray()).ToArray();
+            var ownEntries = Config.Entries().ToArray();
+            float total = 12 + _configFolds.Height(ConfigNavigation.Manager, DdenUI.ConfigListHeight(ownEntries));
+            for (int i = 0; i < modules.Length; i++) total += _configFolds.Height("module:" + modules[i].Id, DdenUI.ConfigListHeight(moduleEntries[i]));
+            for (int i = 0; i < externals.Length; i++) total += _configFolds.Height(ExternalFoldKey(externals[i]), DdenUI.ConfigListHeight(externalEntries[i]));
+            float width = body.width - 18;
+            _configScroll.y = Mathf.Clamp(_configScroll.y, 0, Mathf.Max(0, total - body.height));
+            _configScroll = DdenUI.BeginScrollView(body, _configScroll, new Rect(0, 0, width, Mathf.Max(body.height, total)));
             try
             {
-            float y = 0f;
-            foreach (IDdenModule m in DdenHub.Modules)
-            {
-                DdenUI.Fill(new Rect(0, y, w, 22f), DdenUI.AccentDim);
-                GUI.Label(new Rect(6f, y + 2f, w - 90f, 18f),
-                    $"{m.DisplayName}  <size=10><color=#89a>{m.Version}</color></size>  ·  {m.Summary}", DdenUI.Row);
-                if (DdenUI.Button(new Rect(w - 78f, y + 2f, 70f, 18f), "单独看"))
+                float y = 0;
+                for (int i = 0; i < modules.Length; i++)
                 {
-                    _page = "config:" + m.Id;
-                    return;
+                    var m = modules[i]; string key = "module:" + m.Id;
+                    if (ConfigHeader(y, width, key, ModuleName(m) + "  ·  " + m.Version + "  ·  " + m.Summary, "config:" + m.Id)) return;
+                    y += 26;
+                    if (_configFolds.Expanded(key)) y += DdenUI.DrawConfigGrouped(new Rect(0, y, width, 4000), moduleEntries[i], Enabled(m), MasterKey(m), m as IDdenConfigPolicy);
+                    y += 10;
                 }
-                y += 26f;
-                y += DdenUI.DrawConfigGrouped(new Rect(0, y, w, 4000f), m.ConfigEntries, Enabled(m), MasterKey(m), m as IDdenConfigPolicy);
-                y += 10f;
-            }
-
-            DdenUI.Fill(new Rect(0, y, w, 22f), DdenUI.AccentDim);
-            GUI.Label(new Rect(6f, y + 2f, w - 12f, 18f), "管理器自身", DdenUI.Row);
-            y += 26f;
-            y += DdenUI.DrawConfigGrouped(new Rect(0, y, w, 4000f), Config.Entries());
-            y += 10f;
-
-            // 外部模组交出来的配置（DdenExternal 约定接入，无需引用 DDEN.Shared）
-            for (int i = 0; i < DdenExternal.Blocks.Count; i++)
-            {
-                DdenExternal.Block b = DdenExternal.Blocks[i];
-                DdenUI.Fill(new Rect(0, y, w, 22f), DdenUI.AccentDim);
-                GUI.Label(new Rect(6f, y + 2f, w - 90f, 18f),
-                    $"{b.Title}  <size=10><color=#89a>{b.Owner}</color></size>" +
-                    (string.IsNullOrEmpty(b.CurrentSummary) ? "" : $"  ·  {b.CurrentSummary}"), DdenUI.Row);
-                if (DdenUI.Button(new Rect(w - 78f, y + 2f, 70f, 18f), "单独看"))
+                if (ConfigHeader(y, width, ConfigNavigation.Manager, T("config.manager"), ConfigNavigation.Manager)) return;
+                y += 26;
+                if (_configFolds.Expanded(ConfigNavigation.Manager)) y += ManagerConfigUI.Draw(new Rect(0, y, width, 4000), ownEntries);
+                y += 10;
+                for (int i = 0; i < externals.Length; i++)
                 {
-                    _page = "extconfig:" + i;
-                    return;
+                    var b = externals[i]; string key = ExternalFoldKey(b);
+                    if (ConfigHeader(y, width, key, ExternalText(b, b.Title) + "  ·  " + b.Owner, "extconfig:" + i)) return;
+                    y += 26;
+                    if (_configFolds.Expanded(key)) y += DdenUI.DrawConfigGrouped(new Rect(0, y, width, 4000), externalEntries[i], true, null, b);
+                    y += 10;
                 }
-                y += 26f;
-                y += DdenUI.DrawConfigGrouped(new Rect(0, y, w, 4000f), b.Entries, true, null, b);
-                y += 10f;
-            }
-
             }
             finally { DdenUI.EndScrollView(); }
         }
@@ -861,7 +918,7 @@ namespace DDExcNet.CUmodM
                 string name = null;
                 foreach (string n in asm.GetManifestResourceNames())
                 {
-                    if (n.EndsWith("about.txt", StringComparison.OrdinalIgnoreCase)) { name = n; break; }
+                    if (n.EndsWith(ManagerText.IsEnglish ? "about.en.txt" : "about.txt", StringComparison.OrdinalIgnoreCase)) { name = n; break; }
                 }
                 if (name == null)
                 {
@@ -957,7 +1014,7 @@ namespace DDExcNet.CUmodM
         /// <summary>关于页：DDExcNet 是什么、作者、本仓库组成。</summary>
         private void DrawAbout(Rect area)
         {
-            GUI.Label(new Rect(area.x, area.y, area.width, 20f), "关于 DDExcNet", DdenUI.Title);
+            GUI.Label(new Rect(area.x, area.y, area.width, 20f), T("nav.about"), DdenUI.Title);
 
             float top = area.y + 28f;
             const float logoSize = 132f;
@@ -977,19 +1034,19 @@ namespace DDExcNet.CUmodM
             y += 32f;
             GUI.Label(new Rect(x, y, w, 18f), about[1], DdenUI.Sub);
             y += 20f;
-            GUI.Label(new Rect(x, y, w, 18f), "模组作者：<color=#8cd97c>" + about[2] + "</color>", DdenUI.Row);
+            GUI.Label(new Rect(x, y, w, 18f), T("about.author", about[2]), DdenUI.Row);
             y += 24f;
             GUI.Label(new Rect(x, y, w, 76f), about[3], DdenUI.Wrap);
 
             float ly = top + logoSize + 18f;
-            DdenUI.Section(new Rect(area.x, ly, area.width, 18f), "本仓库组成");
+            DdenUI.Section(new Rect(area.x, ly, area.width, 18f), T("about.components"));
             ly += 26f;
 
             (string name, string ver, string note)[] rows =
             {
-                ("管理器", Info.Metadata.Version.ToString(), "界面、全部设置、兼容性检查都在这里"),
-                ("多人修复", ModuleVersion("mpfix") ?? "未安装", "联机不同步相关的一整套修正"),
-                ("存档编辑器", ModuleVersion("saveeditor") ?? "未安装", "图形化改存档（可选组件）"),
+                (T("module.manager"), Info.Metadata.Version.ToString(), T("about.manager")),
+                (T("module.mpfix"), ModuleVersion("mpfix") ?? T("value.notInstalled"), T("about.mpfix")),
+                (T("module.saveeditor"), ModuleVersion("saveeditor") ?? T("value.notInstalled"), T("about.editor")),
             };
 
             foreach ((string name, string ver, string note) in rows)
@@ -1003,7 +1060,7 @@ namespace DDExcNet.CUmodM
 
             ly += 8f;
             GUI.Label(new Rect(area.x, ly, area.width, 18f),
-                "兼容性检查：" + Compat.Headline() + "　·　设置都在「全部配置」页里，改完立刻生效", DdenUI.Sub);
+                T("compat.about", CompatibilityHeadline()), DdenUI.Sub);
         }
 
         private static string ModuleVersion(string id)
@@ -1014,17 +1071,19 @@ namespace DDExcNet.CUmodM
 
         private void DrawModule(Rect area, IDdenModule module)
         {
-            GUI.Label(new Rect(area.x, area.y, area.width - 160f, 20f), module.DisplayName, DdenUI.Title);
-            if (DdenUI.Button(new Rect(area.xMax - 150f, area.y, 70f, 22f), "配置"))
+            GUI.Label(new Rect(area.x, area.y, area.width - 160f, 20f), ModuleName(module) + " <size=10>" + module.Version + (module is IDdenModuleVersion support ? " · " + T("versions.minimumPair", support.MinimumManagerVersion, support.MinimumSharedVersion) : "") + "</size>", DdenUI.Title);
+            DdenUI.Hover(new Rect(area.x, area.y, area.width - 160, 20), VersionText(module).Details);
+            if (DdenUI.Button(new Rect(area.xMax - 150f, area.y, 70f, 22f), T("action.config")))
             {
                 _page = "config:" + module.Id;
             }
-            if (DdenUI.Button(new Rect(area.xMax - 74f, area.y, 74f, 22f), "总览"))
+            if (DdenUI.Button(new Rect(area.xMax - 74f, area.y, 74f, 22f), T("nav.overview")))
             {
                 _page = "overview";
             }
 
-            Rect page = new Rect(area.x, area.y + 26f, area.width, area.height - 26f);
+            float versionHeight = DrawModuleVersionBand(new Rect(area.x, area.y + 26, area.width, area.height - 26), module, true);
+            Rect page = new Rect(area.x, area.y + 26f + versionHeight, area.width, area.height - 26f - versionHeight);
             try
             {
                 module.DrawPage(page);
@@ -1032,7 +1091,7 @@ namespace DDExcNet.CUmodM
             catch (Exception ex)
             {
                 Log.Exception(ex, "DrawPage(" + module.Id + ")");
-                DdenUI.Label(page, "界面绘制失败：" + ex.Message, DdenUI.Wrap);
+                DdenUI.Label(page, T("error.page", ex.Message), DdenUI.Wrap);
             }
         }
 

@@ -36,11 +36,59 @@ namespace DDEN.Shared
     public static class DdenExternal
     {
         /// <summary>一个外部模组交出来的配置块。</summary>
-        public sealed class Block : IDdenConfigPolicy, IDdenConfigAvailability
+        public sealed class Block : IDdenConfigPolicy, IDdenConfigAvailability, IDdenConfigPresentation
         {
             public string Owner;      // 插件名（BepInEx 元数据）
             public string Title;      // 显示名（DdenTitle 或 Owner）
             public string Summary;    // 可选，一行状态
+            internal Func<ConfigEntryBase, IDictionary<string, string>> ReadMetadata;
+            private readonly Dictionary<ConfigEntryBase, DdenConfigMetadata> _metadata = new Dictionary<ConfigEntryBase, DdenConfigMetadata>();
+            internal Func<string, string, string> Translate;
+            internal Action<string> SetLanguage;
+            internal void ApplyLanguage()
+            {
+                try { SetLanguage?.Invoke(DdenLocalization.Language == DdenLanguage.English ? "en" : "zh-CN"); }
+                catch (Exception ex) { Log.Debug("DdenSetLanguage: " + ex.Message); }
+            }
+            public DdenConfigMetadata Metadata(ConfigEntryBase entry)
+            {
+                if (ReadMetadata == null || entry == null) return null;
+                if (_metadata.TryGetValue(entry, out var cached)) return cached;
+                DdenConfigMetadata result = null;
+                try
+                {
+                    var fields = ReadMetadata(entry);
+                    if (fields != null)
+                    {
+                        result = new DdenConfigMetadata();
+                        if (fields.TryGetValue("label", out var label)) result.DisplayName = label;
+                        if (fields.TryGetValue("description", out var description)) result.Description = description;
+                        if (fields.TryGetValue("problem", out var problem)) result.Problem = problem;
+                        if (fields.TryGetValue("method", out var method)) result.Method = method;
+                        if (fields.TryGetValue("needsRestart", out var restart) && bool.TryParse(restart, out bool needsRestart)) result.RestartRequired = needsRestart;
+                        if (fields.TryGetValue("experimental", out var state) && bool.TryParse(state, out bool flag)) result.IsExperimental = flag;
+                        if (fields.TryGetValue("experimentalNote", out var note)) result.ExperimentalNote = note;
+                        if (fields.TryGetValue("performance", out var level)) result.PerformanceImpact = DdenDocs.ParseImpact(level);
+                        if (fields.TryGetValue("performanceNote", out note)) result.PerformanceNote = note;
+                    }
+                }
+                catch (Exception ex) { Log.Debug("DdenConfigMetadata: " + ex.Message); }
+                _metadata[entry] = result;
+                return result;
+            }
+            public string Localize(string original, string language)
+            {
+                try
+                {
+                    string result = Translate?.Invoke(original, language);
+                    return string.IsNullOrEmpty(result) ? original : result;
+                }
+                catch (Exception ex)
+                {
+                    Translate = null; // Disable a broken optional renderer until the next discovery, avoiding per-frame exceptions.
+                    Log.Debug("DdenLocalize: " + ex.Message); return original;
+                }
+            }
             public Type Type;         // 提供成员的静态类型
             public IEnumerable<ConfigEntryBase> Entries;
             public Action<Rect> Draw; // 可选，自定义页面
@@ -68,6 +116,7 @@ namespace DDEN.Shared
         }
 
         private static readonly List<Block> _blocks = new List<Block>();
+        static DdenExternal() { DdenLocalization.Changed += () => { foreach (var block in _blocks) block.ApplyLanguage(); }; }
 
         public static IReadOnlyList<Block> Blocks => _blocks;
 
@@ -121,7 +170,11 @@ namespace DDEN.Shared
 
                 block.Title = ReadString(type) ?? owner;
                 block.Summary = ReadSummary(type);
+                block.ReadMetadata = ReadDelegate<Func<ConfigEntryBase, IDictionary<string, string>>>(type, "DdenConfigMetadata", typeof(ConfigEntryBase));
+                block.Translate = ReadDelegate<Func<string, string, string>>(type, "DdenLocalize", typeof(string), typeof(string));
                 block.Draw = ReadDraw(type);
+                block.SetLanguage = ReadDelegate<Action<string>>(type, "DdenSetLanguage", typeof(string));
+                block.ApplyLanguage();
                 MethodInfo reason = type.GetMethod("DdenUnavailable", BindingFlags.Public | BindingFlags.Static, null, new[] { typeof(ConfigEntryBase) }, null);
                 if (reason != null && reason.ReturnType == typeof(string))
                     block.Unavailable = (Func<ConfigEntryBase, string>)Delegate.CreateDelegate(typeof(Func<ConfigEntryBase, string>), reason);
@@ -166,6 +219,16 @@ namespace DDEN.Shared
         {
             object v = InvokeStaticMember(type, "DdenSummary");
             return v as string;
+        }
+
+        private static T ReadDelegate<T>(Type type, string name, params Type[] args) where T : class
+        {
+            try
+            {
+                var method = type.GetMethod(name, BindingFlags.Public | BindingFlags.Static, null, args, null);
+                return method == null ? null : Delegate.CreateDelegate(typeof(T), method) as T;
+            }
+            catch { return null; }
         }
 
         private static Action<Rect> ReadDraw(Type type)

@@ -1,3 +1,4 @@
+using static DDEN.NetPerfTracker.ModuleText;
 using System;
 using System.Globalization;
 using System.Text;
@@ -118,49 +119,49 @@ namespace DDEN.NetPerfTracker
             var b = new StringBuilder();
             for (int i = Events.Count - 1; i >= Math.Max(0, Events.Count - maximum); i--)
                 b.Append(Format(Events[i])).Append('\n');
-            return b.Length == 0 ? "尚无突变记录；缺少计时数据不代表已排除对应瓶颈。" : b.ToString().TrimEnd();
+            return b.Length == 0 ? L("尚无突变记录；缺少计时数据不代表已排除对应瓶颈。") : b.ToString().TrimEnd();
         }
         internal static string Format(PerfEvent e)
         {
             var b = new StringBuilder();
             string color = e.Level == AlertLevel.Problem ? "#f06b6b" : e.Level == AlertLevel.Watch ? "#ffa050" : "#80bfff";
-            b.Append("<color=").Append(color).Append(">[").Append(e.Level == AlertLevel.Problem ? "低帧/长帧" : e.Level == AlertLevel.Watch ? "排查线索" : "状态变化").Append("] ");
-            b.Append(e.T.ToString("0.0")).Append("s ").Append(e.Metric).Append(' ').Append(e.Before.ToString("0.##")).Append(" → ").Append(e.After.ToString("0.##"));
-            if (e.Repeats > 1) b.Append("（合并").Append(e.Repeats).Append("次，至").Append(e.LastT.ToString("0.0")).Append("s，").Append(e.Key == "lowFPS" ? "最低" : "峰").Append(e.Peak.ToString("0.##")).Append("）");
-            if (e.BaselineT >= 0) b.Append("（前值记录于").Append(e.BaselineT.ToString("0.0")).Append("s）");
-            if (e.RuleRatio > 0) b.Append("（阈值≥").Append(e.RuleRatio.ToString("0.##")).Append("倍且变化≥").Append(e.RuleMinDelta.ToString("0.##")).Append("）");
-            return b.Append("</color> ").Append(e.Reason).ToString();
+            b.Append("<color=").Append(color).Append(">[").Append(e.Level == AlertLevel.Problem ? L("低帧/长帧") : e.Level == AlertLevel.Watch ? L("排查线索") : L("状态变化")).Append("] ");
+            b.Append(e.T.ToString("0.0")).Append("s ").Append(L(e.Metric)).Append(' ').Append(e.Before.ToString("0.##")).Append(" → ").Append(e.After.ToString("0.##"));
+            if (e.Repeats > 1) b.Append(LF($"（合并{e.Repeats}次，至{e.LastT:0.0}s，{L(e.Key == "lowFPS" ? "最低" : "峰")}{e.Peak:0.##}）"));
+            if (e.BaselineT >= 0) b.Append(LF($"（前值记录于{e.BaselineT:0.0}s）"));
+            if (e.RuleRatio > 0) b.Append(LF($"（阈值≥{e.RuleRatio:0.##}倍且变化≥{e.RuleMinDelta:0.##}）"));
+            return b.Append("</color> ").Append(L(e.Reason)).ToString();
         }
     }
     internal static class PerfIndicators
     {
         internal static string Cost(string name, float value, float limit)
         {
-            if (value < 0) return "<color=#9198a0>" + name + " [不可用]</color>";
+            if (value < 0) return "<color=#9198a0>" + L(name) + L(" [不可用]</color>");
             bool high = value >= limit;
-            return "<color=" + (high ? "#ffa050" : "#b8c3ce") + ">" + name + (high ? " [偏高] " : " ") + value.ToString("0.##") + "ms</color>";
+            return "<color=" + (high ? "#ffa050" : "#b8c3ce") + ">" + L(name) + (high ? L(" [偏高] ") : " ") + value.ToString("0.##") + "ms</color>";
         }
         internal static string Report(PerfSample s, float target, float lowFps)
         {
             float budget = 1000 / Math.Max(1, target);
-            string status = s.Fps < lowFps ? "<color=#f06b6b>[低帧] " + s.Fps.ToString("0.0") + "fps 低于警戒 " + lowFps.ToString("0") + "</color>" : "<color=#7ccf98>[帧率未低于警戒]</color>";
-            status += s.WorstMs >= 50 ? "　<color=#f06b6b>[长帧] 最长 " + s.WorstMs.ToString("0.0") + "ms</color>" : "";
-            status += "　诊断参考 " + target.ToString("0") + "fps / " + budget.ToString("0.0") + "ms（不改变游戏限帧）\n";
-            status += "游戏目标帧率 " + (s.Target > 0 ? s.Target.ToString() : "未指定") + " · 垂直同步 " + s.VSync + "　";
-            status += Cost("物理2D", s.PhysicsMs, budget * 0.5f) + "　" + Cost("自身峰值", s.SelfPeakMs, Math.Max(2, budget * 0.15f));
-            if (!s.Stages.Enabled) return status + "　<color=#9198a0>[阶段计时关闭]</color>";
+            string status = s.Fps < lowFps ? L("<color=#f06b6b>[低帧] ") + s.Fps.ToString("0.0") + L("fps 低于警戒 ") + lowFps.ToString("0") + "</color>" : L("<color=#7ccf98>[帧率未低于警戒]</color>");
+            status += s.WorstMs >= 50 ? L("　<color=#f06b6b>[长帧] 最长 ") + s.WorstMs.ToString("0.0") + "ms</color>" : "";
+            status += L("　诊断参考 ") + target.ToString("0") + "fps / " + budget.ToString("0.0") + L("ms（不改变游戏限帧）\n");
+            status += L("游戏目标帧率 ") + (s.Target > 0 ? s.Target.ToString() : L("未指定")) + L(" · 垂直同步 ") + s.VSync + "　";
+            status += Cost(L("物理2D"), s.PhysicsMs, budget * 0.5f) + "　" + Cost(L("自身峰值"), s.SelfPeakMs, Math.Max(2, budget * 0.15f));
+            if (!s.Stages.Enabled) return status + L("　<color=#9198a0>[阶段计时关闭]</color>");
             var t = s.Stages;
-            if (t.Warming) return status + "　<color=#9198a0>[阶段计时预热中]</color>";
-            status += "\n" + Cost("CPU主线程", t.Main.Frames > 0 ? t.Main.Mean : -1, budget * 0.8f);
-            status += s.Focused ? "　" + Cost("渲染线程", t.Render.Frames > 0 ? t.Render.Mean : -1, budget * 0.8f) + "　" + Cost("GPU", t.Gpu.Frames > 0 ? t.Gpu.Mean : -1, budget * 0.8f) : "　<color=#9198a0>[窗口失焦，渲染/GPU未评估]</color>";
-            status += "\n" + Wait("呈现等待", t.Present, s.Fps < lowFps, Math.Max(2, budget * 0.4f)) + "　" + Wait("主动限帧等待", t.Limit, false, 0) + "（等待不等于计算；计时有延迟，不相加）";
+            if (t.Warming) return status + L("　<color=#9198a0>[阶段计时预热中]</color>");
+            status += "\n" + Cost(L("CPU主线程"), t.Main.Frames > 0 ? t.Main.Mean : -1, budget * 0.8f);
+            status += s.Focused ? "　" + Cost(L("渲染线程"), t.Render.Frames > 0 ? t.Render.Mean : -1, budget * 0.8f) + "　" + Cost("GPU", t.Gpu.Frames > 0 ? t.Gpu.Mean : -1, budget * 0.8f) : L("　<color=#9198a0>[窗口失焦，渲染/GPU未评估]</color>");
+            status += "\n" + Wait(L("呈现等待"), t.Present, s.Fps < lowFps, Math.Max(2, budget * 0.4f)) + "　" + Wait(L("主动限帧等待"), t.Limit, false, 0) + L("（等待不等于计算；计时有延迟，不相加）");
             return status;
         }
         private static string Wait(string name, TimingValue value, bool lowFps, float threshold)
         {
-            if (value.Frames == 0) return "<color=#9198a0>" + name + " [不可用]</color>";
+            if (value.Frames == 0) return "<color=#9198a0>" + name + L(" [不可用]</color>");
             bool watch = lowFps && value.Mean >= threshold;
-            return "<color=" + (watch ? "#ffa050" : "#80bfff") + ">" + name + (watch ? " [等待偏多·原因未定] " : " [状态] ") + value.Mean.ToString("0.##") + "ms</color>";
+            return "<color=" + (watch ? "#ffa050" : "#80bfff") + ">" + name + (watch ? L(" [等待偏多·原因未定] ") : L(" [状态] ")) + value.Mean.ToString("0.##") + "ms</color>";
         }
     }
 }

@@ -452,9 +452,7 @@ namespace DDEN.Shared
             string unavailable = (policy as IDdenConfigAvailability)?.ConfigUnavailableReason(entry);
             object value = policy?.ConfigDisplayValue(entry) ?? entry.BoxedValue;
             bool isOn = value is bool b0 && b0;
-            bool experimental = DdenDocs.TryGet(entry, out DdenDocs.Doc doc)
-                                && !string.IsNullOrEmpty(doc.Experimental)
-                                && doc.Experimental.StartsWith("是", StringComparison.Ordinal);
+            bool experimental = DdenDocs.IsExperimental(entry, policy);
 
             Fill(r, new Color(1f, 1f, 1f, interactive ? (isOn ? 0.035f : 0.015f) : 0.008f));
             Fill(new Rect(r.x, r.y, barW, r.height),
@@ -462,7 +460,7 @@ namespace DDEN.Shared
                              : (experimental ? Warn : (isOn ? Accent : new Color(1f, 1f, 1f, 0.14f))));
 
             float keyW = Mathf.Max(120f, r.width - ctrlW - 24f);
-            string key = entry.Definition?.Key ?? "?";
+            string key = DdenLocalization.ConfigText(entry, DdenDocs.ConfigLabel(entry, policy), policy);
             Rect keyRect = new Rect(r.x + barW + 7f, r.y + 3f, keyW, 18f);
             GUI.Label(keyRect, ElideToWidth(key, keyW, interactive ? (isOn ? Row : Sub) : DisabledRow),
                 interactive ? (isOn ? Row : Sub) : DisabledRow);
@@ -475,7 +473,7 @@ namespace DDEN.Shared
                 if (value is bool bo)
                 {
                     DrawCheckBox(new Rect(field.x, field.y, 18f, ctrlH), bo, false);
-                    GUI.Label(new Rect(field.x + 24f, field.y, field.width - 24f, ctrlH), bo ? "开" : "关", DisabledRow);
+                    GUI.Label(new Rect(field.x + 24f, field.y, field.width - 24f, ctrlH), DdenLocalization.Common(bo ? "开" : "关"), DisabledRow);
                 }
                 else
                 {
@@ -487,7 +485,7 @@ namespace DDEN.Shared
             {
                 if (value is bool b)
                 {
-                    bool nv = CheckBoxLabeled(field, b, b ? "开" : "关");
+                    bool nv = CheckBoxLabeled(field, b, DdenLocalization.Common(b ? "开" : "关"));
                     if (nv != b) entry.BoxedValue = nv;
                 }
                 else if (value is int i && entry.SettingType == typeof(int))
@@ -502,7 +500,7 @@ namespace DDEN.Shared
                 }
                 else if (value is KeyboardShortcut ks)
                 {
-                    if (Button(field, KeyCapture.Active ? "按下新键…" : ks.MainKey.ToString()))
+                    if (Button(field, KeyCapture.Active ? DdenLocalization.Common("按下新键…") : ks.MainKey.ToString()))
                     {
                         KeyCapture.Begin(entry);
                     }
@@ -518,9 +516,10 @@ namespace DDEN.Shared
                 GUI.Label(field, "无法编辑：" + ex.Message, Sub);
             }
 
-            string desc = string.IsNullOrEmpty(unavailable) ? entry.Description?.Description : unavailable;
+            string desc = string.IsNullOrEmpty(unavailable) ? DdenDocs.ConfigDescription(entry, policy) : unavailable;
             if (!string.IsNullOrEmpty(desc))
             {
+                desc = DdenLocalization.ConfigText(entry, desc, policy);
                 desc = desc.Replace("\r", " ").Replace("\n", " ");
                 float descW = r.width - barW - 16f;
                 GUI.Label(new Rect(r.x + barW + 7f, r.y + 23f, descW, 17f),
@@ -528,8 +527,8 @@ namespace DDEN.Shared
             }
 
             // 整行悬停：提示框展开完整五项
-            Hover(r, (!string.IsNullOrEmpty(unavailable) ? unavailable + "\n"
-                : policy != null && normal && !interactive ? "（主机权威模式）由主机统一配置。\n" : "") + DdenDocs.Format(entry));
+            Hover(r, (!string.IsNullOrEmpty(unavailable) ? DdenLocalization.ConfigText(entry, unavailable, policy) + "\n"
+                : policy != null && normal && !interactive ? DdenLocalization.Common("（主机权威模式）由主机统一配置。\n") : "") + DdenDocs.Format(entry, policy));
 
             Fill(new Rect(r.x, r.yMax - 1f, r.width, 1f), new Color(1f, 1f, 1f, 0.06f));
             return ConfigRowHeight;
@@ -553,8 +552,8 @@ namespace DDEN.Shared
                 {
                     section = sec;
                     y += 6f;
-                    string heading = "▸ " + sec;
-                    if (sec == "总开关" && !string.IsNullOrEmpty(policy?.ConfigNotice)) heading += "  " + policy.ConfigNotice;
+                    string heading = "▸ " + DdenLocalization.ConfigText(entry, sec, policy);
+                    if (sec == "总开关" && !string.IsNullOrEmpty(policy?.ConfigNotice)) heading += "  " + DdenLocalization.ConfigText(entry, policy.ConfigNotice, policy);
                     Section(new Rect(area.x, area.y + y, area.width, 16f), ElideToWidth(heading, area.width - 8, Sub));
                     y += 20f;
                 }
@@ -594,8 +593,18 @@ namespace DDEN.Shared
         public static void DrawStandalone(Rect window, IDdenModule module, ref Vector2 scroll, bool drawSettings)
         {
             Fill(new Rect(0, 0, window.width, window.height), Bg);
-            GUI.Label(new Rect(16, 6, window.width - 32, 24), $"{module.DisplayName}  <size=10><color=#8fa>{module.Version}</color></size>", Title);
-            Rect body = new Rect(12, 34, window.width - 24, window.height - 46);
+            GUI.Label(new Rect(16, 6, window.width - 200, 24), $"{module.DisplayName}  <size=10><color=#8fa>{module.Version}</color></size>", Title);
+            if (Button(new Rect(window.width - 174, 8, 78, 20), "简体中文", DdenLocalization.Language == DdenLanguage.Chinese)) DdenLocalization.Language = DdenLanguage.Chinese;
+            if (Button(new Rect(window.width - 90, 8, 78, 20), "English", DdenLocalization.Language == DdenLanguage.English)) DdenLocalization.Language = DdenLanguage.English;
+            float bodyTop = 34;
+            if (module is IDdenModuleVersion support)
+            {
+                string requirements = string.Format(DdenLocalization.Common("管理器 ≥ {0}（已校对 {1}）· Shared ≥ {2}（已校对 {3}）· API v{4}"), support.MinimumManagerVersion, support.TestedManagerVersion, support.MinimumSharedVersion, support.TestedSharedVersion, support.RequiredSharedApiVersion);
+                var requirementsRect = new Rect(16, 33, window.width - 32, 18);
+                GUI.Label(requirementsRect, ElideToWidth(requirements, requirementsRect.width, Sub), Sub);
+                Hover(requirementsRect, requirements); bodyTop += 22;
+            }
+            Rect body = new Rect(12, bodyTop, window.width - 24, window.height - bodyTop - 12);
             try
             {
                 float contentHeight = Mathf.Max(body.height, drawSettings ? ConfigListHeight(module.ConfigEntries) : 1200f);

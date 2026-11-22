@@ -1,6 +1,6 @@
-# DDEN管理器接入约定 · v1.7.2
+# DDEN管理器接入约定
 
-面向模组作者，以 `DDEN.Shared/ExternalConfig.cs`、`Hub.cs`、`DdenDocs.cs`及管理器当前代码为准。管理器默认F8，冲突后以本机实际设置为准。
+面向模组作者，以 `DDEN.Shared/ExternalConfig.cs`、`Hub.cs`、`DdenDocs.cs`及管理器当前代码为准。管理器默认F8，冲突后以本机实际设置为准。文字、双语、实验性／性能等级及显示样式统一遵循[管理器显示接入规范 v1](manager-ui-contract.md)。
 
 | 模式 | 需要Shared引用 | 用途 |
 | --- | --- | --- |
@@ -41,6 +41,9 @@ public static class DdenBridge
 | `DdenTitle` | 可选string，同样支持上述成员形式；缺省使用插件名称 |
 | `DdenSummary` | 可选string，最多每秒刷新一次；不在取值时扫描全场或做昂贵工作 |
 | `DdenDraw(Rect)` | 可选public static void方法，绘制功能页 |
+| `DdenConfigMetadata(ConfigEntryBase)` | 可选public static IDictionary<string,string>方法，提供显示文字、实验性真实状态、性能等级与备注；字段及优先级见[显示规范](manager-ui-contract.md) |
+| `DdenLocalize(string,string)` | 可选public static string方法，接收原文和zh-CN／en，未知文字回退原文 |
+| `DdenSetLanguage(string)` | 可选public static void方法，接收初次语言及实际语言变化通知，供自定义功能页使用 |
 | `DdenUnavailable(ConfigEntryBase)` | 可选public static string方法；null／空表示允许，非空为禁用原因，异常则显示暂不可用 |
 
 扫描在管理器启动时运行：从已加载插件实例获取程序集，跳过Shared本身，逐一检查public类型，取首个交出有效配置的类型。不要依赖交出配置后再添加空引用、卸载插件或改变列表索引仍保持相同路由身份。
@@ -52,18 +55,19 @@ public static class DdenBridge
 - 独立配置路由：`extconfig:<index>`。总览“配置”和全部配置“单独看”始终进入这里，通用绘制条目。
 - 外部功能路由：`ext:<index>`。存在DdenDraw时调用自定义页，否则回退配置绘制；管理器另有“打开界面／功能页”入口。
 - 没有DdenDraw也能获得独立配置页；不要用空的DdenDraw冒充接管配置页。
-- 条目按原Section分组，值仍使用原Key。配置与列表高度按实际内容计算，长说明通过提示显示；不要求接入方复制管理器控件。
+- 条目按原Section分组，值仍使用原Key。配置与列表高度按实际内容计算，长说明通过提示显示；不要求接入方复制管理器控件。全部配置按模组折叠，不折叠Section；单独配置页“返回”进入本模组功能页，无功能页则回总览。侧栏保持对应模组选中，再点击打开功能页，无功能页继续配置。管理器自身配置也可从总览／侧栏进入。
 
 ### 可选完整说明
 
-DDEN配置提示含功能、修复的问题、解决方案、实验性、性能影响；Shared API为：
+DDEN配置提示含功能、修复的问题、解决方案、实验性、性能影响。新接入使用独立状态／等级和备注字段，管理器决定语言和格式：
 
 ```csharp
-DdenDocs.Add(section, key, what, fixes, how,
-             experimental: "否", perf: "低", needsRestart: false);
+DdenDocs.AddStructured(section, key, what, fixes, how,
+    isExperimental: false, performanceImpact: DdenPerformanceImpact.Low,
+    performanceNote: "仅在打开界面时", needsRestart: false);
 ```
 
-键必须与原ConfigEntry的Section／Key一致。L1模组不硬引用这个API；可像ET-Fix一样，仅对已经加载的Shared做可选反射注册，找不到就使用ConfigEntry自带短说明。需要重启的设置明确写出，不让玩家误以为即时生效。
+键必须与原ConfigEntry的Section／Key一致。L1模组不硬引用这个API，优先提供DdenConfigMetadata和DdenLocalize。原八参数DdenDocs.Add仍保留，兼容已有反射注册与旧前缀检测；详见[字段、示例与兼容优先级](manager-ui-contract.md)。需要重启的设置明确写出，不让玩家误以为即时生效。
 
 ## 2. L2：内部DDEN模块
 
@@ -89,6 +93,8 @@ bool DrawSettings(UnityEngine.Rect area);
 | `IDdenModuleGate` | ModuleEnabled与完整MasterKey，让模块停用时主开关仍可编辑 |
 | `IDdenModuleHealth` | Health与HealthNote，报告错误／终止状态 |
 | `IDdenConfigPolicy` | 逐项可编辑策略、实际显示值及配置通知，例如主机临时覆盖 |
+| `IDdenModuleVersion` | 可选声明最低管理器、最低Shared、两者已校对版本及Shared API代际；免检与比较规则见[版本契约](component-versions.md) |
+| `IDdenConfigPresentation` | 与配置策略一起提供规范化元数据及显示翻译，供通用配置页绘制 |
 | `IDdenConfigAvailability` | 对禁用项提供原因 |
 
 参与环境核对的模块显式 `DdenGate.RegisterParticipant(id)`，自行尊重Blocked。当前VersionOk仅比较Together 5.5.4，Blocked还要求已安装Together且未选择忽略；不比较Unity版本，也不能把忽略开关当作测试通过。

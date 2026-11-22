@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <Version>2.0.0</Version><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings>
+    <ManagerSourceDir Condition="'$(ManagerSourceDir)' == ''">../../src/DDExcNet.CUmodM</ManagerSourceDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Remove="@(Reference)" />
+    <Reference Include="BepInEx"><HintPath>$(BepInExCoreDir)/BepInEx.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(ManagedDir)/UnityEngine.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(ManagedDir)/UnityEngine.CoreModule.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="Newtonsoft.Json"><HintPath>$(ManagedDir)/Newtonsoft.Json.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="Mono.Cecil"><HintPath>$(BepInExCoreDir)/Mono.Cecil.dll</HintPath><Private>true</Private></Reference>
+    <Compile Include="$(ManagerSourceDir)/ManagerText.cs" Link="ManagerText.cs" />
+    <Compile Include="$(ManagerSourceDir)/ManagerConfigUI.cs" Link="ManagerConfigUI.cs" />
+    <Compile Include="../../src/DDEN.Shared/ModuleVersions.cs" Link="ModuleVersions.cs" />
+    <Compile Include="$(ManagerSourceDir)/ModuleVersionCatalog.cs" Link="ModuleVersionCatalog.cs" />
+    <Compile Include="$(ManagerSourceDir)/ConfigNavigation.cs" Link="ConfigNavigation.cs" />
+    <Compile Include="../../src/DDEN.Shared/ExternalConfig.cs" Link="ExternalConfig.cs" />
+    <Compile Include="../../src/DDEN.Shared/DdenLocalization.cs" Link="DdenLocalization.cs" />
+    <Compile Include="../../src/DDEN.MPfix/ModuleText.cs" Link="MPfixText.cs" />
+    <Compile Include="../../src/DDEN.NetPerfTracker/ModuleText.cs" Link="PerfText.cs" />
+    <EmbeddedResource Include="../../src/DDEN.MPfix/Resources/localization.en.json" LogicalName="DDEN.MPfix.Resources.localization.en.json"><WithCulture>false</WithCulture></EmbeddedResource>
+    <EmbeddedResource Include="../../src/DDEN.NetPerfTracker/Resources/localization.en.json" LogicalName="DDEN.NetPerfTracker.Resources.localization.en.json"><WithCulture>false</WithCulture></EmbeddedResource>
+    <Compile Include="../../src/DDEN.Shared/DdenDocs.cs" Link="DdenDocs.cs" />
+    <EmbeddedResource Include="$(ManagerSourceDir)/Resources/manager.*.txt"><WithCulture>false</WithCulture></EmbeddedResource>
+  </ItemGroup>
+</Project>

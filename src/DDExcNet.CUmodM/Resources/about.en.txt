@@ -1,0 +1,5 @@
+# English presentation of the existing DDExcNet About resource; identity and authorship are unchanged.
+title = DDExcNet
+subtitle = Dragon Domain Information Exchange Network Standard
+author = cubstaryow
+body = DDExcNet is the <b>Dragon Domain Information Exchange Network Standard</b> in the “Horizon” setting of 幼龙云: an interface specification for recognizing different endpoints and implementations and exchanging their state.\nThis repository implements it for Casualties Unknown, with a manager, multiplayer fixes and an optional save editor.

@@ -100,6 +100,13 @@ internal static class Program
         for (int i = 0; i < 500; i++) alerts.Record(23, 10 + i * 4, "test", "test", 1, 2, "bounded", AlertLevel.Info);
         Check(alerts.Events.Count == 160, "anomaly history is bounded");
         string invariant = alerts.Events[159].Describe();
+        int revision = alerts.Revision, count = alerts.Events.Count;
+        DDEN.Shared.DdenLocalization.Language = DDEN.Shared.DdenLanguage.English;
+        Check(PerfIndicators.Report(next, 60, 45).Contains("[LOW FPS]"), "English diagnostic markers");
+        Check(PerfAlerts.Format(alerts.Events[159]).Contains("State change"), "stored history is localized at display time");
+        Check(alerts.Events.Count == count && alerts.Revision == revision && alerts.Events[159].Describe() == invariant, "language changes preserve anomaly history, revisions and log evidence");
+        Check(PerfIndicators.Cost("GPU", -1, 10).Contains("unavailable"), "missing timing remains unavailable in English");
+        DDEN.Shared.DdenLocalization.Language = DDEN.Shared.DdenLanguage.Chinese;
         Check(invariant.Contains("baselineT=") && invariant.Contains("lastT=") && invariant.Contains("before=") && invariant.Contains("after="), "export contains temporal and before/after evidence");
         alerts.Clear();
         for (int i = 0; i < 20; i++) alerts.Frame(i * 0.016f, 16, 0.1f, null, 0.5f);

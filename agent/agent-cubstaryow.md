@@ -39,12 +39,13 @@ cubstaryow 名下有两位 agent 在同一个仓库工作，分工如下（同�
 
 ## 工作边界
 
-- 当前工作树版本 **1.7.2**（尚有未提交代码）；props和各插件BepInPlugin同步。DDExcNet发布包仅五个DDEN产物（含Shared）；ET-Fix／JDI-DDEN独立版本，不随包发布，不把Unity引擎版本当游戏版本。
+- DDEN组件独立版本：Shared 2.0.0（API v1）、管理器2.0.0、MPfix 1.7.4、性能跟踪器2.0.0、存档编辑器2.0.0-alpha；各csproj独立维护，不再统一升号，见[版本契约](../docs/component-versions.md)。DDExcNet发布包仅五个DDEN产物（含Shared）；ET-Fix／JDI-DDEN独立版本，不随包发布，不把Unity引擎版本当游戏版本。
 - Git操作以用户授权及仓库工作流程为准；在 `dev`提交经过检查的相关文件，获准后普通推送 `origin/dev`。不force push、不改remote、不替用户合并master、打tag或创建Release。不要把一次任务的授权推广到无关任务。
 - 写入L盘需依照工具权限申请执行；不要把工具权限失败误判为仓库bare或擅自修改git配置。保护用户已有改动，不用reset/clean丢弃内容，不用无差别add把无关文件带入提交。
 - 不提交 `bin/obj/dist/artifacts/decomp/backup`或商业游戏／第三方依赖。反编译仅阅读结论，不复制他人实现。
 - **发布包只含 DDEN 五个组件**（公共层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器）；独立外部模组「ET-Fix（ET 加热笼修复）」不随包发布，本机部署仍会带上它供联调，但不进 dist。
 - **外部模组冻结（2026-11-22 用户定）**：`src/外部mod/` 下的 ET-Fix、JDI-DDEN 版本号、代码、文档一律不主动变更；只有用户当次明确点名某个外部模组时才动，且不动另一个。DDEN 及其子模块的版本号自身独立维护。
+- **不跑 UITEST（2026-11-22 用户定）**：不默认启动游戏做 UITEST / SELFTEST 冒烟；只做编译与离线检查，用户明确要求验证界面时才启动，跑完确认 `BepInEx/config/cumod.uitest` 已删除。
 - 不停止用户游戏。部署前确认已退出；只处理列明的自有文件，不创建插件备份，不碰其他模组，不通配删除plugins目录。不在未授权时改真实存档／配置。
 - 源码及脚本MPL-2.0，资源／名称／世界观按LICENSE-ASSETS；保留归属。世界观文案放资源文件，不放源码字符串。
 
@@ -74,4 +75,4 @@ cubstaryow 名下有两位 agent 在同一个仓库工作，分工如下（同�
 - 编辑器：只改用户字段，未知节点原样保留；items/itemComponents成对处理；保存检查外部修改及QoL忙，原子写＋备份。cheatedSave仅显式修改，不能宣称保证平台成就。
 - 性能：零Harmony补丁；步／帧只反映调度，准确计时缺失显示不可用；详细统计默认关，手动导出日志，等待／数量是线索而非根因证明。
 
-详细原理、构建命令和验收清单分别在features、development、各工具中，不在本文件重复存旧文档。双语切换目前仅有方案，未实现，见 [localization-plan](../docs/localization-plan.md)。
+详细原理、构建命令和验收清单分别在features、development、各工具中，不在本文件重复存旧文档。管理器、MPfix与性能跟踪器已实现双语，后续范围见 [localization-plan](../docs/localization-plan.md)。
