@@ -2,7 +2,7 @@
   <PropertyGroup>
     <AssemblyName>JDI-DDEN</AssemblyName>
     <RootNamespace>JustDragAToolOnIt</RootNamespace>
-    <Version>1.4.0</Version>
+    <Version>1.5.0</Version>
     <Company>MornJor</Company>
   </PropertyGroup>
   <ItemGroup>
