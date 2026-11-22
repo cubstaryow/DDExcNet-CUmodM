@@ -19,7 +19,7 @@ internal static class Program
     private static TMP_Text Name(TMP_FontAsset font, string text = "中文玩家") => new TMP_Text { font = font, text = text };
     private static void Main()
     {
-        try { Run(); Console.WriteLine("PASS " + _checks + " checks: production name-font policy with simulated font APIs; game fonts only, missing glyphs, late loading, private chains and restoration."); }
+        try { Run(); Console.WriteLine("PASS " + _checks + " checks: production game-font name policy; native Chinese coverage, missing glyphs and restoration."); }
         finally { PlayerNameFonts.Dispose(); }
     }
     private static void Run()
@@ -99,5 +99,7 @@ internal static class Program
         Check(Resources.Scans == scans, "empty names do not trigger discovery");
         Check(NameGlyphRules.ReplaceMissing("中😀文", code => code == 0x1f600) == "?😀?", "supported supplementary glyph is kept as a complete scalar");
         Check(NameGlyphRules.ReplaceMissing("A\ud800B\udc00", _ => true) == "A?B?", "isolated surrogates are represented safely");
+        Check(NameGlyphRules.ReplaceMissing("中文玩家", code => code == '中' || code == '文') == "中文??",
+            "partial native Chinese coverage keeps supported characters and masks only missing ones");
     }
 }

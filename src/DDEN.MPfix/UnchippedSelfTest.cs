@@ -61,9 +61,6 @@ namespace DDEN.MPfix
 
                 r.Add($"WorldGeneration 可读 = {Game.InWorld}（world={(WorldGeneration.world != null ? "非空" : "null")}）");
                 r.Add($"主机裁决读取 = {Mp.HostUnchipped()}");
-                bool attackOk = UnitDamageRepair.SelfTest();
-                r.Add("攻击上报真实传输读写 = " + (attackOk ? "PASS" : "FAIL"));
-                if (!attackOk) pass = false;
                 bool authorityOk = MPfixPlugin.Instance != null && MPfixPlugin.Instance.CheckAuthorityConfig();
                 r.Add("主机配置白名单/序列化/临时覆盖/控制开关 = " + (authorityOk ? "PASS" : "FAIL"));
                 if (!authorityOk) pass = false;

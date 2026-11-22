@@ -14,14 +14,14 @@ namespace DDEN.MPfix
     /// DDEN.MPfix —— 把“多人相关的修复”收在一个插件里：
     ///  ① 无芯片模式（unchipped）主机裁决 → 客机同步；
     ///  ② 联机合成模组物品“无法生成物品”修复（Utils.Create 走 CUCoreLib 两条正路 + 主机侧网络登记）；
-    ///  ③ 穿戴兜底（客机穿上、主机没认下来 → 主机按 id 认出并穿上，再推状态给客机）；
+    ///  ③ 名称显示（只改本机显示，不动身份）；
     ///  ④ 物品物理保险（丢出/卸下后只补开碰撞体，绝不移动物品）；
     ///  ⑤ 挖块收敛（主机放宽伤害比例 + 客机已碎上报，主机校验后收敛）；
     ///  ⑥ 商人商品表补发 / 穿戴贴图残留 / 孤儿物品；
     ///  ⑦ 娱乐：道生一 一生二（商人购买多给一份，只在主机生效）。
     /// 界面与配置统一交给 DDExcNet-CUmodM 显示（模块 id = mpfix）。
     /// </summary>
-    [BepInPlugin(Guid, "DDEN MP Fix", "1.7.1")]
+    [BepInPlugin(Guid, "DDEN MP Fix", "1.7.2")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
     public class MPfixPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleGate, IDdenModuleHealth, IDdenConfigPolicy, IDdenConfigAvailability
@@ -48,9 +48,6 @@ namespace DDEN.MPfix
         // ===== 玩家名称（只改显示，不改变连接和存档身份） =====
         internal static AuthoritySetting<bool> CfgFixPlayerNames;
 
-        // ===== 穿戴兜底 =====
-        internal static AuthoritySetting<bool> CfgWearFix;
-        internal static AuthoritySetting<int> CfgWearFixMax;
 
         // ===== 物品物理保险 =====
         internal static AuthoritySetting<bool> CfgPhysicsGuard;
@@ -58,10 +55,8 @@ namespace DDEN.MPfix
         // ===== 联机修正（商人商品表 / 挖块） =====
         internal static AuthoritySetting<bool> CfgTraderSnapshot;
         internal static AuthoritySetting<bool> CfgBlockBreakSync;
-        internal static AuthoritySetting<float> CfgBlockBreakMinFraction;
         internal static AuthoritySetting<bool> CfgSyncBuildingDamage;
         internal static AuthoritySetting<bool> CfgSyncBodyDamage;
-        internal static AuthoritySetting<bool> CfgAggressiveConverge;
         internal static AuthoritySetting<bool> CfgQuietTraderUIModItems;
 
         // ===== 娱乐 =====
@@ -267,16 +262,7 @@ namespace DDEN.MPfix
                 "尝试恢复中文名字，修正空名字、问号和数字名字。",
                 "中文名字被截掉、变成问号或长串数字，主机名字为空。",
                 "从玩家资料恢复显示名称，只使用游戏现有字体，缺少的字显示为 ?；只改变本机显示，不改变存档身份。",
-                "是 · 需要多人实测", "缓存名称与字体；不会逐帧扫描场景");
-
-            DdenDocs.Add("穿戴兜底", "启用穿戴兜底（Enabled）",
-                "客机穿上装备但主机没认时，请主机把装备正确穿给这名玩家。",
-                "客机穿上的装备在图里跟着人跑、主机那边却当它在地上。",
-                "客机上报一次，主机按这名玩家重新穿一次并把状态推给所有人；不复制、不掉落。",
-                "否", "极低（只在出错时触发，默认关闭）");
-            DdenDocs.Add("穿戴兜底", "一局最多处理几次（MaxPerSession）",
-                "一局最多自动处理几次，超过就停手。",
-                "某个物品反复触发兜底导致来回折腾。", "计数到上限后本局不再处理。", "否", "无");
+                "否", "缓存名称与字体；不会逐帧扫描场景");
 
             DdenDocs.Add("物品物理", "丢弃物解除穿墙（GuardDropPhysics）",
                 "玩家亲手丢出物品时，补开被关掉的碰撞体。",
@@ -289,28 +275,19 @@ namespace DDEN.MPfix
                 "看到的商品和主机不一样，付了钱却拿不到东西。",
                 "打开界面时请主机重发一次完整商品表。", "否", "极低（只在开界面时一次）");
             DdenDocs.Add("联机修正", "修“挖方块”-伤害重算（SyncBlockBreak）",
-                "默认补齐主机挖块漏算的世界伤害倍率；激进时还校验碎块报告。",
+                "默认补齐主机挖块漏算的世界伤害倍率。",
                 "挖方块时血量掉一截又弹回去，或者挖掉的方块过一会儿又长回来。",
                 "主机替客机结算时漏了一个世界伤害倍率，这里把它补上再交给联机框架原本的判定。",
                 "否", "极低（主机攻击时补算，保留原判定）");
             DdenDocs.Add("联机修正", "修“打箱子/植物/动物”-伤害重算（SyncBuildingDamage）",
-                "默认补齐主机近战漏算的世界伤害倍率；激进时校验客机结果。",
+                "默认补齐主机近战漏算的世界伤害倍率。",
                 "打储物箱、植物、动物时血量掉一下又弹回去。",
-                "主机使用该客机的远端角色状态补齐倍率，保留原结算；激进时仅在校验通过后使用客机报告。", "否", "低（只在攻击时执行）");
+                "主机使用该客机的远端角色状态补齐倍率，保留原结算。", "否", "低（只在攻击时执行）");
             DdenDocs.Add("联机修正", "修“打角色/肢体”-伤害重算（SyncBodyDamage）",
-                "默认补齐角色肢体近战的世界伤害倍率；激进时校验客机结果。",
+                "默认补齐角色肢体近战的世界伤害倍率。",
                 "客机近战打中角色或肢体类敌人，血量先减少又回升。",
-                "主机使用该客机的远端角色状态补齐倍率，保留原结算；激进时仅在校验通过后使用客机报告。",
+                "主机使用该客机的远端角色状态补齐倍率，保留原结算。",
                 "否", "低（只在攻击时执行）");
-            DdenDocs.Add("联机修正", "挖掘修复-激进（实验性 · ⚠帧数影响）（AggressiveConverge）",
-                "对已开启分支校验客机上报；方块分批补差，单位随原攻击结算。",
-                "只补世界伤害倍率后，两边的攻击伤害仍然不一致。",
-                "方块挖碎后由主机检查并补差；单位和角色附加报告到原攻击，校验后只结算一次，拒绝则回退基础补算。",
-                "是", "大量挖掘仍有开销；已减少消息数量并分散处理，实际影响需联机测试");
-            DdenDocs.Add("联机修正", "挖块判定门槛-仅激进时生效（BlockBreakMinFraction）",
-                "激进模式下，主机账上这块至少掉这么多才接受“已挖穿”。",
-                "激进模式被拿来一镐敲穿硬墙。", "按比例做一次可信度门槛判断。",
-                "否（仅激进模式生效）", "无");
             DdenDocs.Add("联机修正", "商人界面不再刷“prefab 为空”（QuietTraderUIModItems）",
                 "商人界面自检不再对模组物品报错。",
                 "打开商人界面时控制台一直刷“prefab 为空”的错误。",
@@ -370,27 +347,17 @@ namespace DDEN.MPfix
             CfgFixPlayerNames = Config.Bind("玩家名称", "尝试修复名称显示（FixPlayerNames）", false,
                 "尝试恢复中文名字，修正空名字、问号和数字名字；只改变本机显示。");
 
-            CfgWearFix = Config.Bind("穿戴兜底", "启用穿戴兜底（Enabled）", false,
-                "客机穿上装备但主机没认时，请主机把装备正确穿给这名玩家。");
-            CfgWearFixMax = Config.Bind("穿戴兜底", "一局最多处理几次（MaxPerSession）", 20,
-                new ConfigDescription("一局最多自动处理几次，超过就停手。",
-                    new AcceptableValueRange<int>(1, 200)));
             CfgPhysicsGuard = Config.Bind("物品物理", "丢弃物解除穿墙（GuardDropPhysics）", true,
                 "玩家亲手丢出物品时，补开被关掉的碰撞体。");
 
             CfgTraderSnapshot = Config.Bind("联机修正", "打开商人时对齐商品表（TraderSnapshotOnOpen）", true,
                 "每次打开商人界面，向主机要一份最新的商品表。");
             CfgBlockBreakSync = Config.Bind("联机修正", "修“挖方块”-伤害重算（SyncBlockBreak）", true,
-                "默认补齐主机挖块漏算的世界伤害倍率；激进时还校验碎块报告。");
+                "默认补齐主机挖块漏算的世界伤害倍率。");
             CfgSyncBuildingDamage = Config.Bind("联机修正", "修“打箱子/植物/动物”-伤害重算（SyncBuildingDamage）", true,
-                "默认补齐主机近战漏算的世界伤害倍率；激进时校验客机结果。");
+                "默认补齐主机近战漏算的世界伤害倍率。");
             CfgSyncBodyDamage = Config.Bind("联机修正", "修“打角色/肢体”-伤害重算（SyncBodyDamage）", true,
-                "默认补齐角色肢体近战的世界伤害倍率；激进时校验客机结果。");
-            CfgAggressiveConverge = Config.Bind("联机修正", "挖掘修复-激进（实验性 · ⚠帧数影响）（AggressiveConverge）", false,
-                "对已开启分支校验客机上报；方块分批补差，单位随原攻击结算。");
-            CfgBlockBreakMinFraction = Config.Bind("联机修正", "挖块判定门槛-仅激进时生效（BlockBreakMinFraction）", 0.5f,
-                new ConfigDescription("激进模式下，主机账上这块至少掉这么多才接受“已挖穿”。",
-                    new AcceptableValueRange<float>(0f, 0.95f)));
+                "默认补齐角色肢体近战的世界伤害倍率。");
             CfgQuietTraderUIModItems = Config.Bind("联机修正", "商人界面不再刷“prefab 为空”（QuietTraderUIModItems）", true,
                 "商人界面自检不再对模组物品报错。");
             CfgDoublePurchase = Config.Bind("娱乐", "道生一 一生二（DoublePurchase）", false,
@@ -444,15 +411,12 @@ namespace DDEN.MPfix
                 TryPatch(harmony, typeof(Utils_Create_ModItemPatch), "联机合成/物品生成兜底");
                 if (hasCore && !CraftSpawnScope.Install(harmony)) NotePatchError("联机合成/物品生成兜底", "合成入口不可用");
                 if (!PlayerNameRepair.Install(harmony)) NotePatchError("玩家名称", "名称显示入口不可用");
-                TryPatch(harmony, typeof(WearGhostFix.Body_WearWearable_RecordPatch), "穿戴兜底（幽灵装备）");
                 TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropItem_GuardPatch), "物品掉落物理保险（丢出）");
                 TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropWearable_GuardPatch), "物品掉落物理保险（卸下）");
                 TryPatch(harmony, typeof(TraderSnapshotFix.ToggleTradeMenu_Postfix), "打开商人时索要商品表");
 
                 // Install when prerequisites exist; runtime settings still take effect immediately.
                 if (hasCore) TraderUIQuietFix.Install(harmony);
-                TryPatch(harmony, typeof(BlockDamageSyncFix.DamageBlock_Patch), "客机挖块伤害收敛（上报）");
-                TryPatch(harmony, typeof(BlockDamageSyncFix.WorldReset_Patch), "换层清理挖掘上报");
                 BlockDamageRelax.Install(harmony);
                 BuildingDamageRelax.Install(harmony);
                 UnitDamageRepair.Install(harmony);
@@ -460,9 +424,7 @@ namespace DDEN.MPfix
                 if (hasCore)
                 {
                     RegisterChannels();
-                    WearGhostFix.RegisterHostHandlers();
                     TraderSnapshotFix.RegisterHost();
-                    BlockDamageSyncFix.RegisterHost();
                 }
                 DoublePurchase.Install(harmony);
             }
@@ -471,7 +433,7 @@ namespace DDEN.MPfix
             _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
             InitializeAuthority();
 
-            Log.Info("已加载：无芯片同步 + 联机物品/合成 + 穿戴兜底 + 物品物理 + 挖块收敛 + 娱乐开关。");
+            Log.Info("已加载：无芯片同步 + 联机物品/合成 + 物品物理 + 伤害重算 + 商人快照 + 名称显示 + 娱乐开关。");
             LogMpCompatReport();
             if (UnchippedSelfTest.Requested) StartCoroutine(SelfTestDelayed());
         }
@@ -620,13 +582,10 @@ namespace DDEN.MPfix
                 ("联机生成（模组物品）", StateOf(CfgFixModItemCraftSpawn.Value, true, "联机合成/物品生成兜底"), null),
                 ("玩家名称显示", StateOf(CfgFixPlayerNames.Value, true, "玩家名称"), null),
                 ("物品网络登记", StateOf(true, false), null),
-                ("穿戴兜底", CfgWearFix.Value && Active ? FixState.Watching : FixState.Off, null),
                 ("物品物理保险", StateOf(CfgPhysicsGuard.Value, false, "物品掉落物理保险（丢出）"), null),
                 ("挖方块伤害重算", StateOf(CfgBlockBreakSync.Value), null),
                 ("打单位伤害重算", StateOf(CfgSyncBuildingDamage.Value), null),
                 ("打角色/肢体伤害重算", StateOf(CfgSyncBodyDamage.Value), null),
-                ("挖掘修复-激进上报", StateOf(CfgAggressiveConverge.Value &&
-                    (CfgBlockBreakSync.Value || CfgSyncBuildingDamage.Value || CfgSyncBodyDamage.Value)), null),
                 ("商人商品表对齐", StateOf(CfgTraderSnapshot.Value), null),
                 ("商人界面静音", StateOf(CfgQuietTraderUIModItems.Value, false), null),
                 ("娱乐：一生二", StateOf(CfgDoublePurchase.Value, false), null),
@@ -976,8 +935,6 @@ namespace DDEN.MPfix
             {
                 if (entry == null) return;
                 if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgFixPlayerNames.Local)) PlayerNameRepair.Invalidate();
-                if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgWearFix.Local))
-                    WearGhostFix.Reset();
                 if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgTraderSnapshot.Local))
                     TraderSnapshotFix.Reset();
 
@@ -1019,7 +976,7 @@ namespace DDEN.MPfix
             try
             {
                 _authority?.Tick(); // Must run even when the repair master switch or a repair branch is disabled.
-                PlayerNameRepair.Tick();
+                PlayerNameRepair.UpdateLifecycle(); // Cleanup only; native MP callbacks drive name display.
                 // 闸门联动（用户口径 2026-11）：版本对不上 → 自动把总开关关掉；核对通过/被忽略 → 自动恢复。
                 if (CfgMasterEnabled != null)
                 {
@@ -1056,13 +1013,12 @@ namespace DDEN.MPfix
                     DdenHub.SetPanelVisible("mpfix", _standaloneVisible);
                 }
 
-                // 周期处理（穿戴兜底 / 挖块上报）：各自内部有节拍，这里只量"本模块每帧吃了多少"，
+                // 周期处理：这里只量"本模块每帧吃了多少"，
                 // 每 60 秒汇总一条日志 —— 让"巡检是不是卡顿源"有数据，而不是靠感觉。
                 bool repairRunning = Mp.IsRunning;
                 if (_repairRunning != repairRunning)
                 {
                     _repairRunning = repairRunning;
-                    WearGhostFix.Reset();
                     TraderSnapshotFix.Reset();
                     _hasHostValue = false;
                     _wasClient = _requested = false;
@@ -1070,12 +1026,9 @@ namespace DDEN.MPfix
                     _nextWatchdog = 0f;
                 }
                 float t0 = Time.realtimeSinceStartup;
-                WearGhostFix.Tick();
-                float t1 = Time.realtimeSinceStartup;
-                BlockDamageSyncFix.Tick();   // 挖块上报攒批：到点把攒下的碎块一起发
                 float t2 = Time.realtimeSinceStartup;
 
-                ReportTickCost((t2 - t0) * 1000f, (t1 - t0) * 1000f, (t2 - t1) * 1000f);
+                ReportTickCost((t2 - t0) * 1000f);
 
                 if (!Active || !CfgChipEnabled.Value) return;
                 if (!Mp.CoreAvailable) return;
@@ -1110,7 +1063,7 @@ namespace DDEN.MPfix
             }
         }
 
-        private void ReportTickCost(float total, float wear, float mining)
+        private void ReportTickCost(float total)
         {
             // 开局 6 秒是冷启动（JIT、资源加载），这段时间的数字没有参考价值，别记进来
             if (Time.realtimeSinceStartup < _warmupUntil) return;
@@ -1134,7 +1087,7 @@ namespace DDEN.MPfix
             if (avg < 0.5f && peak < 2f) return;
 
             MPfixPlugin.Log.Info($"[巡检] 本模块每帧合计 平均 {avg:0.000}ms / 峰值 {peak:0.000}ms " +
-                                 $"（最近一次：穿戴兜底 {wear:0.000} / 挖块上报 {mining:0.000}）");
+                                 $"（最近一次：{total:0.000} ms）");
         }
 
         private void TickHost()
