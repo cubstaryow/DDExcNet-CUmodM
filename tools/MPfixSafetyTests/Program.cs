@@ -63,32 +63,32 @@ internal static class Program
         AuthoritySetting<bool> craft = file.Bind("联机合成", "修（FixModItemCraftSpawn）", true);
         AuthoritySetting<bool> names = file.Bind("玩家名称", "尝试（FixPlayerNames）", true);
         AuthoritySetting<bool> damage = file.Bind("联机修正", "修（SyncBodyDamage）", true);
-        AuthoritySetting<bool> aggressive = file.Bind("联机修正", "激进（AggressiveConverge）", true);
+        AuthoritySetting<bool> quiet = file.Bind("联机修正", "商人界面不再刷“prefab 为空”（QuietTraderUIModItems）", true);
         AuthoritySetting<bool> entertainment = file.Bind("娱乐", "道生一 一生二（DoublePurchase）", true);
         var verbose = file.Bind("调试", "详细日志（Verbose）", true);
         var hotkey = file.Bind("界面", "热键", "F10");
-        var entries = new ConfigEntryBase[] { master, opt, craft.Entry, names.Entry, damage.Entry, aggressive.Entry, entertainment.Entry, verbose, hotkey };
+        var entries = new ConfigEntryBase[] { master, opt, craft.Entry, names.Entry, damage.Entry, quiet.Entry, entertainment.Entry, verbose, hotkey };
         var absent = new FeatureDependencies(entries, _ => false);
         absent.EnforceAll();
         Check(master.Value && verbose.Value && absent.Available(hotkey), "missing MP leaves local master/debug/UI editable");
-        Check(!opt.Value && !craft.Value && !names.Value && !damage.Value && !aggressive.Value && !entertainment.Value, "missing MP forces all functional bools off");
+        Check(!opt.Value && !craft.Value && !names.Value && !damage.Value && !quiet.Value && !entertainment.Value, "missing MP forces all functional bools off");
         Check(!absent.Available(names.Entry) && absent.Reason(names.Entry).Contains("缺少"), "disabled controls have an explanation");
         names.Local.Value = true; absent.Enforce(names.Entry);
         Check(!names.Value, "external configuration edits can be re-enforced");
 
         var noCore = new FeatureDependencies(entries, guid => guid == "CasualtiesMP");
-        foreach (var setting in new IAuthoritySetting[] { craft, names, damage, aggressive, entertainment })
+        foreach (var setting in new IAuthoritySetting[] { craft, names, damage, quiet, entertainment })
         { var item = setting; setting.Available = () => noCore.Available(item.Entry); }
         names.Value = damage.Value = entertainment.Value = true;
         noCore.EnforceAll();
         Check(names.Value && damage.Value && entertainment.Value, "missing CCL keeps independent MP display/damage/entertainment usable");
-        Check(!craft.Value && !aggressive.Value && !noCore.Available(opt), "missing CCL blocks generation, relay and host authority");
-        var overlay = new AuthorityOverlay(new IAuthoritySetting[] { craft, names, damage, aggressive, entertainment }, null);
+        Check(!craft.Value && !quiet.Value && !noCore.Available(opt), "missing CCL blocks generation, relay and host authority");
+        var overlay = new AuthorityOverlay(new IAuthoritySetting[] { craft, names, damage, quiet, entertainment }, null);
         var snapshot = overlay.Capture(Guid.NewGuid().ToString("N"), 1, true);
         snapshot.Values[craft.Id].Text = "true";
-        snapshot.Values[aggressive.Id].Text = "true";
+        snapshot.Values[quiet.Id].Text = "true";
         Check(overlay.Apply(snapshot), "valid host snapshot decodes");
-        Check(!craft.Value && !aggressive.Value && names.Value, "host authority cannot reactivate a missing dependency");
+        Check(!craft.Value && !quiet.Value && names.Value, "host authority cannot reactivate a missing dependency");
         overlay.Release();
         Check(!craft.Value && names.Value, "releasing host authority preserves dependency restrictions");
         var ready = new FeatureDependencies(entries, _ => true);
@@ -120,6 +120,15 @@ internal static class Program
         foreach (var asm in new[] { mpfix, shared })
             Check(!asm.MainModule.AssemblyReferences.Any(r => r.Name == "CUCoreLib"), asm.Name.Name + " can load without its optional CCL assembly");
         var name = all.Single(t => t.Name == "PlayerNameRepair");
+        var lifecycle = name.Methods.Single(m => m.Name == "UpdateLifecycle");
+        Check(!lifecycle.Body.Instructions.Any(i => i.Operand is MethodReference m
+            && (m.Name == "Invoke" || m.Name == "GetValue" || m.Name == "Display" || m.Name == "GetComponent"
+                || m.DeclaringType.Name == "PlayerNameFonts" && m.Name == "Tick")),
+            "lifecycle never polls players, redraws labels or invokes native name refresh");
+        Check(name.Methods.Single(m => m.Name == "BodyName").Body.Instructions.Any(i => i.Operand is MethodReference m
+            && m.DeclaringType.Name == "PlayerNameRepair" && m.Name == "Display")
+            && name.Methods.Single(m => m.Name == "Install").Body.Instructions.Any(i => i.Operand is string s && s == "BodyName"),
+            "native MP name callback retains display-name resolution without an extra refresh queue");
         var fonts = all.Single(t => t.Name == "PlayerNameFonts");
         Check(!Types(new[] { fonts }).SelectMany(t => t.Methods).Where(m => m.HasBody).SelectMany(m => m.Body.Instructions).Any(i => i.Operand is MethodReference m && (m.Name == "GetOSInstalledFontNames" || m.Name == "CreateDynamicFontFromOSFont" || m.DeclaringType.FullName == "TMPro.TMP_FontAsset" && m.Name == "CreateFontAsset")), "name font repair never queries or creates system fonts or generated fallback atlases");
         Check(!name.Methods.Where(m => m.HasBody).SelectMany(m => m.Body.Instructions).Any(i =>

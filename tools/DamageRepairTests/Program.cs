@@ -1,6 +1,8 @@
 using System;
 using DDEN.MPfix;
 
+// 2026-11：AttackReport / 激进上报链路已剔除（备份见 decomp/backup-aggressive-wear/），
+// 本工具保留对仍在用的两个工作队列/身份索引的检查。
 internal static class Program
 {
     private static int _checks;
@@ -9,36 +11,6 @@ internal static class Program
 
     private static void Main()
     {
-        var report = new AttackReport(1, 333f, 999f, 0.75f);
-        var bytes = new byte[AttackReport.Size];
-        report.Write(bytes);
-        Check(AttackReport.TryRead(bytes, out var decoded) && decoded.Damage == 333f
-            && decoded.Structural == 999f && decoded.Power == 0.75f && decoded.Branch == 1, "round trip");
-        var packet = new byte[103];
-        report.Write(packet.AsSpan(79));
-        Check(AttackReport.TryRead(packet.AsSpan(79), out decoded), "nonzero packet offset");
-        Check(!AttackReport.TryRead(packet, out decoded), "require exact trailer size");
-        for (int length = 0; length < AttackReport.Size; length++)
-            Check(!AttackReport.TryRead(bytes.AsSpan(0, length), out decoded), "truncated trailer");
-        bytes[0] ^= 1;
-        Check(!AttackReport.TryRead(bytes, out decoded), "foreign packet");
-        report.Write(bytes); bytes[20] ^= 1;
-        Check(!AttackReport.TryRead(bytes, out decoded), "corrupt end marker");
-        foreach (float invalid in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity, -1f })
-        {
-            Check(!new AttackReport(1, invalid, 1, 1).ValidValues, "invalid damage");
-            Check(!new AttackReport(2, 1, invalid, 1).ValidValues, "invalid structural damage");
-            Check(!new AttackReport(2, 1, 1, invalid).ValidValues, "invalid power");
-        }
-        Check(!new AttackReport(3, 1, 1, 1).ValidValues, "unknown protocol branch/version");
-        Check(!new AttackReport(1, float.MaxValue, 1, 100).ValidValues, "overflow damage product");
-        Check(!new AttackReport(1, 1, 1, 101).ValidValues, "unbounded strength");
-        Check(new AttackReport(2, 333, 333, 1).Credible(111, 111, 1, 3), "x3 world report accepted");
-        Check(!new AttackReport(2, 333, 333, 1).Credible(0, 0, 1, 3), "no host attack cannot authorize damage");
-        Check(!new AttackReport(2, 333, 333, 1).Credible(111, 111, 0, 3), "zero host strength");
-        Check(!new AttackReport(2, 1000, 1000, 1).Credible(111, 111, 1, 3), "out of trust range");
-        Check(new AttackReport(1, 55.5f, 55.5f, 1).Credible(111, 111, 1, 0.5f), "sub-one world multiplier");
-
         var queue = new FrameWorkQueue<int>();
         for (int i = 0; i < 10000; i++) queue.Enqueue(i);
         int expected = 0, frames = 0;
@@ -85,6 +57,7 @@ internal static class Program
         Check(identities.Count == 1000, "large inventory indexed once");
         foreach (var lease in saved) { Check(identities.IsCurrent(lease), "inventory binding retained"); identities.Remove(lease.Value); }
         Check(identities.Count == 0, "destroyed inventory releases cached references");
-        Console.WriteLine($"PASS: {_checks} checks (attack protocol; 10,000 queued tasks; frame budgets; 1,000 inventory identities; ID reuse; reset).");
+
+        Console.WriteLine($"PASS: {_checks} checks (frame budgets; legacy identity index).");
     }
 }

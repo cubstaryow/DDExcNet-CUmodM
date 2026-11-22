@@ -37,7 +37,7 @@ namespace DDEN.MPfix
             }
 
             harmony.Patch(m, prefix: new HarmonyMethod(typeof(BuildingDamageRelax), nameof(BeforeDamageBuilding)));
-            MPfixPlugin.Log.Info("已启用补丁：主机打单位伤害重算（基础/激进由分支开关控制）");
+            MPfixPlugin.Log.Info("已启用补丁：主机打单位伤害重算（只补世界伤害倍率）");
         }
 
         /// <summary>参数名必须与 Together 的方法签名一致，Harmony 按名字注入。</summary>

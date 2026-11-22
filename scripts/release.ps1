@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  把当前代码打成可发布的包（dist/DDEN-v<版本>.zip），可选直接创建 GitHub Release 并上传。
+  把当前代码打成可发布的包（dist/DDExcNet-v<版本>.zip），可选直接创建 GitHub Release 并上传。
 
 .EXAMPLE
   pwsh scripts/release.ps1
@@ -11,13 +11,13 @@
       打完包后创建 GitHub Release 并上传 zip（需要 gh CLI 已登录，或 GITHUB_TOKEN 环境变量）。
 
 .EXAMPLE
-  pwsh scripts/release.ps1 -Version 1.6.0 -Notes "本次发布说明" -Upload
+  pwsh scripts/release.ps1 -Version 1.7.1 -Notes "本次发布说明" -Upload
       指定版本号与一段自定义说明。
 
 .NOTES
   · 默认读取 DdenVersion；改版本还须同步各插件BepInPlugin字面版本，-Version不会改源码版本。
-  · 发布包内容 = 五个 DDEN 组件 + 独立 ET-HeatingCageFix + 许可与说明文件。
-  · 不会自动 push 分支；发版前请确认 master 已经是最新的。
+  发布包内容 = DDEN 五个组件（公共层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器）+ 许可与说明文件。
+  · 不会自动 push 分支；分支推送、创建tag及线上Release各自按用户授权处理。
 #>
 [CmdletBinding()]
 param(
@@ -42,50 +42,61 @@ try {
         if (-not $m.Success) { throw 'Directory.Build.props 里没有找到 <DdenVersion>，请先补上或用 -Version 指定。' }
         $Version = $m.Groups[1].Value.Trim()
     }
+    if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw '版本号必须为主.次.补丁数字。' }
+    $sourceVersion = [regex]::Match([IO.File]::ReadAllText((Join-Path $Root 'Directory.Build.props')), '<DdenVersion>([^<]+)</DdenVersion>').Groups[1].Value.Trim()
+    if ($Version -ne $sourceVersion) { throw "版本参数与源码不符：$Version / $sourceVersion" }
     $Tag = "v$Version"
     Write-Host "== 版本: $Version（tag $Tag）" -ForegroundColor Cyan
 
     # ===== 2. 构建 =====
     if (-not $SkipBuild) {
         Write-Host '== 构建 Release…' -ForegroundColor Cyan
-        dotnet build 'CUmod.slnx' -c Release -v m
+        dotnet build 'DDExcNet.slnx' -c Release -v minimal -m:1 -nodeReuse:false -p:DeployOnBuild=false -p:UseSharedCompilation=false -p:NuGetAudit=false
         if ($LASTEXITCODE -ne 0) { throw "构建失败（exit $LASTEXITCODE）" }
     }
 
     $releaseBin = @{
-        'ET-HeatingCageFix.dll'               = 'src/外部mod/ET-HeatingCageFix/bin/Release/ET-HeatingCageFix.dll'
         'DDEN.Shared.dll'           = 'src/DDEN.Shared/bin/Release/DDEN.Shared.dll'
         'DDExcNet-CUmodM.dll'       = 'src/DDExcNet.CUmodM/bin/Release/DDExcNet-CUmodM.dll'
         'DDEN.MPfix.dll'            = 'src/DDEN.MPfix/bin/Release/DDEN.MPfix.dll'
         'DDEN.NetPerfTracker.dll'   = 'src/DDEN.NetPerfTracker/bin/Release/DDEN.NetPerfTracker.dll'
         'DDEN.SaveEditor.dll'       = 'src/DDEN.SaveEditor/bin/Release/DDEN.SaveEditor.dll'
     }
-    # 注意：发布包 = 全部模块（含存档编辑器与性能跟踪器）。性能跟踪器只是观测工具，
-    # 不装任何补丁，玩家不用它也不会影响游戏，但排查问题时让他开着能直接抓现场。
+    # 注意：发布包 = **DDEN 五个组件**（公共层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器）。
+    # 独立外部模组「ET-Fix（ET 加热笼修复）」**不随本包发布**，它有自己的仓库与发布节奏；
+    # 本脚本不会构建或部署外部模组；JDI-DDEN同样不随包发布。
     foreach ($pair in $releaseBin.GetEnumerator()) {
-        if (-not (Test-Path $pair.Value)) { throw "缺少产物：$($pair.Value)（先构建 Release）" }
+        if (-not (Test-Path -LiteralPath $pair.Value -PathType Leaf)) { throw "缺少产物：$($pair.Value)（先构建 Release）" }
+        $assemblyVersion = [Reflection.AssemblyName]::GetAssemblyName((Join-Path $Root $pair.Value)).Version.ToString()
+        if ($assemblyVersion -ne "$Version.0") { throw "程序集版本不匹配：$($pair.Key) = $assemblyVersion，预期 $Version.0" }
     }
 
     # ===== 3. 组装发布目录 =====
     $dist = Join-Path $Root 'dist'
-    $stage = Join-Path $dist "DDEN-$Tag"
-    if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+    $stage = Join-Path $dist "DDExcNet-$Tag"
+    if (Test-Path -LiteralPath $stage) {
+        $resolvedDist = (Resolve-Path -LiteralPath $dist).Path.TrimEnd('\')
+        $resolvedStage = (Resolve-Path -LiteralPath $stage).Path
+        if ((Split-Path -Parent $resolvedStage) -ne $resolvedDist -or (Split-Path -Leaf $resolvedStage) -ne "DDExcNet-$Tag" -or ((Get-Item -LiteralPath $stage).Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw '拒绝清理非预期发布路径。' }
+        Remove-Item -LiteralPath $resolvedStage -Recurse -Force
+    }
     New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
     foreach ($pair in $releaseBin.GetEnumerator()) {
         Copy-Item $pair.Value (Join-Path $stage $pair.Key) -Force
     }
-    foreach ($doc in @('README.md', 'LICENSE', 'LICENSE-ASSETS', 'NOTICE')) {
+    Copy-Item -LiteralPath (Join-Path $Root 'docs/release/INSTALL.md') -Destination (Join-Path $stage 'README.md')
+    foreach ($doc in @('LICENSE', 'LICENSE-ASSETS', 'NOTICE')) {
         if (Test-Path $doc) { Copy-Item $doc $stage -Force }
     }
 
     # ===== 4. 打包 =====
-    $zip = Join-Path $dist "DDEN-$Tag.zip"
+    $zip = Join-Path $dist "DDExcNet-$Tag.zip"
     if (Test-Path $zip) { Remove-Item $zip -Force }
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
     $size = [math]::Round((Get-Item $zip).Length / 1KB, 1)
     $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
-    Write-Host "== 产物: dist/DDEN-$Tag.zip（$size KB）" -ForegroundColor Green
+    Write-Host "== 产物: dist/DDExcNet-$Tag.zip（$size KB）" -ForegroundColor Green
     Write-Host "   SHA256: $hash"
 
     # ===== 5. 发布说明 =====
@@ -104,7 +115,7 @@ try {
     }
 
     $lines = New-Object System.Collections.Generic.List[string]
-    $lines.Add("## DDEN $Tag")
+    $lines.Add("## DDExcNet $Tag")
     $lines.Add('')
     # 正文全部来自 docs/release-page.md（适用版本 / 安装 / 模块说明 / 修复的功能模块与核心开关），
     # 之后只追加「校验」与「授权」。标题统一降一级：它自己的 # 变成 ##，嵌在 Release 页里层级才顺。
@@ -131,7 +142,7 @@ try {
     # 校验
     $lines.Add('### 校验')
     $lines.Add('```')
-    $lines.Add("SHA256(DDEN-$Tag.zip) = $hash")
+    $lines.Add("SHA256(DDExcNet-$Tag.zip) = $hash")
     $lines.Add("大小 = $size KB")
     $lines.Add('```')
     $lines.Add('')
@@ -150,7 +161,7 @@ try {
     $rm = [regex]::Match($remote, 'github\.com[:/](?<owner>[^/]+)/(?<repo>[^/]+)$')
     $repoUrl = if ($rm.Success) { "https://github.com/$($rm.Groups['owner'].Value)/$($rm.Groups['repo'].Value)" } else { $null }
     $newReleaseUrl = if ($repoUrl) {
-        "$repoUrl/releases/new?tag=$Tag&title=" + [uri]::EscapeDataString("DDEN $Tag") + "&body=" + [uri]::EscapeDataString((Get-Content $notesPath -Raw))
+        "$repoUrl/releases/new?tag=$Tag&title=" + [uri]::EscapeDataString("DDExcNet $Tag") + "&body=" + [uri]::EscapeDataString((Get-Content $notesPath -Raw))
     } else { $null }
 
     if (-not $Upload) {
@@ -158,9 +169,9 @@ try {
         if ($newReleaseUrl) {
             Write-Host '手动发版（GitHub 桌面版 / 网页）：' -ForegroundColor Yellow
             Write-Host "  1. 打开发布页：$repoUrl/releases/new" -ForegroundColor Yellow
-            Write-Host "     tag 填 $Tag，标题填 DDEN $Tag" -ForegroundColor Yellow
+            Write-Host "     tag 填 $Tag，标题填 DDExcNet $Tag" -ForegroundColor Yellow
             Write-Host "  2. 发布说明直接从 dist/RELEASE-$Tag.md 复制（或加 -OpenPage 自动复制到剪贴板并打开页面）" -ForegroundColor Yellow
-            Write-Host "  3. 把 dist/DDEN-$Tag.zip 拖进附件框，点 Publish release" -ForegroundColor Yellow
+            Write-Host "  3. 把 dist/DDExcNet-$Tag.zip 拖进附件框，点 Publish release" -ForegroundColor Yellow
         }
         Write-Host ''
         Write-Host '自动上传：加 -Upload（需要 gh CLI 或 $env:GITHUB_TOKEN）。' -ForegroundColor Yellow
@@ -176,7 +187,7 @@ try {
     $gh = Get-Command gh -ErrorAction SilentlyContinue
     if ($gh) {
         Write-Host "== 用 gh 创建 Release（target $Target）…" -ForegroundColor Cyan
-        gh release create $Tag $zip --title "DDEN $Tag" --notes-file $notesPath --target $Target
+        gh release create $Tag $zip --title "DDExcNet $Tag" --notes-file $notesPath --target $Target
         if ($LASTEXITCODE -ne 0) { throw "gh release create 失败（exit $LASTEXITCODE）。先确认 gh auth status 正常。" }
         Write-Host '== 已上传' -ForegroundColor Green
         return
@@ -195,7 +206,7 @@ try {
     $body = @{
         tag_name         = $Tag
         target_commitish = $Target
-        name             = "DDEN $Tag"
+        name             = "DDExcNet $Tag"
         body             = (Get-Content $notesPath -Raw)
         draft            = $false
         prerelease       = $false
@@ -204,7 +215,7 @@ try {
     $rel = Invoke-RestMethod -Method Post -Uri "https://api.github.com/repos/$owner/$repo/releases" -Headers $headers -Body $body
     $uploadUrl = $rel.upload_url -replace '\{.*$', ''
     Write-Host '== 上传 zip…' -ForegroundColor Cyan
-    Invoke-RestMethod -Method Post -Uri "$uploadUrl?name=DDEN-$Tag.zip" `
+    Invoke-RestMethod -Method Post -Uri "$uploadUrl?name=DDExcNet-$Tag.zip" `
         -Headers @{ Authorization = "token $env:GITHUB_TOKEN"; 'Content-Type' = 'application/zip'; 'User-Agent' = 'DDEN-release' } `
         -InFile $zip | Out-Null
     Write-Host "== 已发布: $($rel.html_url)" -ForegroundColor Green

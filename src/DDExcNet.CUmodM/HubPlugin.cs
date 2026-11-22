@@ -16,7 +16,7 @@ namespace DDExcNet.CUmodM
     /// ① 一个窗口管全部功能界面与配置界面；② 兼容性总控（互斥检测、快捷键抢键、补丁栈、旧文件残留）；
     /// ③ 各模块仍可单独工作，管理器缺席时它们退化成独立小窗。
     /// </summary>
-    [BepInPlugin(Guid, "DDExcNet CUmod Manager", "1.6.0")]
+    [BepInPlugin(Guid, "DDExcNet CUmod Manager", "1.7.2")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("org.bepinex.plugins.qol_unknown", BepInDependency.DependencyFlags.SoftDependency)]

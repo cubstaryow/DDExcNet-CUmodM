@@ -1,6 +1,6 @@
 # 源码局部约束
 
-遵守 [根协作约定](../agent.md)，并按协作者身份阅读 `agent/` 中对应的工作说明。当前v1.6.0，结构与构建见 [development.md](../docs/development.md)。
+遵守 [根协作约定](../agent.md)，并按协作者身份阅读 `agent/` 中对应的工作说明。当前工作树v1.7.2（部分源码尚未提交），结构与构建见 [development.md](../docs/development.md)。
 
 | 目录 | 职责 |
 | --- | --- |

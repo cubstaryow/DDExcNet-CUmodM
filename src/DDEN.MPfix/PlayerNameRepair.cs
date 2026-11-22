@@ -20,7 +20,6 @@ namespace DDEN.MPfix
             internal string Raw, Native, Display;
             internal ulong Steam;
             internal float RetryAt;
-            internal object Body;
         }
         private struct GuiFonts
         {
@@ -29,10 +28,9 @@ namespace DDEN.MPfix
         }
         private static ConditionalWeakTable<object, State> _states = new ConditionalWeakTable<object, State>();
         private static Type _player;
-        private static FieldInfo _nativeName, _steam, _body, _color, _gameFont;
+        private static FieldInfo _nativeName, _steam, _gameFont;
         private static PropertyInfo _allPlayers;
         private static MethodInfo _persona, _netApply;
-        private static float _nextTick;
         private static bool _wasEnabled, _installed, _needsUnicode;
         internal static bool Enabled => _installed && MPfixPlugin.Active && MPfixPlugin.CfgFixPlayerNames.Value && Mp.IsRunning;
 
@@ -43,15 +41,13 @@ namespace DDEN.MPfix
                 _player = Reflect.Type("Together.ScavPlayer");
                 _nativeName = AccessTools.Field(_player, "playerName");
                 _steam = AccessTools.Field(_player, "SteamId");
-                _body = AccessTools.Field(_player, "body");
-                _color = AccessTools.Field(_player, "playerColor");
                 _gameFont = AccessTools.Field(Reflect.Type("Together.CoopModAssets"), "gamefont");
                 _allPlayers = AccessTools.Property(_player, "AllPlayers");
                 _persona = AccessTools.Method(Reflect.Type("Together.KSteam"), "GetSteamUsername", new[] { typeof(ulong), typeof(bool) });
                 var apply = AccessTools.Method(_player, "ApplyNameAndColor");
                 _netApply = AccessTools.Method(Reflect.Type("Together.NetBody"), "ApplyNameAndColor", new[] { typeof(string), typeof(Color) });
                 var visual = AccessTools.Method(Reflect.Type("Together.CharStatusVisuals"), "ApplyNameAndColor", Type.EmptyTypes);
-                if (_nativeName == null || _steam == null || _body == null || _color == null || _allPlayers == null
+                if (_nativeName == null || _steam == null || _allPlayers == null
                     || apply == null || _netApply == null || visual == null) return false;
                 harmony.Patch(apply, prefix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(Capture)));
                 harmony.Patch(_netApply, prefix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(BodyName)));
@@ -241,7 +237,6 @@ namespace DDEN.MPfix
         private static void GameFont(ref Font __result) { __result = GuiFont(__result); }
         internal static void Invalidate()
         {
-            _nextTick = 0;
             try { foreach (var state in States()) state.Display = null; }
             catch (Exception ex) { MPfixPlugin.Log.Debug("[名称显示] 刷新名称缓存失败：" + ex.Message); }
         }
@@ -250,48 +245,17 @@ namespace DDEN.MPfix
             if (_allPlayers?.GetValue(null) is IEnumerable players)
                 foreach (object player in players) if (player != null) yield return _states.GetOrCreateValue(player);
         }
-        internal static void Tick()
+        // This only releases local font/cache resources. Name updates belong to MP's own callbacks.
+        internal static void UpdateLifecycle()
         {
             bool enabled = Enabled;
-            if (!enabled && !_wasEnabled) return;
-            if (Time.unscaledTime < _nextTick && enabled == _wasEnabled) return;
-            _nextTick = Time.unscaledTime + 1f;
-            bool toggled = enabled != _wasEnabled; _wasEnabled = enabled; _needsUnicode = false;
-            try
+            if (!enabled && _wasEnabled)
             {
-                if (_allPlayers?.GetValue(null) is IEnumerable players)
-                foreach (object player in players)
-                {
-                    if (player == null || player is UnityEngine.Object obj && obj == null) continue;
-                    var state = _states.GetOrCreateValue(player);
-                    string previous = state.Display;
-                    string display = Display(player);
-                    object body = _body.GetValue(player);
-                    if (body is Component component && component != null && (toggled || previous != display || !ReferenceEquals(state.Body, body)))
-                    {
-                        object netBody = component.GetComponent(_netApply.DeclaringType);
-                        if (netBody != null)
-                        {
-                            // Calling the presentation layer never writes back the logical player name.
-                            Color color = ReadColor(_color.GetValue(player));
-                            _netApply.Invoke(netBody, new object[] { display, color });
-                        }
-                    }
-                    state.Body = body;
-                }
-                if (enabled) PlayerNameFonts.Tick();
-                else { PlayerNameFonts.Clear(); _states = new ConditionalWeakTable<object, State>(); }
+                PlayerNameFonts.Clear();
+                _states = new ConditionalWeakTable<object, State>();
+                _needsUnicode = false;
             }
-            catch (Exception ex) { MPfixPlugin.Log.Debug("[名称显示] 刷新失败：" + ex.Message); }
-        }
-        private static Color ReadColor(object color)
-        {
-            if (color is Color c) return c;
-            if (color != null)
-                foreach (var convert in color.GetType().GetMethods(BindingFlags.Public | BindingFlags.Static))
-                    if (convert.Name == "op_Implicit" && convert.ReturnType == typeof(Color) && convert.GetParameters().Length == 1
-                        && convert.GetParameters()[0].ParameterType == color.GetType()) return (Color)convert.Invoke(null, new[] { color });
-            return Color.white;
+            _wasEnabled = enabled;
         }
         internal static void Stop() { _wasEnabled = false; _states = new ConditionalWeakTable<object, State>(); PlayerNameFonts.Dispose(); }
     }

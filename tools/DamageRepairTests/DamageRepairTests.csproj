@@ -4,7 +4,6 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../src/DDEN.MPfix/AttackReport.cs" Link="AttackReport.cs" />
     <Compile Include="../../src/DDEN.MPfix/FrameWorkQueue.cs" Link="FrameWorkQueue.cs" />
     <Compile Include="../../src/DDEN.MPfix/NetworkObjectIndex.cs" Link="NetworkObjectIndex.cs" />
   </ItemGroup>

@@ -15,7 +15,7 @@ using UnityEngine;
 namespace DDEN.NetPerfTracker
 {
     /// <summary>Read-only, zero patches. Wall-frame timing, optional exact 2D marker and budgeted object censuses.</summary>
-    [BepInPlugin(Guid, "DDEN NetPerfTracker", "1.6.0")]
+    [BepInPlugin(Guid, "DDEN NetPerfTracker", "1.7.2")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     public class NetPerfTrackerPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleGate
     {

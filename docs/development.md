@@ -1,4 +1,4 @@
-# 工作区、构建与检查 · v1.6.0
+# 工作区、构建与检查 · v1.7.2
 
 ## 目录职责
 
@@ -23,11 +23,13 @@ docs/history/                     明确过时的历史记录
 
 `bin/obj/dist/artifacts/decomp/backup`为本地生成／参考目录，忽略而不上传；不为了整理工作区删除用户的历史包、日志或反编译文件。独立模组的检查工具保存在自己的目录中；其余工具仍按模块分组，避免为移动目录制造重复实现。
 
+项目根目录为L:\github\game\CUmod；反编译参考放decomp，文档放docs，agent为协作说明目录。最终交付文件统一放dist/<版本>/（现有版本目录形如dist/DDExcNet-v1.7.2/），bin/obj仅为构建中间目录。当前发布脚本仍会将ZIP和发布说明写到dist根目录，后续由发布agent调整或整理；不能把目录约定写成脚本已完成的行为。
+
 ## 本机环境
 
 - 游戏：`L:\SteamLibrary\steamapps\common\Casualties Unknown`；路径可通过 `Directory.Build.props`或 `-p:GameDir=...`覆盖。
 - Unity 2022.3.62f3／Mono是引擎与运行时信息，不是游戏产品版本号。目标netstandard2.1，BepInEx 5、游戏自带HarmonyX和Newtonsoft.Json。
-- .NET SDK 10使用 `CUmod.slnx`。Shared以外的插件不得硬引用Together或QoL；ET-Fix、JDI-DDEN还不得硬引用DDEN公共层；JDI-DDEN对Together/CCL使用软依赖。
+- .NET SDK 10使用 `DDExcNet.slnx` 构建五个发布组件；`CUmod.slnx` 是包含外部模组的整仓开发入口。Shared以外的插件不得硬引用Together或QoL；ET-Fix、JDI-DDEN还不得硬引用DDEN公共层；外部模组的具体依赖由各自项目说明维护，本次不作校对。
 - 当前联机核对目标为Together 5.5.4、CUCoreLib 1.1。只有对本机安装文件及明确测试过的接口作结论，更新后重新检查。
 
 ## 只构建
@@ -35,10 +37,10 @@ docs/history/                     明确过时的历史记录
 从仓库根目录执行：
 
 ```powershell
-dotnet build CUmod.slnx -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=false
+dotnet build DDExcNet.slnx -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=false
 ```
 
-`DeployOnBuild`默认false；单纯构建不应写游戏目录。中文路径项目与嵌套检查项目已纳入解决方案／相对引用。版本由 `DdenVersion`统一，目前1.6.0；各插件 `BepInPlugin`中的字面版本也要同步，不能只改props。
+`DeployOnBuild`默认false；单纯构建不应写游戏目录。中文路径项目与嵌套检查项目已纳入解决方案／相对引用。五个发布组件版本由 `DdenVersion`统一（外部模组保持各自项目版本），目前工作树为1.7.2（部分代码尚未提交）；各插件 `BepInPlugin`中的字面版本也要同步，不能只改props。
 
 ## 部署与改名迁移
 
@@ -53,7 +55,7 @@ dotnet build CUmod.slnx -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=false
 
 CageFix现名 `ET-Fix.dll`。原GUID `com.dden.heatingcagefix`、cfg、存档键与网络频道保留。部署脚本在DDEN目录移除已知旧名 `CageFix.dll`；若曾在plugins其它位置独立安装，用户需关闭游戏后移除那里那份旧文件。不全场扫描后删除未知DLL。
 
-完整整合包包含五个DDEN产物、一个独立外部模组和根目录四份说明／许可。配置、存档、第三方依赖和游戏文件不打包；详情见 [工作流程](workflow.md)。
+DDExcNet发布包仅包含五个DDEN产物和四份说明／许可；ET-Fix与JDI-DDEN不随包发布。普通包README取自独立安装说明，避免包内出现不存在的仓库文档链接。配置、存档、第三方依赖和游戏文件不打包；详情见 [工作流程](workflow.md)。
 
 ## 离线检查
 
@@ -66,7 +68,7 @@ dotnet run --no-build --project tools/DamageRepairTests/DamageRepairTests.csproj
 
 | 工具 | 覆盖范围 |
 | --- | --- |
-| `DamageRepairTests` | 伤害报告格式／可信边界、队列预算和任务顺序 |
+| `DamageRepairTests` | 当前仅检查保留的队列／身份索引辅助类型；不再验证已移除的AttackReport或实际伤害倍率结算 |
 | `MPfixSafetyTests` | 生成兜底、依赖、身份与名称安全约束 |
 | `HostAuthorityTests` | 临时配置层、本机恢复与有界同步 |
 | `NameFontTests` | 游戏字库策略、Unicode缺字与恢复 |
@@ -80,4 +82,4 @@ dotnet run --no-build --project tools/DamageRepairTests/DamageRepairTests.csproj
 
 已有自检入口是 `BepInEx/config/cumod.selftest`、`cumod.uitest`、`cumod.cfgtest`。这些会让插件执行自检或自动翻页面；仅在用户授权的测试实例中使用，完成后清除标记，不能把它们留给日常游戏。
 
-离线通过后仍须真实双端验证：主机开无芯片／客机仍有芯片的复现与同步；x3及低倍率、不同种族／力量的三条近战分支；开关关闭、激进开启／拒绝回退；离场／重连、背包保存开关两种情况；名称游戏字库；ET两只不同状态笼子的合成与存取。记录主客机版本、开关、复现步骤与日志；不以菜单无异常代替多人验收。
+离线通过后仍须真实双端验证：主机开无芯片／客机仍有芯片的复现与同步；x3及低倍率、不同种族／力量的三条近战分支；名称游戏字库。离场物品剔除广播已放弃，不作为待验收功能；外部ET笼子由独立模组维护者单独验收。记录主客机版本、开关、复现步骤与日志；不以菜单无异常代替多人验收。
