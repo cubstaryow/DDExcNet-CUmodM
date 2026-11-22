@@ -20,7 +20,7 @@ namespace DsToolExtension
             source.loop = true;
             source.volume = 0f;
             source.playOnAwake = false;
-            source.spatialBlend = 1f;
+            source.spatialBlend = 0f;   // 原生 heavydrill 是 2D 音效（Spatialize=false），用 3D 会因背包槽位坐标导致声音过小
             source.minDistance = 1f;
             source.maxDistance = 500f;
             if (source.clip == null)
