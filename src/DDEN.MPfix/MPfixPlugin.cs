@@ -344,13 +344,13 @@ namespace DDEN.MPfix
 
             CfgFixModItemCraftSpawn = Config.Bind("联机合成", "修“无法生成物品”（FixModItemCraftSpawn）", true,
                 "合成结果生成失败时尝试补救，正常生成时不额外发放。");
-            CfgFixPlayerNames = Config.Bind("玩家名称", "尝试修复名称显示（FixPlayerNames）", false,
+            CfgFixPlayerNames = Config.Bind("玩家名称", "尝试修复名称显示（FixPlayerNames）", true,
                 "尝试恢复中文名字，修正空名字、问号和数字名字；只改变本机显示。");
 
             CfgPhysicsGuard = Config.Bind("物品物理", "丢弃物解除穿墙（GuardDropPhysics）", true,
                 "玩家亲手丢出物品时，补开被关掉的碰撞体。");
 
-            CfgTraderSnapshot = Config.Bind("联机修正", "打开商人时对齐商品表（TraderSnapshotOnOpen）", true,
+            CfgTraderSnapshot = Config.Bind("联机修正", "打开商人时对齐商品表（TraderSnapshotOnOpen）", false,
                 "每次打开商人界面，向主机要一份最新的商品表。");
             CfgBlockBreakSync = Config.Bind("联机修正", "修“挖方块”-伤害重算（SyncBlockBreak）", true,
                 "默认补齐主机挖块漏算的世界伤害倍率。");

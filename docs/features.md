@@ -74,7 +74,7 @@ Together主机的原合成结果经 `Utils.Create`生成；CCL已有正常模组
 - **穿戴兜底在v1.7.1之后的当前工作树中已剔除。** `WearGhostFix`（客机穿上后请主机补穿 + 广播）连同 `穿戴兜底/Enabled`、`MaxPerSession` 两个配置
   与频道 `ddn.mp.wearfix` 已移除，源码备份在 `decomp/backup-aggressive-wear/`。装备显示不一致时不再由本模组介入。
 - `ItemPhysicsGuard`：仅实际 `Body.DropItem/DropWearable`时处理自由物品；不移动、不改刚体模式、不做全场轮询。重叠或判断不足时保留现状，不能承诺所有穿墙都修好。
-- `TraderSnapshotFix`：客机打开商人时请求Together重发商品快照；不是在本地自行扣款或造货。`TraderUIQuietFix`仅对可确认的模组空资源误报静音。
+- `TraderSnapshotFix`：默认关。开启后，客机打开商人时请求Together重发商品快照；不是在本地自行扣款或造货。`TraderUIQuietFix`仅对可确认的模组空资源误报静音。
 - **玩家离场物品剔除广播：v1.7.1 已移除并放弃修复。** 用户实测该方案不能解决客机退出后其他客机持续掉帧的问题，不能再将它列为本模组的有效功能。
   `GhostItemRelay`、`RelayGhostItems` 配置及 `ddn.mp.ghostitems.v2` / `ddn.mp.ghostitems.verify.v2` 收发入口已经移除；旧 cfg 中残留该键也不生效。主机权威配置不会重新启用它。
   原功能与恢复说明仅备份在本地 `decomp/backup-ghostitems/`，不编译、不打包、不提交；此备份不表示计划恢复该功能。`NetworkObjectIndex` 仍为未接入运行流程的辅助类型与离线检查输入，不会触发物品剔除。
@@ -82,7 +82,7 @@ Together主机的原合成结果经 `Utils.Create`生成；CCL已有正常模组
 
 ## 6. 名称与主机权威配置
 
-`PlayerNameRepair`只改本机显示，默认关；不写逻辑玩家名、SteamID、握手或存档身份。`PlayerNameFonts`只借用游戏字体／可用源字体，缺字按Unicode标量替换 `?`，不调用系统字体兜底；局部字体副本停用时恢复，游戏字体资源不销毁。
+`PlayerNameRepair`只改本机显示，默认开；不写逻辑玩家名、SteamID、握手或存档身份。`PlayerNameFonts`只借用游戏字体／可用源字体，缺字按Unicode标量替换 `?`，不调用系统字体兜底；局部字体副本停用时恢复，游戏字体资源不销毁。
 
 名称修复不单独遍历玩家或主动调用MP名称／颜色刷新。昵称在原MP的名称回调和界面读取路径中解析，名牌字体在原生显示回调之后准备；Steam名称事件只使缓存失效。每帧仅检查功能关闭后的字体／缓存清理，不重绘名称、不改地点标记透明度、目标或计时。开关、Steam名称和字体可用性变化在下一次原MP名称／显示刷新时体现；缺字仍显示?，不使用系统字体，不处理LES实体／RPC异常。
 
