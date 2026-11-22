@@ -133,10 +133,12 @@ namespace HeatingCageFix
             foreach (var pair in DdenConfig)
             {
                 bool noBattery = pair.Value == Plugin.NoBatteryEnabled || pair.Value == Plugin.ReenableLight;
+                bool normal = noBattery || pair.Value == Plugin.Master || pair.Value == Plugin.Decay
+                    || pair.Value == Plugin.Heat || pair.Value == Plugin.Remember || pair.Value == Plugin.Network;
                 method.Invoke(null, new object[] { pair.Key.Section, pair.Key.Key, pair.Value.Description.Description,
                     pair.Value == Plugin.Verbose ? "状态异常时缺少排查信息。" : (noBattery ? "工具没有电池时无法使用。" : "加热笼关闭后仍腐坏或仍被当作热源。"),
                     pair.Value == Plugin.Verbose ? "按需记录状态和同步结果。" : (noBattery ? "装电池后恢复可用并重新点灯。" : "按每只加热笼的实际开关状态处理。"),
-                    noBattery ? "否" : "是 · 尚需游戏内验证",
+                    normal ? "否" : "是 · 尚需游戏内验证",
                     noBattery ? "只影响增强钛工具，开销可忽略。" : "仅处理加热笼；联机按变化确认状态。", false });
             }
         }
