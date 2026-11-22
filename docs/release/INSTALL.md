@@ -1,6 +1,8 @@
-# DDExcNet 1.7.1 — 安装 / Installation
+# DDExcNet 1.7.2 — 安装 / Installation
 
 本包为五个DDExcNet组件：公共层、管理器、MPfix、可选存档编辑器与可选性能跟踪器。现有DLL/GUID/配置仍使用DDEN名称。ET-Fix与JDI-DDEN独立发布，不含在本包中。
+
+> 本说明按1.7.2工作树校对，含尚未提交的代码变更；发布agent应对照最终提交／安装包核对后使用。本轮未重新打包。
 
 ## 中文
 
@@ -11,7 +13,7 @@
 
 v1.7.1已移除并放弃玩家离场物品剔除广播。原方案实测不能解决其他客机掉帧，旧RelayGhostItems配置不再生效；退出背包处理交由原版Together流程，本包不再提供此项修复。
 
-无芯片修复针对主机启用后客机仍有芯片的实际规则差异。基础伤害补主机漏算倍率，激进进一步核验客机报告，各有覆盖边界；名称修复只用游戏字体，缺字显示?。当前UI主要为中文，未实现中英文切换。构建和离线检查不等于真实多人验收。
+无芯片修复针对主机启用后客机仍有芯片的实际规则差异。当前工作树只保留主机漏算世界倍率的三分支补算，激进上报及穿戴兜底已移除，仍有覆盖边界；名称修复只用游戏字体，缺字显示?。当前UI主要为中文，未实现中英文切换。构建和离线检查不等于真实多人验收。
 
 卸载只移除本包安装的准确DLL，不删除其他模组或存档。
 
@@ -23,7 +25,7 @@ MPfix targets Together / CasualtiesMP 5.5.4. Synchronization-dependent features 
 
 Version 1.7.1 removes and abandons the disconnected-player item-removal broadcast repair after user testing found it ineffective. RelayGhostItems is no longer used. Inventory handling on exit/reconnect is left to Together. This package does not fix the remaining disconnect-related frame drops.
 
-The in-game UI remains primarily Chinese; English switching is not implemented. Basic and aggressive damage repairs have coverage limits. Game fonts are used for name repair; missing glyphs appear as ?. Local builds and offline checks are not real multiplayer validation.
+The in-game UI remains primarily Chinese; English switching is not implemented. The current working tree retains basic host-side world-multiplier repairs only; aggressive reporting and wearable recovery have been removed. Coverage limits remain. Game fonts are used for name repair; missing glyphs appear as ?. Local builds and offline checks are not real multiplayer validation.
 
 Source, documentation and issues: https://github.com/cubstaryow/DDExcNet-CUmodM
 Code: MPL-2.0 (LICENSE). Branding/artwork: separate LICENSE-ASSETS terms. Third-party attribution: NOTICE. No game files, external dependencies, ET-Fix, JDI-DDEN, configurations, saves or decompilation backups are bundled.
