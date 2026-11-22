@@ -13,7 +13,7 @@ namespace DDEN.MPfix
     /// <summary>
     /// DDEN.MPfix —— 把“多人相关的修复”收在一个插件里：
     ///  ① 无芯片模式（unchipped）主机裁决 → 客机同步；
-    ///  ② 联机合成模组物品“无法生成物品”修复（Utils.Create 走 CUCoreLib 两条正路 + 主机侧网络登记）；
+    ///  ② CCL失效模板重建与主机合成生成失败兜底；
     ///  ③ 名称显示（只改本机显示，不动身份）；
     ///  ④ 物品物理保险（丢出/卸下后只补开碰撞体，绝不移动物品）；
     ///  ⑤ 挖块收敛（主机放宽伤害比例 + 客机已碎上报，主机校验后收敛）；
@@ -21,7 +21,7 @@ namespace DDEN.MPfix
     ///  ⑦ 娱乐：道生一 一生二（商人购买多给一份，只在主机生效）。
     /// 界面与配置统一交给 DDExcNet-CUmodM 显示（模块 id = mpfix）。
     /// </summary>
-    [BepInPlugin(Guid, "DDEN MP Fix", "1.7.2")]
+    [BepInPlugin(Guid, "DDEN MP Fix", "1.7.3")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
     public class MPfixPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleGate, IDdenModuleHealth, IDdenConfigPolicy, IDdenConfigAvailability
@@ -255,13 +255,13 @@ namespace DDEN.MPfix
                 "排查时不知道有没有触发纠正。", "只在纠正发生时打印一行说明。", "否", "无");
 
             DdenDocs.Add("联机合成", "修“无法生成物品”（FixModItemCraftSpawn）",
-                "合成结果生成失败时尝试补救。",
+                "尝试重建失效模板，并补救合成生成失败。",
                 "联机合成模组加的配方时提示“无法生成物品”，东西出不来。",
-                "先沿用正常生成结果；只有主机合成未生成结果时才尝试补救。", "否", "仅失败时尝试");
+                "联机时仅清除已失效且仍有注册资料的模板缓存，由CCL重建；主机合成未生成结果时才尝试补救，不额外发放。", "是 · 需多人实测", "失效模板重建有冷却");
             DdenDocs.Add("玩家名称", "尝试修复名称显示（FixPlayerNames）",
                 "尝试恢复中文名字，修正空名字、问号和数字名字。",
                 "中文名字被截掉、变成问号或长串数字，主机名字为空。",
-                "从玩家资料恢复显示名称，只使用游戏现有字体，缺少的字显示为 ?；只改变本机显示，不改变存档身份。",
+                "名牌、方向提示、列表和聊天共用显示名称缓存；昵称恢复后更新聊天历史，只使用游戏字体，缺字显示 ?，不改存档身份。",
                 "否", "缓存名称与字体；不会逐帧扫描场景");
 
             DdenDocs.Add("物品物理", "丢弃物解除穿墙（GuardDropPhysics）",
@@ -343,7 +343,7 @@ namespace DDEN.MPfix
                 "被自动纠正时在控制台提示一行。");
 
             CfgFixModItemCraftSpawn = Config.Bind("联机合成", "修“无法生成物品”（FixModItemCraftSpawn）", true,
-                "合成结果生成失败时尝试补救，正常生成时不额外发放。");
+                "联机时尝试重建失效模板；主机合成生成失败时尝试补救，正常生成时不额外发放。");
             CfgFixPlayerNames = Config.Bind("玩家名称", "尝试修复名称显示（FixPlayerNames）", true,
                 "尝试恢复中文名字，修正空名字、问号和数字名字；只改变本机显示。");
 
@@ -410,6 +410,7 @@ namespace DDEN.MPfix
                 TryPatch(harmony, typeof(WorldGeneration_SetUnchipped_Patch), "无芯片变更广播");
                 TryPatch(harmony, typeof(Utils_Create_ModItemPatch), "联机合成/物品生成兜底");
                 if (hasCore && !CraftSpawnScope.Install(harmony)) NotePatchError("联机合成/物品生成兜底", "合成入口不可用");
+                if (hasCore && !ModItemTemplateRepair.Install(harmony)) NotePatchError("联机合成/物品生成兜底", "模板重建入口不可用");
                 if (!PlayerNameRepair.Install(harmony)) NotePatchError("玩家名称", "名称显示入口不可用");
                 TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropItem_GuardPatch), "物品掉落物理保险（丢出）");
                 TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropWearable_GuardPatch), "物品掉落物理保险（卸下）");

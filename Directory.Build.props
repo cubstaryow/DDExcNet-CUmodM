@@ -13,7 +13,7 @@
     <NoWarn>$(NoWarn);CS0436;MSB3277;CS0618;MSB3246</NoWarn>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <!-- 五个DDEN产物的构建版本；外部模组使用各自项目版本；插件BepInPlugin字面版本也需同步。 -->
-    <DdenVersion>1.7.2</DdenVersion>
+    <DdenVersion>1.7.3</DdenVersion>
   </PropertyGroup>
 
   <!-- ===== 本机路径（换机器只改这里或传 -p:GameDir=...） ===== -->
