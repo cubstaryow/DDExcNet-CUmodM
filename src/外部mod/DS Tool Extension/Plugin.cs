@@ -19,7 +19,7 @@ namespace DsToolExtension
     /// 第二件：实验性等离子束发射器（Experimentalplasmaemitter）——等离子切割器升级版。
     /// CCL 前置、多人兼容、DDEN L1 软接入（实验性 + 中英双语）。
     /// </summary>
-    [BepInPlugin(Guid, "DS Tool Extension", "1.2.1")]
+    [BepInPlugin(Guid, "DS Tool Extension", "1.2.2")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.HardDependency)]
     [BepInDependency("com.a4kk.enhancedtools", BepInDependency.DependencyFlags.SoftDependency)]
     public class Plugin : BaseUnityPlugin
@@ -63,6 +63,7 @@ namespace DsToolExtension
                     RegisterLegPack();
                     RegisterDrillRecipe(hasET);
                     RegisterPlasmaRecipe(hasET);
+                    RegisterLegPackRecipe(hasET);
                 }
                 new Harmony(Guid).PatchAll(typeof(Plugin));
                 DdenBridge.DdenDocs();
@@ -336,6 +337,75 @@ namespace DsToolExtension
                 }
             };
             RecipeRegistry.Register(recipe);
+        }
+
+        /// <summary>
+        /// 实验性特种腿包双配方（INT 14）：
+        /// ET 版用工程化/可改造/可切割；普通版用可切割/可捶打。
+        /// </summary>
+        private static void RegisterLegPackRecipe(bool hasET)
+        {
+            var items = new List<RecipeItem>
+            {
+                new RecipeItem(0f) { specific = true, specificId = hasET ? "opslegpouch" : "legpouch" },
+                new RecipeItem(0f) { specific = true, specificId = "titaniumsheet" }
+            };
+            if (hasET)
+            {
+                items.Add(new RecipeItem(0f) { specific = true, specificId = "titaniumsheet" });
+                items.Add(new RecipeItem(0f) { specific = true, specificId = "titaniumsheet" });
+            }
+            else
+            {
+                for (int i = 0; i < 4; i++) items.Add(new RecipeItem(0f) { specific = true, specificId = "titaniumsheet" });
+            }
+            items.Add(new RecipeItem(0f) { specific = true, specificId = "titaniumrod" });
+            if (!hasET) items.Add(new RecipeItem(0f) { specific = true, specificId = "titaniumrod" });
+            items.Add(new RecipeItem(0f) { specific = true, specificId = "processedcopper" });
+            if (!hasET) items.Add(new RecipeItem(0f) { specific = true, specificId = "processedcopper" });
+            items.Add(new RecipeItem(0.8f) { specific = true, specificId = "circuitboard" });
+            if (!hasET) items.Add(new RecipeItem(0.8f) { specific = true, specificId = "circuitboard" });
+            items.Add(new RecipeItem(0f) { specific = true, specificId = "bundleofwires" });
+            items.Add(new RecipeItem(0f) { specific = true, specificId = "bundleofwires" });
+            if (hasET)
+            {
+                items.Add(new RecipeItem(0f) { specific = true, specificId = "flexiglass" });
+                items.Add(new RecipeItem(0f) { specific = true, specificId = "flexiglass" });
+            }
+            else
+            {
+                items.Add(new RecipeItem(0f) { specific = true, specificId = "flexiglass" });
+                items.Add(new RecipeItem(0f) { specific = true, specificId = "flexiglass" });
+                items.Add(new RecipeItem(0f) { specific = true, specificId = "flexiglass" });
+            }
+            items.Add(new RecipeItem(0f) { specific = true, specificId = "plasticchunk" });
+            items.Add(new RecipeItem(0f) { specific = true, specificId = "plasticchunk" });
+            items.Add(new RecipeItem(hasET ? 35f : 45f) { specific = true, specificId = "biochem", isLiquid = true });
+            if (hasET)
+            {
+                items.Add(new RecipeItem(0f) { quality = new CraftingQuality("engineering", 1f), destroyItem = false });
+                items.Add(new RecipeItem(0f) { quality = new CraftingQuality("modification", 4f), destroyItem = false });
+                items.Add(new RecipeItem(0f) { quality = new CraftingQuality("cutting", 1f), destroyItem = false });
+            }
+            else
+            {
+                items.Add(new RecipeItem(0f) { quality = new CraftingQuality("cutting", 1f), destroyItem = false });
+                items.Add(new RecipeItem(0f) { quality = new CraftingQuality("hammering", 1f), destroyItem = false });
+            }
+
+            RecipeRegistry.Register(new Recipe
+            {
+                INT = 14,
+                category = (Recipes.RecipeCategory)1,
+                result = new RecipeResult
+                {
+                    id = LegPackItemId,
+                    amount = 1,
+                    isLiquid = false,
+                    resultCondition = 1f
+                },
+                items = items
+            });
         }
 
         // CCL 的 Locale.LoadLanguage 后缀会先合并 zh-CN.json / EN.json 到 Locale.currentLang；
