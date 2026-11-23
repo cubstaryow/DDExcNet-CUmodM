@@ -3,6 +3,8 @@
     "ExperimentalTi-alloydrill": "实验性钛合金钻机",
     "ExperimentalTi-alloydrilldsc": "重型钻机的钛合金升级版本，钻头自加热，效率更高",
     "Experimentalplasmaemitter": "实验性等离子束发射器",
-    "Experimentalplasmaemitterdsc": "去掉了等离子流的限制模块，采用钛合金重做散热系统以达到在相同时间内可以射出更多的等离子束"
+    "Experimentalplasmaemitterdsc": "去掉了等离子流的限制模块，采用钛合金重做散热系统以达到在相同时间内可以射出更多的等离子束",
+    "Experimentalspeciallegpack": "实验性特种腿包",
+    "Experimentalspeciallegpackdsc": "对特种腿包进行扩展升级，并且在此基础上加入了实验性电子组件，能在关键时刻提供保护"
   }
 }

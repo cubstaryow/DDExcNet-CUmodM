@@ -19,7 +19,7 @@ namespace DsToolExtension
     /// 第二件：实验性等离子束发射器（Experimentalplasmaemitter）——等离子切割器升级版。
     /// CCL 前置、多人兼容、DDEN L1 软接入（实验性 + 中英双语）。
     /// </summary>
-    [BepInPlugin(Guid, "DS Tool Extension", "1.1.1")]
+    [BepInPlugin(Guid, "DS Tool Extension", "1.2.1")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.HardDependency)]
     [BepInDependency("com.a4kk.enhancedtools", BepInDependency.DependencyFlags.SoftDependency)]
     public class Plugin : BaseUnityPlugin
@@ -27,11 +27,14 @@ namespace DsToolExtension
         public const string Guid = "com.dstool.extension";
         public const string DrillItemId = "ExperimentalTi-alloydrill";
         public const string PlasmaItemId = "Experimentalplasmaemitter";
+        public const string LegPackItemId = "Experimentalspeciallegpack";
 
         internal const string DrillFallbackName = "实验性钛合金钻机";
         internal const string DrillFallbackDescription = "重型钻机的钛合金升级版本，钻头自加热，效率更高";
         internal const string PlasmaFallbackName = "实验性等离子束发射器";
         internal const string PlasmaFallbackDescription = "去掉了等离子流的限制模块，采用钛合金重做散热系统以达到在相同时间内可以射出更多的等离子束";
+        internal const string LegPackFallbackName = "实验性特种腿包";
+        internal const string LegPackFallbackDescription = "对特种腿包进行扩展升级，并且在此基础上加入了实验性电子组件，能在关键时刻提供保护";
 
         internal static Plugin Instance;
         internal static ManualLogSource Log;
@@ -57,6 +60,7 @@ namespace DsToolExtension
                 {
                     RegisterDrill();
                     RegisterPlasmaEmitter();
+                    RegisterLegPack();
                     RegisterDrillRecipe(hasET);
                     RegisterPlasmaRecipe(hasET);
                 }
@@ -200,6 +204,53 @@ namespace DsToolExtension
             ItemRegistry.Register(PlasmaItemId, info, sprite);
         }
 
+        private void RegisterLegPack()
+        {
+            Sprite sprite = AssetLoader.LoadSpriteFromPluginFolder(this, "images/Experimental special leg pack.png", 8f);
+            if (sprite == null)
+                Logger.LogWarning("[DS Tool Extension] 未找到图标 'images/Experimental special leg pack.png'（应与 DLL 同目录）。");
+
+            var info = new CustomItemInfo
+            {
+                fullName = LegPackFallbackName,
+                description = LegPackFallbackDescription,
+                category = "custom",
+                tags = "battery",
+                rec = new Recognition(14),
+                weight = 0.7f,
+                value = 45,
+                decayMinutes = 240f,
+                decayInfo = 5,
+                destroyAtZeroCondition = false,
+                usable = false,
+                Container = new ContainerProperties
+                {
+                    Capacity = 11.5f,
+                    MaxWeightPerItem = 4.5f,
+                    EncumbranceReduction = 0.05f
+                },
+                Battery = new BatteryProperties
+                {
+                    Preset = BatteryItem.BatteryPreset.Large,
+                    MaxCharge = 300f,
+                    SpawnWithBattery = true
+                },
+                WornSprite = sprite,
+                WornSpriteOffset = new Vector2(0f, -0.3f),
+                wearable = true,
+                desiredWearLimb = "ThighF",
+                wearSlotId = "thigh",
+                wearableArmor = 0.35f,
+                wearableHitDurabilityLossMultiplier = 0.15f,
+                wearableVisualOffset = 5,
+                SpriteScale = 0.45f,
+                InventoryIconScale = 1.5f
+            };
+
+            info.AddSpawnComponent<BatteryEncumbranceReduction>();
+            ItemRegistry.Register(LegPackItemId, info, sprite);
+        }
+
         /// <summary>
         /// 钻机双配方：装 EnhancedTools 用工程化/可改造品质，否则用可捶打/可切割品质。
         /// 材料：重型钻机、厚钛板（titaniumslab）、中型电池（≥25%）、电路板（≥80%）×2、
@@ -298,6 +349,7 @@ namespace DsToolExtension
             {
                 UpdateItemText(DrillItemId, DrillFallbackName, DrillFallbackDescription);
                 UpdateItemText(PlasmaItemId, PlasmaFallbackName, PlasmaFallbackDescription);
+                UpdateItemText(LegPackItemId, LegPackFallbackName, LegPackFallbackDescription);
             }
             catch (Exception ex)
             {
