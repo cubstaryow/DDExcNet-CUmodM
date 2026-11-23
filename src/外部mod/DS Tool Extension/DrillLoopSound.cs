@@ -28,7 +28,7 @@ namespace DsToolExtension
             source.maxDistance = 500f;
             if (source.clip == null)
                 Plugin.LogWarning("[DS Tool Extension] DrillLoopSound: 未找到音效 'drillLoop'。");
-            else
+            else if (Plugin.DebugLog != null && Plugin.DebugLog.Value)
                 Plugin.LogInfo($"[DS Tool Extension] DrillLoopSound ready: clip={source.clip.name}, item={(item != null ? item.id : "null")}");
         }
 
@@ -95,7 +95,7 @@ namespace DsToolExtension
                 }
             }
 
-            if (Time.unscaledTime >= nextLog)
+            if (Plugin.DebugLog != null && Plugin.DebugLog.Value && Time.unscaledTime >= nextLog)
             {
                 nextLog = Time.unscaledTime + 5f;
                 bool held = false;
