@@ -18,6 +18,8 @@ namespace DDEN.UnitListMgr
         private string _pending;
         private float _deadline;
         private string _status = "", _requestedName = "";
+        internal readonly SpawnJournal Journal = new SpawnJournal();
+        internal bool QuickFeedback { get; private set; }
         internal NoticeKind Notice { get; private set; }
         internal float NoticeUntil { get; private set; }
         internal string Status
@@ -30,8 +32,10 @@ namespace DDEN.UnitListMgr
                 NoticeUntil = Time.unscaledTime + 10;
             }
         }
-        internal void ShowFailure(string message) { Status = message; Notice = NoticeKind.Failure; }
-        internal bool ShowToast => _status.Length != 0 && (Busy || Time.unscaledTime < NoticeUntil);
+        internal void ShowFailure(string message, bool quick = false) { QuickFeedback = quick; Status = message; Notice = NoticeKind.Failure; }
+        internal bool ShowToast => _status.Length != 0 && !(QuickFeedback && Busy) && (Busy || Time.unscaledTime < NoticeUntil);
+        internal string ToastText => !QuickFeedback ? Status : Notice == NoticeKind.Success ? UnitListPlugin.T("生成成功", "Item created")
+            : UnitListPlugin.T("生成失败，请打开面板查看详细错误。", "Creation failed. Open the panel for details.");
         internal bool Busy => _pending != null;
         internal bool Registered => _handler != null;
         internal bool Enabled = true;
@@ -95,16 +99,22 @@ namespace DDEN.UnitListMgr
                 var body = get.Invoke(null, new[] { id }) as Body;
                 return Execute(payload.ToObject<SpawnRequest>(), body, true, sender);
             }
-            catch (Exception ex) { UnitListPlugin.Log.Exception(ex, "Receive item request"); return Error("Invalid request"); }
+            catch (Exception ex)
+            {
+                var failed = Error("Invalid request: " + ex.GetBaseException().Message);
+                Record(null, null, true, sender, failed);
+                return failed;
+            }
         }
 
         internal void Submit(SpawnRequest request)
         {
             if (!Enabled || Busy) return;
+            QuickFeedback = request?.AtCursor == true;
             _requestedName = request == null ? "" : Catalog.Name(request.ItemId ?? "");
             string problem = SpawnRules.Validate(request);
-            if (problem != null) { Status = problem; return; }
-            if (!CanGive(Mp.IsRunning && !Mp.IsServer))
+            if (problem != null && Mp.IsRunning && !Mp.IsServer) { Status = problem; return; }
+            if (Mp.IsRunning && !Mp.IsServer && !CanGive(true))
             {
                 Status = UnitListPlugin.T("需要主机允许作弊；客机还需要“允许客机作弊”。", "Enable host cheats; guests also require Allow client cheats."); return;
             }
@@ -123,6 +133,7 @@ namespace DDEN.UnitListMgr
         }
         private void SetResult(JToken response)
         {
+            if (response?["achievementsDisabled"]?.Value<bool>() == true) SteamManager.disableAchievements = true;
             if (response?["ok"]?.Value<bool>() == true)
                 Status = UnitListPlugin.T("已生成 ", "Created ") + (response["count"]?.ToString() ?? "0");
             else Status = UnitListPlugin.T("生成未完成：", "Creation incomplete: ") + (response?["error"]?.ToString() ?? "No response")
@@ -135,10 +146,44 @@ namespace DDEN.UnitListMgr
 
         private JObject Execute(SpawnRequest r, Body body, bool remote, uint sender)
         {
+            if (SpawnRules.Validate(r) == null && _completed.TryGet(sender + ":" + r.RequestId, out var cached)) return cached;
+            JObject result;
+            try { result = ExecuteCore(r, body, remote, sender); }
+            catch (Exception ex) { result = Error(ex.GetBaseException().Message); }
+            Record(r, body, remote, sender, result);
+            return result;
+        }
+        private void Record(SpawnRequest r, Body body, bool remote, uint sender, JObject result)
+        {
+            string playerName = remote ? UnitListPlugin.T("客机 #", "Guest #") + sender : UnitListPlugin.T("本机玩家", "Local player");
+            try
+            {
+                var players = Reflect.GetStatic("Together.ScavPlayer", "BodyToPlayerDict") as System.Collections.IDictionary;
+                object player = body != null && players != null && players.Contains(body) ? players[body] : null;
+                var display = Reflect.Type("DDEN.MPfix.PlayerNameRepair")?.GetMethod("Display", BindingFlags.NonPublic | BindingFlags.Static);
+                string name = player != null ? display?.Invoke(null, new[] { player }) as string ?? Catalog.Read(player, "playerName") as string : null;
+                if (!string.IsNullOrWhiteSpace(name)) playerName = name;
+            }
+            catch { }
+            string parameters = r == null ? "" : JObject.FromObject(r).ToString(Newtonsoft.Json.Formatting.None);
+            string detail = result?["error"]?.ToString() ?? "";
+            Journal.Add(new SpawnRecord {
+                Time = DateTime.Now, Player = playerName, Sender = sender, ItemId = r?.ItemId ?? "?", ItemName = Catalog.Name(r?.ItemId ?? ""),
+                Requested = r?.Count ?? 0, Created = result?["count"]?.Value<int>() ?? 0,
+                Success = result?["ok"]?.Value<bool>() == true, Mode = r?.AtCursor == true ? "cursor" : "feet",
+                X = result?["x"]?.Value<float>() ?? (r?.AtCursor == true ? r.X : body != null ? body.transform.position.x : 0),
+                Y = result?["y"]?.Value<float>() ?? (r?.AtCursor == true ? r.Y : body != null ? body.transform.position.y : 0),
+                Detail = detail.Length > 2048 ? detail.Substring(0, 2048) : detail,
+                Parameters = parameters.Length > 8192 ? parameters.Substring(0, 8192) : parameters
+            });
+        }
+        private JObject ExecuteCore(SpawnRequest r, Body body, bool remote, uint sender)
+        {
             string invalid = SpawnRules.Validate(r);
             if (invalid != null) return Error(invalid);
             string key = sender + ":" + r.RequestId;
             if (_completed.TryGet(key, out var previous)) return previous;
+            if (!SpawnPolicy.AllowsGuest(remote, UnitListPlugin.AllowGuestSpawn)) return Error("Host disabled guest item spawning");
             if (!CanGive(remote)) return Error("Host cheats / client cheats disabled");
             var world = WorldGeneration.world;
             if (body == null || !body.alive || world == null || !world.worldExists || world.generatingWorld
@@ -169,15 +214,17 @@ namespace DDEN.UnitListMgr
                     var item = obj.GetComponent<Item>();
                     if (item == null) { UnityEngine.Object.Destroy(obj); throw new InvalidOperationException("Template has no Item"); }
                     made++;
+                    AchievementPolicy.Mark(UnitListPlugin.DisableAchievementsOnSpawn, made);
                     Apply(item, r);
                 }
                 result = new JObject { ["ok"] = true, ["count"] = made };
             }
             catch (Exception ex)
             {
-                UnitListPlugin.Log.Exception(ex, "Create item " + r.ItemId);
                 result = Error(ex.GetBaseException().Message, made);
             }
+            result["x"] = at.x; result["y"] = at.y;
+            result["achievementsDisabled"] = made > 0 && SteamManager.disableAchievements;
             Remember(key, result);
             return result;
         }

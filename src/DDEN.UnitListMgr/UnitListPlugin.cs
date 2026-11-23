@@ -16,6 +16,9 @@ namespace DDEN.UnitListMgr
         internal static string T(string chinese, string english) => DdenLocalization.Language == DdenLanguage.English ? english : chinese;
         private ConfigEntry<KeyboardShortcut> _openKey, _radialKey;
         private ConfigEntry<string> _favorites;
+        private static ConfigEntry<bool> _allowGuests, _disableAchievements;
+        internal static bool AllowGuestSpawn => _allowGuests?.Value ?? true;
+        internal static bool DisableAchievementsOnSpawn => _disableAchievements?.Value ?? true;
         private readonly SpawnService _service = new SpawnService();
         private ItemView _view;
         private bool _standalone, _radial;
@@ -45,6 +48,13 @@ namespace DDEN.UnitListMgr
         public DdenConfigMetadata Metadata(ConfigEntryBase entry)
         {
             string key = entry.Definition.Key;
+            if (key == "AllowGuestSpawn" || key == "DisableAchievements")
+                return new DdenConfigMetadata {
+                    DisplayName = key == "AllowGuestSpawn" ? T("是否允许客机生成", "Allow guest spawning") : T("是否禁用成就", "Disable achievements"),
+                    Description = key == "AllowGuestSpawn" ? T("默认开启。仅主机设置有效；关闭后拒绝客机请求，仍需满足 MP 原作弊权限。", "On by default. Host controls this extra restriction; MP cheat permissions still apply.")
+                        : T("默认开启。实际生成后标记已作弊；多人由主机决定。关闭不清除既有标记，也不绕过游戏或其他模组的限制。", "On by default. Created items mark the save cheated. Host controls MP. Turning off does not clear existing flags or override other restrictions."),
+                    IsExperimental = false, PerformanceImpact = DdenPerformanceImpact.Low
+                };
             return new DdenConfigMetadata {
                 DisplayName = key == "OpenKey" ? T("打开物品工具", "Open item tools") : key == "QuickMenuKey" ? T("快捷轮盘", "Quick menu") : T("轮盘槽位", "Quick slots"),
                 Description = key == "OpenKey" ? T("打开管理器中的物品页；没有管理器时打开独立窗口。", "Open the item page, or a standalone window without the manager.")
@@ -61,6 +71,8 @@ namespace DDEN.UnitListMgr
             _openKey = Config.Bind("UI", "OpenKey", new KeyboardShortcut(KeyCode.F7), "打开物品工具 / Open item tools");
             _radialKey = Config.Bind("UI", "QuickMenuKey", new KeyboardShortcut(KeyCode.F8), "按住并滑动鼠标，松开后在鼠标处生成默认物品；中心或 Esc 取消。 / Hold and slide; release to spawn a default item at the cursor. Center or Esc cancels.");
             _favorites = Config.Bind("UI", "QuickSlots", "", "八个快捷物品 ID，以 | 分隔；只记录种类，不记录主面板属性。 / Eight item IDs separated by |. Property overrides are never stored.");
+            _allowGuests = Config.Bind("Host", "AllowGuestSpawn", true, "是否允许客机生成物品；仅主机设置生效，仍须满足 MP 作弊规则。 / Allow guest spawning, in addition to MP cheat permissions. Host setting only.");
+            _disableAchievements = Config.Bind("Generation", "DisableAchievements", true, "生成物品时标记存档已作弊并禁用成就。多人由主机设置决定。关闭不会清除已有标记。 / Mark saves cheated and disable achievements on creation. Host controls multiplayer; disabling never clears an existing flag.");
             LoadSlots();
             _view = new ItemView(_service, _slots, SaveSlots);
             DdenHub.Register(this);
@@ -130,7 +142,7 @@ namespace DDEN.UnitListMgr
                         _service.Submit(new SpawnRequest { RequestId = System.Guid.NewGuid().ToString("N"), ItemId = _slots[sector],
                             AtCursor = true, DefaultOnly = true, X = world.x, Y = world.y });
                     }
-                    else _service.Status = T("当前没有可用的游戏镜头。", "Game camera is unavailable.");
+                    else _service.ShowFailure(T("当前没有可用的游戏镜头。", "Game camera is unavailable."), true);
                 }
             }
             UpdateBlocker();
@@ -173,8 +185,8 @@ namespace DDEN.UnitListMgr
                 GUI.depth = -10000;
                 try
                 {
-                    float width = Mathf.Min(620, Screen.width - 32);
-                    ResultNotice.Draw(new Rect((Screen.width - width) / 2, 56, width, 92), _service.Status, _service.Notice);
+                    float width = Mathf.Min(_service.QuickFeedback ? 380 : 560, Screen.width - 32);
+                    ResultNotice.Draw(new Rect((Screen.width - width) / 2, 56, width, 30), _service.ToastText, _service.Notice, true);
                 }
                 finally { GUI.depth = depth; }
             }
@@ -194,23 +206,23 @@ namespace DDEN.UnitListMgr
                 var box = new Rect(layout.CellX(i), layout.CellY(i), halfWidth * 2, halfHeight * 2);
                 bool filled = !string.IsNullOrWhiteSpace(_slots[i]);
                 bool chosen = active == i;
-                DdenUI.Fill(box, chosen ? DdenUI.PanelAlt : DdenUI.Bg);
+                DdenUI.Fill(box, chosen ? new Color(0.16f, 0.29f, 0.37f, 0.76f) : new Color(0.05f, 0.07f, 0.1f, 0.62f));
                 DdenUI.Frame(box, chosen ? DdenUI.Accent : DdenUI.AccentDim, chosen ? 2 : 1);
                 if (chosen) DdenUI.Fill(new Rect(box.x, box.y, 4, box.height), filled ? DdenUI.Accent : DdenUI.Warn);
                 DdenUI.Label(new Rect(box.x + 5, box.y + 3, 18, 16), (i + 1).ToString(), DdenUI.Sub);
                 if (filled)
                 {
-                    float icon = 30 * scale;
+                    float icon = 28 * scale;
                     DdenUI.DrawItemIcon(new Rect(box.center.x - icon / 2, box.y + 5, icon, icon), _slots[i]);
                     DdenUI.Label(new Rect(box.x + 5, box.yMax - 25, box.width - 10, 20), DdenUI.ElideToWidth(Catalog.Name(_slots[i]), box.width - 10, centered), centered);
                 }
                 else DdenUI.Label(new Rect(box.x + 6, box.y + halfHeight - 10, box.width - 12, 20), T("未分配", "Unassigned"), centered);
             }
-            var middle = new Rect(center.x - 83 * scale, center.y - 37 * scale, 166 * scale, 74 * scale);
-            DdenUI.Fill(middle, DdenUI.Bg);
+            var middle = new Rect(center.x - halfWidth, center.y - halfHeight, halfWidth * 2, halfHeight * 2);
+            DdenUI.Fill(middle, new Color(0.05f, 0.07f, 0.1f, 0.65f));
             DdenUI.Frame(middle, DdenUI.AccentDim);
-            string text = active < 0 ? T("滑动选择\n中心松开取消", "Slide to select\nRelease in center: cancel")
-                : string.IsNullOrWhiteSpace(_slots[active]) ? T("未分配槽位\n松开不会生成", "Unassigned slot\nRelease: no action") : T("松开生成\n默认属性 · 鼠标位置", "Release to create\nDefaults · at cursor");
+            string text = active < 0 ? T("滑动选择\n中心取消", "Select\nCenter: cancel")
+                : string.IsNullOrWhiteSpace(_slots[active]) ? T("空槽\n不生成", "Empty\nNo action") : T("松开生成\n右键取消", "Release\nRMB: cancel");
             var centerStyle = new GUIStyle(centered) { wordWrap = true };
             DdenUI.Label(new Rect(middle.x + 6, middle.y + 7, middle.width - 12, middle.height - 14), text, centerStyle);
         }

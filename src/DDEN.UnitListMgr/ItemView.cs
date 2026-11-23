@@ -18,7 +18,11 @@ namespace DDEN.UnitListMgr
         private readonly Dictionary<string, ItemSource> _origins = new Dictionary<string, ItemSource>();
         private readonly Dictionary<string, ItemKind> _types = new Dictionary<string, ItemKind>();
         private int _languageRevision = -1;
-        private bool _showFilters = true;
+        private bool _showFilters;
+        private bool _showJournal, _showErrorDetails;
+        private Vector2 _errorDetailsScroll;
+        private Vector2 _journalScroll, _recordScroll;
+        private SpawnRecord _record;
         private string _search = "", _lastSearch, _selected, _error = "";
         private string _count = "1", _condition = "100", _rounds = "0", _battery = "";
         private bool _hasMag, _editBattery, _editLiquids;
@@ -44,18 +48,32 @@ namespace DDEN.UnitListMgr
                 if (count != _knownCount) Refresh();
             }
             if (_languageRevision != DdenLocalization.Revision) { _languageRevision = DdenLocalization.Revision; _lastSearch = null; }
-            DdenUI.Button(new Rect(area.x, area.y, 102, 28), T("物品", "Items"), true);
+            if (DdenUI.Button(new Rect(area.x, area.y, 102, 28), T("物品", "Items"), !_showJournal)) _showJournal = false;
             bool wasEnabled = GUI.enabled;
             GUI.enabled = false;
             DdenUI.Button(new Rect(area.x + 108, area.y, 122, 28), T("生物 · 预留", "Creatures · Later"));
             DdenUI.Button(new Rect(area.x + 236, area.y, 122, 28), T("单位 · 预留", "Units · Later"));
             GUI.enabled = wasEnabled;
+            if (DdenUI.Button(new Rect(area.x + 364, area.y, 112, 28), T("生成记录", "Spawn history"), _showJournal)) _showJournal = true;
             area = new Rect(area.x, area.y + 38, area.width, Mathf.Max(40, area.height - 38));
             if (!string.IsNullOrEmpty(_service.Status))
             {
-                ResultNotice.Draw(new Rect(area.x, area.y, area.width, 80), _service.Status, _service.Notice);
-                area = new Rect(area.x, area.y + 90, area.width, Mathf.Max(40, area.height - 90));
+                bool failed = _service.Notice == NoticeKind.Failure;
+                ResultNotice.Draw(new Rect(area.x, area.y, area.width - (failed ? 66 : 0), 30), _service.Status, _service.Notice);
+                if (failed && DdenUI.Button(new Rect(area.xMax - 60, area.y, 60, 30), T("详情", "Details"), _showErrorDetails)) _showErrorDetails = !_showErrorDetails;
+                area = new Rect(area.x, area.y + 38, area.width, Mathf.Max(40, area.height - 38));
+                if (failed && _showErrorDetails)
+                {
+                    var details = new Rect(area.x, area.y, area.width, Mathf.Min(100, area.height * 0.3f));
+                    var style = new GUIStyle(DdenUI.Sub) { wordWrap = true };
+                    float height = Mathf.Max(details.height, style.CalcHeight(new GUIContent(_service.Status), details.width - 28));
+                    _errorDetailsScroll = DdenUI.BeginScrollView(details, _errorDetailsScroll, new Rect(0, 0, details.width - 20, height));
+                    try { DdenUI.Label(new Rect(4, 0, details.width - 28, height), _service.Status, style); }
+                    finally { DdenUI.EndScrollView(); }
+                    area = new Rect(area.x, area.y + details.height + 8, area.width, Mathf.Max(40, area.height - details.height - 8));
+                }
             }
+            if (_showJournal) { DrawJournal(area); return; }
             float leftWidth = Mathf.Max(160, Mathf.Min(area.width * 0.62f, area.width - 290));
             var left = new Rect(area.x, area.y, leftWidth, area.height);
             var right = new Rect(left.xMax + 12, area.y, Mathf.Max(150, area.width - leftWidth - 12), area.height);
@@ -82,31 +100,6 @@ namespace DDEN.UnitListMgr
             if (DdenUI.Button(new Rect(box.xMax - 122, box.y, 58, 27), T("筛选", "Filters"), _showFilters)) _showFilters = !_showFilters;
             if (DdenUI.Button(new Rect(box.xMax - 58, box.y, 58, 27), T("刷新", "Refresh"))) Refresh();
             float top = box.y + 35;
-            if (_showFilters)
-            {
-                var sourceLabels = new[] { T("原版", "Vanilla"), T("CCL 注册", "CCL registered"), T("其他 / 未识别", "Other / Unknown") };
-                for (int i = 0; i < 3; i++)
-                {
-                    ItemSource flag = (ItemSource)(1 << i);
-                    var row = new Rect(box.x + i * box.width / 3, top, box.width / 3 - 4, 24);
-                    bool selected = (_sources & flag) != 0;
-                    bool next = DdenUI.CheckBoxLabeled(row, selected, sourceLabels[i]);
-                    if (next != selected) { _sources ^= flag; _lastSearch = null; }
-                }
-                top += 32;
-                var kindLabels = new[] { T("容器", "Containers"), T("工具", "Tools"), T("基础材料", "Materials"), T("医疗 / 药物", "Medical / Drugs"), T("食物", "Food"), T("液体", "Liquids"), T("穿戴", "Wearables"), T("功能用品", "Utility"), T("其他", "Other") };
-                int filterColumns = Mathf.Max(2, (int)(box.width / 120));
-                float filterWidth = box.width / filterColumns;
-                for (int i = 0; i < kindLabels.Length; i++)
-                {
-                    ItemKind flag = (ItemKind)(1 << i);
-                    var row = new Rect(box.x + i % filterColumns * filterWidth, top + i / filterColumns * 27, filterWidth - 4, 24);
-                    bool selected = (_kinds & flag) != 0;
-                    bool next = DdenUI.CheckBoxLabeled(row, selected, kindLabels[i]);
-                    if (next != selected) { _kinds ^= flag; _lastSearch = null; }
-                }
-                top += Mathf.CeilToInt(kindLabels.Length / (float)filterColumns) * 27 + 4;
-            }
             if (_lastSearch != _search)
             {
                 _lastSearch = _search;
@@ -122,6 +115,8 @@ namespace DDEN.UnitListMgr
             int columns = Mathf.Max(1, (int)((view.width - 20) / 94));
             float cellWidth = (view.width - 20) / columns;
             int rows = Mathf.CeilToInt(_filtered.Count / (float)columns);
+            bool gridEnabled = GUI.enabled;
+            GUI.enabled = gridEnabled && !_showFilters;
             _listScroll = DdenUI.BeginScrollView(view, _listScroll, new Rect(0, 0, view.width - 20, rows * pitch));
             try
             {
@@ -144,7 +139,41 @@ namespace DDEN.UnitListMgr
                 }
                 if (_filtered.Count == 0) DdenUI.Label(new Rect(8, 8, view.width - 30, 55), T("没有符合条件的物品。\n可取消勾选用途，或重置筛选。", "No matching items.\nClear use filters or reset filters."), DdenUI.Sub);
             }
-            finally { DdenUI.EndScrollView(); }
+            finally { DdenUI.EndScrollView(); GUI.enabled = gridEnabled; }
+            if (_showFilters) DrawFilterPopup(new Rect(box.x, box.y + 34, box.width, Mathf.Min(72 + Mathf.CeilToInt(9f / Mathf.Max(2, (int)((box.width - 20) / 125))) * 27, box.height - 34)));
+        }
+        private void DrawFilterPopup(Rect area)
+        {
+            DdenUI.Fill(area, DdenUI.Bg);
+            DdenUI.Frame(area, DdenUI.AccentDim);
+            var box = new Rect(area.x + 10, area.y + 8, area.width - 20, area.height - 16);
+            float top = box.y;
+                var sourceLabels = new[] { T("原版", "Vanilla"), T("CCL 注册", "CCL registered"), T("其他 / 未识别", "Other / Unknown") };
+                for (int i = 0; i < 3; i++)
+                {
+                    ItemSource flag = (ItemSource)(1 << i);
+                    var row = new Rect(box.x + i * box.width / 3, top, box.width / 3 - 4, 24);
+                    bool selected = (_sources & flag) != 0;
+                    bool next = DdenUI.CheckBoxLabeled(row, selected, sourceLabels[i]);
+                    if (next != selected) { _sources ^= flag; _lastSearch = null; }
+                }
+                top += 32;
+                var kindLabels = new[] { T("容器", "Containers"), T("工具", "Tools"), T("基础材料", "Materials"), T("医疗 / 药物", "Medical / Drugs"), T("食物", "Food"), T("液体", "Liquids"), T("穿戴", "Wearables"), T("功能用品", "Utility"), T("其他", "Other") };
+                int filterColumns = Mathf.Max(2, (int)(box.width / 125));
+                float filterWidth = box.width / filterColumns;
+                for (int i = 0; i < kindLabels.Length; i++)
+                {
+                    ItemKind flag = (ItemKind)(1 << i);
+                    var row = new Rect(box.x + i % filterColumns * filterWidth, top + i / filterColumns * 27, filterWidth - 4, 24);
+                    bool selected = (_kinds & flag) != 0;
+                    bool next = DdenUI.CheckBoxLabeled(row, selected, kindLabels[i]);
+                    if (next != selected) { _kinds ^= flag; _lastSearch = null; }
+                }
+                top += Mathf.CeilToInt(kindLabels.Length / (float)filterColumns) * 27 + 4;
+
+            if (DdenUI.Button(new Rect(box.x, top, box.width, 24), T("完成筛选", "Done"))) _showFilters = false;
+            if (Event.current.type == EventType.MouseDown && !area.Contains(Event.current.mousePosition)
+                && Event.current.mousePosition.y > area.y) _showFilters = false;
         }
         private void Select(string id)
         {
@@ -276,6 +305,44 @@ namespace DDEN.UnitListMgr
                 }
                 y += 29;
             }
+        }
+        private void DrawJournal(Rect area)
+        {
+            var records = _service.Journal.Records;
+            DdenUI.Label(new Rect(area.x, area.y, area.width - 90, 24), T("仅内存 · 主机记录全员 · 最多 500 条", "Memory only · host records all players · 500 entries") + " · " + records.Count, DdenUI.Sub);
+            if (DdenUI.Button(new Rect(area.xMax - 78, area.y, 78, 24), T("清空记录", "Clear"))) { _service.Journal.Clear(); _record = null; }
+            float detailsHeight = _record == null ? 0 : Mathf.Min(160, area.height * 0.4f);
+            var view = new Rect(area.x, area.y + 30, area.width, Mathf.Max(40, area.height - 30 - detailsHeight));
+            const float rowHeight = 55;
+            _journalScroll = DdenUI.BeginScrollView(view, _journalScroll, new Rect(0, 0, view.width - 20, records.Count * rowHeight));
+            try
+            {
+                int first = Mathf.Max(0, (int)(_journalScroll.y / rowHeight));
+                int end = Mathf.Min(records.Count, first + Mathf.CeilToInt(view.height / rowHeight) + 2);
+                for (int i = first; i < end; i++)
+                {
+                    var record = records[records.Count - 1 - i];
+                    var row = new Rect(0, i * rowHeight, view.width - 20, rowHeight - 4);
+                    DdenUI.Fill(row, ReferenceEquals(record, _record) ? DdenUI.PanelAlt : DdenUI.Panel);
+                    DdenUI.Fill(new Rect(row.x, row.y, 3, row.height), record.Success ? new Color(0.3f, 0.8f, 0.5f) : DdenUI.Warn);
+                    string line = record.Time.ToString("HH:mm:ss") + " · " + record.Player + " · " + record.ItemName + " · " + record.Created + "/" + record.Requested;
+                    DdenUI.Label(new Rect(10, row.y + 3, row.width - 18, 23), DdenUI.ElideToWidth(line, row.width - 18), DdenUI.Row);
+                    string result = record.Success ? T("成功", "Success") : T("失败 / 未完成：", "Failed / incomplete: ") + record.Detail;
+                    DdenUI.Label(new Rect(10, row.y + 26, row.width - 18, 20), DdenUI.ElideToWidth(result, row.width - 18, DdenUI.Sub), DdenUI.Sub);
+                    if (GUI.Button(row, GUIContent.none, GUIStyle.none)) { _record = record; _recordScroll = Vector2.zero; }
+                }
+            }
+            finally { DdenUI.EndScrollView(); }
+            if (_record == null) return;
+            var details = new Rect(area.x, area.yMax - detailsHeight + 5, area.width, detailsHeight - 5);
+            string text = _record.Time.ToString("yyyy-MM-dd HH:mm:ss") + " · " + _record.Player + " (#" + _record.Sender + ")\n"
+                + _record.ItemName + " [" + _record.ItemId + "] · " + _record.Created + "/" + _record.Requested + " · " + _record.Mode + " (" + Number(_record.X) + ", " + Number(_record.Y) + ")\n"
+                + _record.Detail + "\n" + _record.Parameters;
+            var style = new GUIStyle(DdenUI.Sub) { wordWrap = true };
+            float height = Mathf.Max(details.height, style.CalcHeight(new GUIContent(text), details.width - 28));
+            _recordScroll = DdenUI.BeginScrollView(details, _recordScroll, new Rect(0, 0, details.width - 20, height));
+            try { DdenUI.Label(new Rect(4, 0, details.width - 28, height), text, style); }
+            finally { DdenUI.EndScrollView(); }
         }
         private void Generate()
         {

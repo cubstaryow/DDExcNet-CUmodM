@@ -64,7 +64,33 @@ foreach (var anchor in new[] { (0f, 0f), (dimensions.Item1, dimensions.Item2), (
             Check(x + w <= layout.CellX(j) || layout.CellX(j) + w <= x || y + h <= layout.CellY(j) || layout.CellY(j) + h <= y, "wheel cards never overlap");
     }
 }
-Console.WriteLine($"PASS {checks} item request/filter/registry/radial-layout checks; no game started");
+Check(SpawnPolicy.AllowsGuest(false, false), "host can spawn while guest access is off");
+Check(!SpawnPolicy.AllowsGuest(true, false), "host switch rejects authenticated guests");
+Check(SpawnPolicy.AllowsGuest(true, true), "guest switch is an independent additional gate");
+for (int i = 0; i < 16; i++)
+{
+    bool mp = (i & 1) != 0, cheats = (i & 2) != 0, remote = (i & 4) != 0, guestCheats = (i & 8) != 0;
+    Check(!(SpawnRules.Allowed(mp, cheats, remote, guestCheats) && SpawnPolicy.AllowsGuest(true, false)), "extra guest gate cannot bypass MP permissions");
+}
+var journal = new SpawnJournal();
+for (int i = 0; i < 510; i++) journal.Add(new SpawnRecord { Time = DateTime.Now, Player = "玩家", Sender = (uint)i,
+    ItemId = "item", ItemName = "物品", Requested = 2, Created = i % 2, Success = i % 2 == 1,
+    Mode = "cursor", Detail = "test", Parameters = "{}", X = 1, Y = 2 });
+Check(journal.Records.Count == 500 && journal.Records[0].Sender == 10 && journal.Records[499].Sender == 509, "memory journal bounds growth and preserves latest attempts");
+Check(journal.Records.Any(r => !r.Success) && journal.Records.Any(r => r.Success), "journal retains failures and successes");
+journal.Clear(); Check(journal.Records.Count == 0, "memory history clears without files");
+SteamManager.disableAchievements = false;
+DDEN.Shared.Mp.IsRunning = false;
+AchievementPolicy.Mark(false, 1); Check(!SteamManager.disableAchievements, "disabled setting never marks an uncheated game");
+AchievementPolicy.Mark(true, 0); Check(!SteamManager.disableAchievements, "failed creation does not mark achievements");
+AchievementPolicy.Mark(true, 1); Check(SteamManager.disableAchievements, "created items set the native saved cheat flag");
+AchievementPolicy.Mark(false, 1); Check(SteamManager.disableAchievements, "turning option off never clears existing cheat flags");
+SteamManager.disableAchievements = false;
+DDEN.Shared.Mp.IsRunning = true; DDEN.Shared.Mp.IsServer = true;
+AchievementPolicy.Mark(true, 1);
+Check(SteamManager.disableAchievements && TestAchievementSync.Calls == 1 && !TestAchievementSync.LastAlert, "host broadcasts achievement state via native MP API without oversized alerts");
+AchievementPolicy.Mark(true, 2); Check(TestAchievementSync.Calls == 1, "batch creation never repeats the achievement broadcast");
+Console.WriteLine($"PASS {checks} item permissions/journal/achievements/filter/layout checks; no game started");
 
 public class Body { }
 namespace UnityEngine { public struct Rect { } }
@@ -85,4 +111,16 @@ namespace DDEN.UnitListMgr
 {
     internal static class UnitListPlugin { internal static readonly TestLog Log = new(); }
     internal class TestLog { internal void Debug(string value) { } }
+}
+
+public static class SteamManager { public static bool disableAchievements; }
+public static class TestAchievementSync
+{
+    public static int Calls; public static bool LastAlert;
+    public static void Server_Broadcast(bool showAlert, System.Collections.Generic.List<object> only = null) { Calls++; LastAlert = showAlert; }
+}
+namespace DDEN.Shared
+{
+    public static class Mp { public static bool IsRunning, IsServer; }
+    public static class Reflect { public static Type Type(string name) => name == "Together.AchievementBreakSync" ? typeof(TestAchievementSync) : null; }
 }
