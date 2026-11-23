@@ -17,7 +17,21 @@ namespace DDEN.UnitListMgr
         private float _nextRegister;
         private string _pending;
         private float _deadline;
-        internal string Status = "";
+        private string _status = "", _requestedName = "";
+        internal NoticeKind Notice { get; private set; }
+        internal float NoticeUntil { get; private set; }
+        internal string Status
+        {
+            get => _status;
+            set
+            {
+                _status = value ?? "";
+                Notice = Busy ? NoticeKind.Waiting : NoticeKind.Failure;
+                NoticeUntil = Time.unscaledTime + 10;
+            }
+        }
+        internal void ShowFailure(string message) { Status = message; Notice = NoticeKind.Failure; }
+        internal bool ShowToast => _status.Length != 0 && (Busy || Time.unscaledTime < NoticeUntil);
         internal bool Busy => _pending != null;
         internal bool Registered => _handler != null;
         internal bool Enabled = true;
@@ -87,6 +101,7 @@ namespace DDEN.UnitListMgr
         internal void Submit(SpawnRequest request)
         {
             if (!Enabled || Busy) return;
+            _requestedName = request == null ? "" : Catalog.Name(request.ItemId ?? "");
             string problem = SpawnRules.Validate(request);
             if (problem != null) { Status = problem; return; }
             if (!CanGive(Mp.IsRunning && !Mp.IsServer))
@@ -112,6 +127,9 @@ namespace DDEN.UnitListMgr
                 Status = UnitListPlugin.T("已生成 ", "Created ") + (response["count"]?.ToString() ?? "0");
             else Status = UnitListPlugin.T("生成未完成：", "Creation incomplete: ") + (response?["error"]?.ToString() ?? "No response")
                 + (response?["count"]?.Value<int>() > 0 ? " (" + response["count"] + ")" : "");
+            Notice = response?["ok"]?.Value<bool>() == true ? NoticeKind.Success : NoticeKind.Failure;
+            NoticeUntil = Time.unscaledTime + (Notice == NoticeKind.Success ? 5 : 10);
+            if (Notice == NoticeKind.Success) _status = _requestedName + " · " + _status;
         }
         private static JObject Error(string text, int count = 0) => new JObject { ["ok"] = false, ["error"] = text, ["count"] = count };
 

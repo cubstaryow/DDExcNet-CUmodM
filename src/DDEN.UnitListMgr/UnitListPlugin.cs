@@ -167,30 +167,52 @@ namespace DDEN.UnitListMgr
                 }, GUIContent.none, GUIStyle.none);
             }
             if (_radial) DrawRadial();
+            if (_service.ShowToast)
+            {
+                int depth = GUI.depth;
+                GUI.depth = -10000;
+                try
+                {
+                    float width = Mathf.Min(620, Screen.width - 32);
+                    ResultNotice.Draw(new Rect((Screen.width - width) / 2, 56, width, 92), _service.Status, _service.Notice);
+                }
+                finally { GUI.depth = depth; }
+            }
         }
         private void DrawRadial()
         {
+            // Keep the eight cells inside the screen as one group, preserving their spacing.
+            // Selection still uses the original anchor so moving the visual group never changes a gesture.
+            var layout = new RadialLayout(Screen.width, Screen.height, _radialOrigin.x, _radialOrigin.y);
+            float scale = layout.Scale, halfWidth = layout.HalfWidth, halfHeight = layout.HalfHeight;
+            var center = new Vector2(layout.X, layout.Y);
             Vector2 mouse = Event.current.mousePosition;
             int active = SpawnRules.Sector(mouse.x - _radialOrigin.x, mouse.y - _radialOrigin.y);
+            var centered = new GUIStyle(DdenUI.Sub) { alignment = TextAnchor.MiddleCenter };
             for (int i = 0; i < 8; i++)
             {
-                float angle = i * Mathf.PI / 4;
-                var at = _radialOrigin + new Vector2(Mathf.Sin(angle), -Mathf.Cos(angle)) * 112;
-                var box = new Rect(at.x - 61, at.y - 26, 122, 52);
-                box.x = Mathf.Clamp(box.x, 2, Screen.width - box.width - 2);
-                box.y = Mathf.Clamp(box.y, 2, Screen.height - box.height - 2);
-                DdenUI.Fill(box, active == i ? DdenUI.PanelAlt : DdenUI.Panel);
-                DdenUI.Frame(box, active == i ? DdenUI.Accent : DdenUI.AccentDim);
-                if (!string.IsNullOrWhiteSpace(_slots[i]))
+                var box = new Rect(layout.CellX(i), layout.CellY(i), halfWidth * 2, halfHeight * 2);
+                bool filled = !string.IsNullOrWhiteSpace(_slots[i]);
+                bool chosen = active == i;
+                DdenUI.Fill(box, chosen ? DdenUI.PanelAlt : DdenUI.Bg);
+                DdenUI.Frame(box, chosen ? DdenUI.Accent : DdenUI.AccentDim, chosen ? 2 : 1);
+                if (chosen) DdenUI.Fill(new Rect(box.x, box.y, 4, box.height), filled ? DdenUI.Accent : DdenUI.Warn);
+                DdenUI.Label(new Rect(box.x + 5, box.y + 3, 18, 16), (i + 1).ToString(), DdenUI.Sub);
+                if (filled)
                 {
-                    DdenUI.DrawItemIcon(new Rect(box.x + 4, box.y + 7, 34, 34), _slots[i]);
-                    DdenUI.Label(new Rect(box.x + 42, box.y + 6, 76, 40), Catalog.Name(_slots[i]), DdenUI.Sub);
+                    float icon = 30 * scale;
+                    DdenUI.DrawItemIcon(new Rect(box.center.x - icon / 2, box.y + 5, icon, icon), _slots[i]);
+                    DdenUI.Label(new Rect(box.x + 5, box.yMax - 25, box.width - 10, 20), DdenUI.ElideToWidth(Catalog.Name(_slots[i]), box.width - 10, centered), centered);
                 }
-                else DdenUI.Label(new Rect(box.x + 6, box.y + 14, 110, 22), T("空槽 ", "Empty ") + (i + 1), DdenUI.Sub);
+                else DdenUI.Label(new Rect(box.x + 6, box.y + halfHeight - 10, box.width - 12, 20), T("未分配", "Unassigned"), centered);
             }
-            var center = new Rect(_radialOrigin.x - 45, _radialOrigin.y - 20, 90, 40);
-            DdenUI.Fill(center, DdenUI.Bg);
-            DdenUI.Label(center, T("松开生成\n中心取消", "Release: spawn\nCenter: cancel"), DdenUI.Sub);
+            var middle = new Rect(center.x - 83 * scale, center.y - 37 * scale, 166 * scale, 74 * scale);
+            DdenUI.Fill(middle, DdenUI.Bg);
+            DdenUI.Frame(middle, DdenUI.AccentDim);
+            string text = active < 0 ? T("滑动选择\n中心松开取消", "Slide to select\nRelease in center: cancel")
+                : string.IsNullOrWhiteSpace(_slots[active]) ? T("未分配槽位\n松开不会生成", "Unassigned slot\nRelease: no action") : T("松开生成\n默认属性 · 鼠标位置", "Release to create\nDefaults · at cursor");
+            var centerStyle = new GUIStyle(centered) { wordWrap = true };
+            DdenUI.Label(new Rect(middle.x + 6, middle.y + 7, middle.width - 12, middle.height - 14), text, centerStyle);
         }
     }
 }

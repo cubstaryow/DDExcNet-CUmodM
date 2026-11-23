@@ -47,6 +47,22 @@ namespace DDEN.UnitListMgr
             catch { }
             return id;
         }
+        internal static HashSet<string> CclIds()
+        {
+            var ids = new HashSet<string>(StringComparer.Ordinal);
+            object registry = Reflect.GetStatic("CUCoreLib.Registries.ItemRegistry", "RegisteredItems");
+            if (Read(registry, "Keys") is IEnumerable keys)
+                foreach (object key in keys) if (key is string id) ids.Add(id);
+            return ids;
+        }
+        internal static ItemKind Kind(string id)
+        {
+            if (Item.GlobalItems == null || !Item.GlobalItems.TryGetValue(id, out var info)) return ItemKind.Other;
+            bool liquid = info is LiquidItemInfo liquidInfo && liquidInfo.capacity > 0 || Read(info, "Syringe") != null;
+            ItemKind kind = ItemFilters.Classify(info.category, info.tags, info.wearable, liquid);
+            if (Read(info, "Container") != null) kind = (kind & ~ItemKind.Other) | ItemKind.Container;
+            return kind;
+        }
         internal static List<string> Items() => Item.GlobalItems?.Keys.OrderBy(Name, StringComparer.CurrentCulture).ToList() ?? new List<string>();
         internal static List<string> Batteries() => Item.GlobalItems?.Where(x => x.Value is BatteryInfo).Select(x => x.Key).OrderBy(Name).ToList() ?? new List<string>();
         internal static List<string> LiquidIds() => global::Liquids.Registry?.Keys.OrderBy(LiquidName).ToList() ?? new List<string>();

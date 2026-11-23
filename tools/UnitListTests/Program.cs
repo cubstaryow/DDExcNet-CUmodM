@@ -42,7 +42,47 @@ Check(!ledger.TryGet("player1:requestA", out _) && ledger.TryGet("player2:reques
 ledger.Put("player2:requestC", "complete", 125);
 Check(!ledger.TryGet("player2:requestA", out _), "expire old replay entries");
 ledger.Clear(); Check(!ledger.TryGet("player2:requestC", out _), "new session clears old requests");
-Console.WriteLine($"PASS {checks} item request/permission/default-mode/replay/marking-menu checks; no game started");
+Check(ItemFilters.Classify("container", "", true, false) == (ItemKind.Container | ItemKind.Wearable), "wearable containers retain both categories");
+Check(ItemFilters.Classify("custom", "material,tool", false, false) == (ItemKind.Material | ItemKind.Tool), "metadata tags classify crafting materials and tools");
+Check(ItemFilters.Classify("custom", "materialistic", false, false) == ItemKind.Other, "category does not guess from substrings");
+Check(ItemFilters.Classify("drug", "", false, true) == (ItemKind.Medical | ItemKind.Liquid), "liquid medicine can match either use");
+Check(ItemFilters.Matches(ItemSource.Ccl, ItemKind.Container, ItemSource.Native | ItemSource.Ccl, ItemKind.Container | ItemKind.Tool), "OR within filter groups");
+Check(!ItemFilters.Matches(ItemSource.Other, ItemKind.Container, ItemSource.Native | ItemSource.Ccl, ItemKind.Container), "AND across source and use");
+Check(ItemFilters.Matches(ItemSource.Native, ItemKind.Material, ItemSource.All, 0), "empty use filter means all uses");
+Check(!ItemFilters.Matches(ItemSource.Native, ItemKind.Material, 0, 0), "no source selections yields no results");
+Check(NativeCatalog.Contains("vanilla_test") && !NativeCatalog.Contains("category_test") && !NativeCatalog.Contains("modded_test"), "native registration parser distinguishes dictionary keys from property strings");
+Check(Item.SetupCalls == 0 && Item.GlobalItems.ContainsKey("existing"), "source classification never reinitializes the item registry");
+foreach (var dimensions in new[] { (1920f, 1080f), (1280f, 720f), (640f, 360f) })
+foreach (var anchor in new[] { (0f, 0f), (dimensions.Item1, dimensions.Item2), (dimensions.Item1 / 2, dimensions.Item2 / 2) })
+{
+    var layout = new RadialLayout(dimensions.Item1, dimensions.Item2, anchor.Item1, anchor.Item2);
+    for (int i = 0; i < 8; i++)
+    {
+        float x = layout.CellX(i), y = layout.CellY(i), w = layout.HalfWidth * 2, h = layout.HalfHeight * 2;
+        Check(x >= 0 && y >= 0 && x + w <= dimensions.Item1 && y + h <= dimensions.Item2, "wheel cell stays within screen");
+        for (int j = i + 1; j < 8; j++)
+            Check(x + w <= layout.CellX(j) || layout.CellX(j) + w <= x || y + h <= layout.CellY(j) || layout.CellY(j) + h <= y, "wheel cards never overlap");
+    }
+}
+Console.WriteLine($"PASS {checks} item request/filter/registry/radial-layout checks; no game started");
 
 public class Body { }
 namespace UnityEngine { public struct Rect { } }
+
+public static class Item
+{
+    public static int SetupCalls;
+    public static System.Collections.Generic.Dictionary<string, TestInfo> GlobalItems = new() { ["existing"] = new() };
+    public static void SetupItems()
+    {
+        SetupCalls++;
+        GlobalItems = new();
+        GlobalItems.Add("vanilla_test", new TestInfo { Category = "category_test" });
+    }
+}
+public class TestInfo { public string Category; }
+namespace DDEN.UnitListMgr
+{
+    internal static class UnitListPlugin { internal static readonly TestLog Log = new(); }
+    internal class TestLog { internal void Debug(string value) { } }
+}

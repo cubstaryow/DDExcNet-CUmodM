@@ -13,6 +13,12 @@ namespace DDEN.UnitListMgr
         private readonly string[] _slots;
         private readonly Action _saveSlots;
         private List<string> _all = new List<string>(), _filtered = new List<string>();
+        private ItemSource _sources = ItemSource.All;
+        private ItemKind _kinds;
+        private readonly Dictionary<string, ItemSource> _origins = new Dictionary<string, ItemSource>();
+        private readonly Dictionary<string, ItemKind> _types = new Dictionary<string, ItemKind>();
+        private int _languageRevision = -1;
+        private bool _showFilters = true;
         private string _search = "", _lastSearch, _selected, _error = "";
         private string _count = "1", _condition = "100", _rounds = "0", _battery = "";
         private bool _hasMag, _editBattery, _editLiquids;
@@ -37,7 +43,20 @@ namespace DDEN.UnitListMgr
                 int count = Item.GlobalItems?.Count ?? 0;
                 if (count != _knownCount) Refresh();
             }
-            float leftWidth = Mathf.Clamp(area.width * 0.4f, 180, 420);
+            if (_languageRevision != DdenLocalization.Revision) { _languageRevision = DdenLocalization.Revision; _lastSearch = null; }
+            DdenUI.Button(new Rect(area.x, area.y, 102, 28), T("物品", "Items"), true);
+            bool wasEnabled = GUI.enabled;
+            GUI.enabled = false;
+            DdenUI.Button(new Rect(area.x + 108, area.y, 122, 28), T("生物 · 预留", "Creatures · Later"));
+            DdenUI.Button(new Rect(area.x + 236, area.y, 122, 28), T("单位 · 预留", "Units · Later"));
+            GUI.enabled = wasEnabled;
+            area = new Rect(area.x, area.y + 38, area.width, Mathf.Max(40, area.height - 38));
+            if (!string.IsNullOrEmpty(_service.Status))
+            {
+                ResultNotice.Draw(new Rect(area.x, area.y, area.width, 80), _service.Status, _service.Notice);
+                area = new Rect(area.x, area.y + 90, area.width, Mathf.Max(40, area.height - 90));
+            }
+            float leftWidth = Mathf.Max(160, Mathf.Min(area.width * 0.62f, area.width - 290));
             var left = new Rect(area.x, area.y, leftWidth, area.height);
             var right = new Rect(left.xMax + 12, area.y, Mathf.Max(150, area.width - leftWidth - 12), area.height);
             DrawList(left);
@@ -50,34 +69,80 @@ namespace DDEN.UnitListMgr
         private void Refresh()
         {
             _all = Catalog.Items(); _knownCount = Item.GlobalItems?.Count ?? 0; _lastSearch = null;
+            var ccl = Catalog.CclIds(); _origins.Clear(); _types.Clear();
+            foreach (string id in _all)
+            {
+                _origins[id] = ccl.Contains(id) ? ItemSource.Ccl : NativeCatalog.Contains(id) ? ItemSource.Native : ItemSource.Other;
+                _types[id] = Catalog.Kind(id);
+            }
         }
         private void DrawList(Rect box)
         {
-            _search = DdenUI.TextField(new Rect(box.x, box.y, box.width - 66, 26), _search);
-            if (DdenUI.Button(new Rect(box.xMax - 60, box.y, 60, 26), T("刷新", "Refresh"))) Refresh();
-            DdenUI.Label(new Rect(box.x, box.y + 30, box.width, 20), T("搜索中文名 / 物品 ID", "Search name / item ID"), DdenUI.Sub);
+            _search = DdenUI.TextField(new Rect(box.x, box.y, box.width - 128, 27), _search);
+            if (DdenUI.Button(new Rect(box.xMax - 122, box.y, 58, 27), T("筛选", "Filters"), _showFilters)) _showFilters = !_showFilters;
+            if (DdenUI.Button(new Rect(box.xMax - 58, box.y, 58, 27), T("刷新", "Refresh"))) Refresh();
+            float top = box.y + 35;
+            if (_showFilters)
+            {
+                var sourceLabels = new[] { T("原版", "Vanilla"), T("CCL 注册", "CCL registered"), T("其他 / 未识别", "Other / Unknown") };
+                for (int i = 0; i < 3; i++)
+                {
+                    ItemSource flag = (ItemSource)(1 << i);
+                    var row = new Rect(box.x + i * box.width / 3, top, box.width / 3 - 4, 24);
+                    bool selected = (_sources & flag) != 0;
+                    bool next = DdenUI.CheckBoxLabeled(row, selected, sourceLabels[i]);
+                    if (next != selected) { _sources ^= flag; _lastSearch = null; }
+                }
+                top += 32;
+                var kindLabels = new[] { T("容器", "Containers"), T("工具", "Tools"), T("基础材料", "Materials"), T("医疗 / 药物", "Medical / Drugs"), T("食物", "Food"), T("液体", "Liquids"), T("穿戴", "Wearables"), T("功能用品", "Utility"), T("其他", "Other") };
+                int filterColumns = Mathf.Max(2, (int)(box.width / 120));
+                float filterWidth = box.width / filterColumns;
+                for (int i = 0; i < kindLabels.Length; i++)
+                {
+                    ItemKind flag = (ItemKind)(1 << i);
+                    var row = new Rect(box.x + i % filterColumns * filterWidth, top + i / filterColumns * 27, filterWidth - 4, 24);
+                    bool selected = (_kinds & flag) != 0;
+                    bool next = DdenUI.CheckBoxLabeled(row, selected, kindLabels[i]);
+                    if (next != selected) { _kinds ^= flag; _lastSearch = null; }
+                }
+                top += Mathf.CeilToInt(kindLabels.Length / (float)filterColumns) * 27 + 4;
+            }
             if (_lastSearch != _search)
             {
                 _lastSearch = _search;
-                _filtered = _all.Where(id => id.IndexOf(_search, StringComparison.OrdinalIgnoreCase) >= 0 || Catalog.Name(id).IndexOf(_search, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+                _filtered = _all.Where(id => ItemFilters.Matches(_origins[id], _types[id], _sources, _kinds)
+                    && (id.IndexOf(_search, StringComparison.OrdinalIgnoreCase) >= 0 || Catalog.Name(id).IndexOf(_search, StringComparison.OrdinalIgnoreCase) >= 0)).ToList();
                 _listScroll = Vector2.zero;
             }
-            var view = new Rect(box.x, box.y + 55, box.width, Mathf.Max(30, box.height - 55));
-            _listScroll = DdenUI.BeginScrollView(view, _listScroll, new Rect(0, 0, view.width - 20, _filtered.Count * 48));
+            DdenUI.Label(new Rect(box.x, top, box.width - 85, 22), T("物品 ", "Items ") + _filtered.Count + " / " + _all.Count, DdenUI.Sub);
+            if (DdenUI.Button(new Rect(box.xMax - 80, top, 80, 22), T("重置筛选", "Reset filters"))) { _sources = ItemSource.All; _kinds = 0; _search = ""; _lastSearch = null; }
+            top += 28;
+            var view = new Rect(box.x, top, box.width, Mathf.Max(25, box.yMax - top));
+            const float pitch = 78;
+            int columns = Mathf.Max(1, (int)((view.width - 20) / 94));
+            float cellWidth = (view.width - 20) / columns;
+            int rows = Mathf.CeilToInt(_filtered.Count / (float)columns);
+            _listScroll = DdenUI.BeginScrollView(view, _listScroll, new Rect(0, 0, view.width - 20, rows * pitch));
             try
             {
-                // Virtual rows: opening the catalog does not resolve every CCL template or icon.
-                int start = Mathf.Max(0, (int)(_listScroll.y / 48));
-                int end = Mathf.Min(_filtered.Count, start + Mathf.CeilToInt(view.height / 48) + 2);
-                for (int i = start; i < end; i++)
+                int firstRow = Mathf.Max(0, (int)(_listScroll.y / pitch));
+                int end = Mathf.Min(_filtered.Count, (firstRow + Mathf.CeilToInt(view.height / pitch) + 2) * columns);
+                var nameStyle = new GUIStyle(DdenUI.Sub) { alignment = TextAnchor.MiddleCenter };
+                for (int i = firstRow * columns; i < end; i++)
                 {
-                    string id = _filtered[i]; var row = new Rect(0, i * 48, view.width - 20, 44);
-                    DdenUI.Fill(row, id == _selected ? DdenUI.PanelAlt : DdenUI.Panel);
-                    DdenUI.DrawItemIcon(new Rect(5, row.y + 5, 34, 34), id);
-                    DdenUI.Label(new Rect(46, row.y + 3, row.width - 50, 21), Catalog.Name(id), DdenUI.Row);
-                    DdenUI.Label(new Rect(46, row.y + 23, row.width - 50, 18), id, DdenUI.Sub);
-                    if (GUI.Button(row, GUIContent.none, GUIStyle.none)) Select(id);
+                    string id = _filtered[i];
+                    var cell = new Rect(i % columns * cellWidth, i / columns * pitch, cellWidth - 4, pitch - 4);
+                    bool selected = id == _selected;
+                    bool hovered = cell.Contains(Event.current.mousePosition);
+                    DdenUI.Fill(cell, selected || hovered ? DdenUI.PanelAlt : DdenUI.Panel);
+                    DdenUI.Frame(cell, selected ? DdenUI.Accent : DdenUI.AccentDim);
+                    if (selected) DdenUI.Fill(new Rect(cell.x, cell.y, 3, cell.height), DdenUI.Accent);
+                    DdenUI.DrawItemIcon(new Rect(cell.center.x - 19, cell.y + 6, 38, 38), id);
+                    DdenUI.Label(new Rect(cell.x + 4, cell.y + 49, cell.width - 8, 20), DdenUI.ElideToWidth(Catalog.Name(id), cell.width - 8, nameStyle), nameStyle);
+                    DdenUI.Hover(cell, Catalog.Name(id) + "\n" + id);
+                    if (GUI.Button(cell, GUIContent.none, GUIStyle.none)) Select(id);
                 }
+                if (_filtered.Count == 0) DdenUI.Label(new Rect(8, 8, view.width - 30, 55), T("没有符合条件的物品。\n可取消勾选用途，或重置筛选。", "No matching items.\nClear use filters or reset filters."), DdenUI.Sub);
             }
             finally { DdenUI.EndScrollView(); }
         }
@@ -178,8 +243,7 @@ namespace DDEN.UnitListMgr
             finally { GUI.enabled = enabled; }
             y += 41;
             if (Mp.IsRunning) Label(T("多人：须开启主机作弊；客机另须允许客机作弊。", "MP: host cheats required; guests also need client cheats."), DdenUI.Sub, 42);
-            if (_error.Length > 0) Label(_error, DdenUI.Sub, 42);
-            if (_service.Status.Length > 0) Label(_service.Status, DdenUI.Sub, 65);
+
             Label(T("快捷轮盘 · 按住 ", "Quick menu · hold ") + UnitListPlugin.QuickKeyLabel, DdenUI.Title, 27);
             Label(T("只使用默认属性，在鼠标位置生成；中心 / Esc 取消。", "Default properties only; spawns at cursor. Center / Esc cancels."), DdenUI.Sub, 42);
             for (int i = 0; i < 8; i++)
@@ -217,15 +281,15 @@ namespace DDEN.UnitListMgr
         {
             _error = "";
             var request = new SpawnRequest { RequestId = Guid.NewGuid().ToString("N"), ItemId = _selected };
-            if (!int.TryParse(_count, NumberStyles.Integer, CultureInfo.InvariantCulture, out request.Count)) { _error = T("数量需要整数。", "Count must be an integer."); return; }
+            if (!int.TryParse(_count, NumberStyles.Integer, CultureInfo.InvariantCulture, out request.Count)) { _error = T("数量需要整数。", "Count must be an integer."); _service.ShowFailure(_error); return; }
             if (_spec.Capacity <= 0)
             {
-                if (!Float(_condition, out float percent)) { _error = T("耐久 / 电量无效。", "Invalid condition / charge."); return; }
+                if (!Float(_condition, out float percent)) { _error = T("耐久 / 电量无效。", "Invalid condition / charge."); _service.ShowFailure(_error); return; }
                 if (Math.Abs(percent - _spec.Condition * 100) > 0.0001f) request.Condition = percent / 100;
             }
             if (_spec.Rounds.HasValue)
             {
-                if (!int.TryParse(_rounds, out int rounds)) { _error = T("子弹数需要整数。", "Rounds must be an integer."); return; }
+                if (!int.TryParse(_rounds, out int rounds)) { _error = T("子弹数需要整数。", "Rounds must be an integer."); _service.ShowFailure(_error); return; }
                 if (rounds != _spec.Rounds) request.Rounds = rounds;
             }
             if (_spec.HasGun && _spec.UsesMagazine && _hasMag != _spec.HasMagazine) request.HasMagazine = _hasMag;
@@ -235,7 +299,7 @@ namespace DDEN.UnitListMgr
                 request.Liquids = new List<LiquidAmount>();
                 foreach (var entry in _liquids)
                 {
-                    if (!Float(entry.Amount, out float amount)) { _error = T("液体数量无效。", "Invalid liquid amount."); return; }
+                    if (!Float(entry.Amount, out float amount)) { _error = T("液体数量无效。", "Invalid liquid amount."); _service.ShowFailure(_error); return; }
                     request.Liquids.Add(new LiquidAmount { Id = entry.Id, Amount = amount });
                 }
             }

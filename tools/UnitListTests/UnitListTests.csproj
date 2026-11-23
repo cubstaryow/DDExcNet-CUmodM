@@ -4,5 +4,8 @@
     <Reference Remove="@(Reference)" />
     <Compile Include="../../src/DDEN.UnitListMgr/SpawnRequest.cs" Link="SpawnRequest.cs" />
     <Compile Include="../../src/DDEN.UnitListMgr/RequestLedger.cs" Link="RequestLedger.cs" />
+    <Compile Include="../../src/DDEN.UnitListMgr/ItemFilters.cs" Link="ItemFilters.cs" />
+    <Compile Include="../../src/DDEN.UnitListMgr/NativeCatalog.cs" Link="NativeCatalog.cs" />
+    <Compile Include="../../src/DDEN.UnitListMgr/RadialLayout.cs" Link="RadialLayout.cs" />
   </ItemGroup>
 </Project>
