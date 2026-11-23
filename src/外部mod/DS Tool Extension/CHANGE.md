@@ -1,5 +1,12 @@
 # DS Tool Extension 变更记录
 
+## v1.1.0 · 2026-11-23
+
+- 新增第二件装备：实验性等离子束发射器（`Experimentalplasmaemitter`），等离子切割器升级版；
+- 钻机配方材料调整：加工铜 → 厚钛板（`titaniumslab`）、废料块 → 钛棒（`titaniumrod`），普通/ET 两版同步；
+- 等离子束发射器数值：damage 30 / structural 30 / metalMoreDamage / attackCooldownMult 0.4 / distance 6.5 / cooldown 0.07，耗电为切割器一半，保留肢体切割；
+- 图标：`images/Experimental plasma emitter.png`。
+
 ## v1.0.2 · 2026-11-23
 
 - 增加双配方（INT 17，同增强钛镐）：

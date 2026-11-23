@@ -1,6 +1,8 @@
 {
   "item": {
     "ExperimentalTi-alloydrill": "Experimental Ti-alloy drill",
-    "ExperimentalTi-alloydrilldsc": "A titanium-alloy upgrade of the heavy drill. The bit is self-heating for higher efficiency."
+    "ExperimentalTi-alloydrilldsc": "A titanium-alloy upgrade of the heavy drill. The bit is self-heating for higher efficiency.",
+    "Experimentalplasmaemitter": "Experimental plasma emitter",
+    "Experimentalplasmaemitterdsc": "The plasma flow limiter has been removed, and the cooling system has been rebuilt with titanium alloy so that more plasma beams can be fired in the same amount of time."
   }
 }

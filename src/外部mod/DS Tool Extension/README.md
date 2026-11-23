@@ -27,6 +27,25 @@
 | 合成配方 | 见下方「配方」 |
 
 
+
+## 第二件装备：实验性等离子束发射器
+
+| 项目 | 值 |
+|---|---|
+| id | `Experimentalplasmaemitter` |
+| 中文名 | 实验性等离子束发射器 |
+| 英文名 | Experimental plasma emitter |
+| 中文描述 | 去掉了等离子流的限制模块，采用钛合金重做散热系统以达到在相同时间内可以射出更多的等离子束 |
+| 英文描述 | The plasma flow limiter has been removed, and the cooling system has been rebuilt with titanium alloy so that more plasma beams can be fired in the same amount of time. |
+| 分类 / 标签 | tool / tool |
+| 重量 / 价值 / 识别度 | 2.5 / 60 / 12 |
+| damage / structuralDamage | 30 / 30（metalMoreDamage=true） |
+| attackCooldownMult / distance / cooldown | 0.4 / 6.5 / 0.07 |
+| 每次攻击耗电 | `DrainCharge(0.0005)`（等离子切割器的一半） |
+| 可切割肢体 | 保留（同等离子切割器） |
+| 电池 | Large（300） |
+| 合成配方 | 无（同等离子切割器） |
+
 ## 配方
 
 制作等级 **INT 17**（与增强钛镐相同），两种版本按是否安装 EnhancedTools 二选一注册：
@@ -34,12 +53,12 @@
 **普通版（无 EnhancedTools）**
 
 - 重型钻机 ×1
-- 加工铜 ×1
+- 厚钛板（titaniumslab）×1
 - 中型电池（≥25%）×1
 - 电路板（≥80%）×2
 - 一捆导线 ×3
 - 铁钉 ×1
-- 废料块 ×1
+- 钛棒（titaniumrod）×1
 - 生化流体 50mL
 - 可捶打性质 ×1、可切割性质 ×1
 

@@ -15,20 +15,23 @@ namespace DsToolExtension
 {
     /// <summary>
     /// DS Tool Extension（DS 工具扩展）
-    /// 第一件装备：实验性钛合金钻机（Experimental Ti-alloy drill）——重型钻机的升级版。
+    /// 第一件：实验性钛合金钻机（ExperimentalTi-alloydrill）——重型钻机升级版；
+    /// 第二件：实验性等离子束发射器（Experimentalplasmaemitter）——等离子切割器升级版。
     /// CCL 前置、多人兼容、DDEN L1 软接入（实验性 + 中英双语）。
-    /// 中英文本走 CCL 的 zh-CN.json / EN.json（与 DLL 同目录，CCL 自动加载）。
     /// </summary>
-    [BepInPlugin(Guid, "DS Tool Extension", "1.0.2")]
+    [BepInPlugin(Guid, "DS Tool Extension", "1.1.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.HardDependency)]
     [BepInDependency("com.a4kk.enhancedtools", BepInDependency.DependencyFlags.SoftDependency)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "com.dstool.extension";
-        public const string ItemId = "ExperimentalTi-alloydrill";
+        public const string DrillItemId = "ExperimentalTi-alloydrill";
+        public const string PlasmaItemId = "Experimentalplasmaemitter";
 
-        internal const string FallbackName = "实验性钛合金钻机";
-        internal const string FallbackDescription = "重型钻机的钛合金升级版本，钻头自加热，效率更高";
+        internal const string DrillFallbackName = "实验性钛合金钻机";
+        internal const string DrillFallbackDescription = "重型钻机的钛合金升级版本，钻头自加热，效率更高";
+        internal const string PlasmaFallbackName = "实验性等离子束发射器";
+        internal const string PlasmaFallbackDescription = "去掉了等离子流的限制模块，采用钛合金重做散热系统以达到在相同时间内可以射出更多的等离子束";
 
         internal static Plugin Instance;
         internal static ManualLogSource Log;
@@ -37,10 +40,10 @@ namespace DsToolExtension
         internal static void LogInfo(string message) => Log?.LogInfo(message);
         internal static void LogWarning(string message) => Log?.LogWarning(message);
 
-        // 与原版重型钻机一致的表现字段
-        private const float KnockBack = 180f;
-        private const float RotateAmount = 6f;
-        private const float Volume = 0.8f;
+        // 钻机表现字段（沿用重型钻机）
+        private const float DrillKnockBack = 180f;
+        private const float DrillRotateAmount = 6f;
+        private const float DrillVolume = 0.8f;
 
         private void Awake()
         {
@@ -52,12 +55,13 @@ namespace DsToolExtension
                 bool hasET = Chainloader.PluginInfos.ContainsKey("com.a4kk.enhancedtools");
                 if (Enabled.Value)
                 {
-                    RegisterItem();
-                    RegisterRecipe(hasET);
+                    RegisterDrill();
+                    RegisterPlasmaEmitter();
+                    RegisterDrillRecipe(hasET);
                 }
                 new Harmony(Guid).PatchAll(typeof(Plugin));
                 DdenBridge.DdenDocs();
-                Logger.LogInfo($"[DS Tool Extension] 已加载：实验性钛合金钻机（配方={(hasET ? "ET 版" : "普通版")}）。");
+                Logger.LogInfo($"[DS Tool Extension] 已加载：钻机 + 等离子束发射器（钻机配方={(hasET ? "ET 版" : "普通版")}）。");
             }
             catch (Exception ex)
             {
@@ -65,7 +69,7 @@ namespace DsToolExtension
             }
         }
 
-        private void RegisterItem()
+        private void RegisterDrill()
         {
             Sprite sprite = AssetLoader.LoadSpriteFromPluginFolder(this, "images/Experimental Ti-alloy drill.png", 8f);
             if (sprite == null)
@@ -73,8 +77,8 @@ namespace DsToolExtension
 
             var info = new CustomItemInfo
             {
-                fullName = FallbackName,
-                description = FallbackDescription,
+                fullName = DrillFallbackName,
+                description = DrillFallbackDescription,
                 category = "tool",
                 tags = "tool",
                 weight = 4f,
@@ -103,15 +107,15 @@ namespace DsToolExtension
                         structuralDamage = 150f,
                         attackCooldownMult = 0.3f,
                         distance = 4.5f,
-                        knockBack = KnockBack,
+                        knockBack = DrillKnockBack,
                         cooldown = 0.12f,
                         attackAnim = null,
                         staminaUse = 0f,
                         piercing = false,
                         swingSounds = new string[1],
-                        volume = Volume,
+                        volume = DrillVolume,
                         physicalSwing = false,
-                        rotateAmount = RotateAmount,
+                        rotateAmount = DrillRotateAmount,
                         doAttackAnim = false
                     }, 0))
                     {
@@ -122,14 +126,85 @@ namespace DsToolExtension
             };
 
             info.AddSpawnComponent<DrillLoopSound>();
-            ItemRegistry.Register(ItemId, info, sprite);
+            ItemRegistry.Register(DrillItemId, info, sprite);
+        }
+
+        private void RegisterPlasmaEmitter()
+        {
+            Sprite sprite = AssetLoader.LoadSpriteFromPluginFolder(this, "images/Experimental plasma emitter.png", 8f);
+            if (sprite == null)
+                Logger.LogWarning("[DS Tool Extension] 未找到图标 'images/Experimental plasma emitter.png'（应与 DLL 同目录）。");
+
+            var info = new CustomItemInfo
+            {
+                fullName = PlasmaFallbackName,
+                description = PlasmaFallbackDescription,
+                category = "tool",
+                tags = "tool",
+                weight = 2.5f,
+                value = 60,
+                usable = true,
+                usableWithLMB = true,
+                usableOnLimb = true,
+                destroyAtZeroCondition = false,
+                autoAttack = true,
+                onlyHoldInHands = true,
+                slotRotation = 0f,
+                rec = new Recognition(12),
+                Battery = new BatteryProperties
+                {
+                    Preset = BatteryItem.BatteryPreset.Large,
+                    MaxCharge = 300f,
+                    SpawnWithBattery = true
+                },
+                SpriteScale = 1f,
+                useAction = delegate (Body body, Item item)
+                {
+                    if (item.condition > 0f && body.Attack(new AttackInfo
+                    {
+                        damage = 30f,
+                        structuralDamage = 30f,
+                        attackCooldownMult = 0.4f,
+                        distance = 6.5f,
+                        knockBack = 0f,
+                        cooldown = 0.07f,
+                        attackAnim = Resources.Load<GameObject>("LaserAnim"),
+                        staminaUse = 0f,
+                        piercing = false,
+                        swingSounds = new string[1] { "laser" },
+                        volume = 0.8f,
+                        physicalSwing = false,
+                        rotateAmount = 2f,
+                        doAttackAnim = false,
+                        metalMoreDamage = true
+                    }, 0))
+                    {
+                        // 等离子切割器的一半耗电（0.001 / 2）
+                        item.battery.DrainCharge(0.0005f);
+                    }
+                },
+                useLimbAction = delegate (Limb limb, Item item)
+                {
+                    if (item.condition > 0f)
+                    {
+                        item.battery.DrainCharge(0.001f);
+                        limb.skinHealth -= 12f;
+                        limb.bleedAmount *= 0.2f;
+                        limb.pain += 45f;
+                        Sound.Play("laser", limb.transform.position);
+                    }
+                }
+            };
+
+            ItemRegistry.Register(PlasmaItemId, info, sprite);
         }
 
         /// <summary>
-        /// 双配方：装 EnhancedTools 用工程化/可改造品质，否则用可捶打/可切割品质。
-        /// 材料与制作等级（INT 17，同增强钛镐）一致。
+        /// 钻机双配方：装 EnhancedTools 用工程化/可改造品质，否则用可捶打/可切割品质。
+        /// 材料：重型钻机、厚钛板（titaniumslab）、中型电池（≥25%）、电路板（≥80%）×2、
+        /// 一捆导线 ×3、铁钉、钛棒（titaniumrod）、生化流体 50mL。
         /// </summary>
-        private static void RegisterRecipe(bool hasET)
+        private static void RegisterDrillRecipe(bool hasET)
         {
             var recipe = new Recipe
             {
@@ -137,7 +212,7 @@ namespace DsToolExtension
                 category = (Recipes.RecipeCategory)1,
                 result = new RecipeResult
                 {
-                    id = ItemId,
+                    id = DrillItemId,
                     amount = 1,
                     isLiquid = false,
                     resultCondition = 1f
@@ -145,7 +220,7 @@ namespace DsToolExtension
                 items = new List<RecipeItem>
                 {
                     new RecipeItem(0f) { specific = true, specificId = "heavydrill" },
-                    new RecipeItem(0f) { specific = true, specificId = "processedcopper" },
+                    new RecipeItem(0f) { specific = true, specificId = "titaniumslab" },
                     new RecipeItem(0.25f) { specific = true, specificId = "mediumbattery" },
                     new RecipeItem(0.8f) { specific = true, specificId = "circuitboard" },
                     new RecipeItem(0.8f) { specific = true, specificId = "circuitboard" },
@@ -153,7 +228,7 @@ namespace DsToolExtension
                     new RecipeItem(0f) { specific = true, specificId = "bundleofwires" },
                     new RecipeItem(0f) { specific = true, specificId = "bundleofwires" },
                     new RecipeItem(0f) { specific = true, specificId = "nails" },
-                    new RecipeItem(0f) { specific = true, specificId = "scrapcube" },
+                    new RecipeItem(0f) { specific = true, specificId = "titaniumrod" },
                     new RecipeItem(50f) { specific = true, specificId = "biochem", isLiquid = true },
                     hasET
                         ? new RecipeItem(0f) { quality = new CraftingQuality("engineering", 1f), destroyItem = false }
@@ -175,14 +250,20 @@ namespace DsToolExtension
         {
             try
             {
-                if (Item.GlobalItems == null || !Item.GlobalItems.TryGetValue(ItemId, out var info) || info == null) return;
-                info.fullName = LocaleRegistry.Get("item", ItemId, FallbackName);
-                info.description = LocaleRegistry.Get("item", ItemId + "dsc", FallbackDescription);
+                UpdateItemText(DrillItemId, DrillFallbackName, DrillFallbackDescription);
+                UpdateItemText(PlasmaItemId, PlasmaFallbackName, PlasmaFallbackDescription);
             }
             catch (Exception ex)
             {
                 Instance?.Logger.LogWarning("[DS Tool Extension] 语言同步失败：" + ex.Message);
             }
+        }
+
+        private static void UpdateItemText(string id, string fallbackName, string fallbackDescription)
+        {
+            if (Item.GlobalItems == null || !Item.GlobalItems.TryGetValue(id, out var info) || info == null) return;
+            info.fullName = LocaleRegistry.Get("item", id, fallbackName);
+            info.description = LocaleRegistry.Get("item", id + "dsc", fallbackDescription);
         }
     }
 
@@ -219,10 +300,10 @@ namespace DsToolExtension
                 method.Invoke(null, new object[]
                 {
                     pair.Key.Section, pair.Key.Key, pair.Value.Description.Description,
-                    "启用后新增实验性钛合金钻机。",
+                    "启用后新增实验性钛合金钻机与实验性等离子束发射器。",
                     "装好后在物品/合成里出现。",
                     "是 · 尚需游戏内验证",
-                    "只注册一个物品与一个配方，开销可忽略。", false
+                    "只注册两个物品与一个配方，开销可忽略。", false
                 });
         }
 
@@ -239,10 +320,10 @@ namespace DsToolExtension
                 case "启用 DS 工具扩展。": return "Enable DS Tool Extension.";
                 case "未加载": return "Not loaded";
                 case "运行中": return "Running";
-                case "启用后新增实验性钛合金钻机。": return "Adds the Experimental Ti-alloy drill when enabled.";
+                case "启用后新增实验性钛合金钻机与实验性等离子束发射器。": return "Adds the Experimental Ti-alloy drill and the Experimental plasma emitter when enabled.";
                 case "装好后在物品/合成里出现。": return "Appears in items/crafting once installed.";
                 case "是 · 尚需游戏内验证": return "Yes · needs in-game verification";
-                case "只注册一个物品与一个配方，开销可忽略。": return "Registers one item and one recipe; negligible cost.";
+                case "只注册两个物品与一个配方，开销可忽略。": return "Registers two items and one recipe; negligible cost.";
                 default: return zh;
             }
         }
