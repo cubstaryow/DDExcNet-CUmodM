@@ -19,7 +19,7 @@ namespace DsToolExtension
     /// 第二件：实验性等离子束发射器（Experimentalplasmaemitter）——等离子切割器升级版。
     /// CCL 前置、多人兼容、DDEN L1 软接入（实验性 + 中英双语）。
     /// </summary>
-    [BepInPlugin(Guid, "DS Tool Extension", "1.1.0")]
+    [BepInPlugin(Guid, "DS Tool Extension", "1.1.1")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.HardDependency)]
     [BepInDependency("com.a4kk.enhancedtools", BepInDependency.DependencyFlags.SoftDependency)]
     public class Plugin : BaseUnityPlugin
@@ -58,6 +58,7 @@ namespace DsToolExtension
                     RegisterDrill();
                     RegisterPlasmaEmitter();
                     RegisterDrillRecipe(hasET);
+                    RegisterPlasmaRecipe(hasET);
                 }
                 new Harmony(Guid).PatchAll(typeof(Plugin));
                 DdenBridge.DdenDocs();
@@ -229,6 +230,51 @@ namespace DsToolExtension
                     new RecipeItem(0f) { specific = true, specificId = "bundleofwires" },
                     new RecipeItem(0f) { specific = true, specificId = "nails" },
                     new RecipeItem(0f) { specific = true, specificId = "titaniumrod" },
+                    new RecipeItem(50f) { specific = true, specificId = "biochem", isLiquid = true },
+                    hasET
+                        ? new RecipeItem(0f) { quality = new CraftingQuality("engineering", 1f), destroyItem = false }
+                        : new RecipeItem(0f) { quality = new CraftingQuality("hammering", 1f), destroyItem = false },
+                    hasET
+                        ? new RecipeItem(0f) { quality = new CraftingQuality("modification", 4f), destroyItem = false }
+                        : new RecipeItem(0f) { quality = new CraftingQuality("cutting", 1f), destroyItem = false }
+                }
+            };
+            RecipeRegistry.Register(recipe);
+        }
+
+        /// <summary>
+        /// 等离子束发射器配方（INT 17，同钻机）：等离子切割器、加工铜、中型电池（≥25%）、
+        /// 电路板（≥80%）、一捆导线 ×4、铁钉 ×2、厚钛板、钛板 ×2、生化流体 50mL；
+        /// 普通版用可捶打/可切割，ET 版用工程化/可改造。
+        /// </summary>
+        private static void RegisterPlasmaRecipe(bool hasET)
+        {
+            var recipe = new Recipe
+            {
+                INT = 17,
+                category = (Recipes.RecipeCategory)1,
+                result = new RecipeResult
+                {
+                    id = PlasmaItemId,
+                    amount = 1,
+                    isLiquid = false,
+                    resultCondition = 1f
+                },
+                items = new List<RecipeItem>
+                {
+                    new RecipeItem(0f) { specific = true, specificId = "plasmacutter" },
+                    new RecipeItem(0f) { specific = true, specificId = "processedcopper" },
+                    new RecipeItem(0.25f) { specific = true, specificId = "mediumbattery" },
+                    new RecipeItem(0.8f) { specific = true, specificId = "circuitboard" },
+                    new RecipeItem(0f) { specific = true, specificId = "bundleofwires" },
+                    new RecipeItem(0f) { specific = true, specificId = "bundleofwires" },
+                    new RecipeItem(0f) { specific = true, specificId = "bundleofwires" },
+                    new RecipeItem(0f) { specific = true, specificId = "bundleofwires" },
+                    new RecipeItem(0f) { specific = true, specificId = "nails" },
+                    new RecipeItem(0f) { specific = true, specificId = "nails" },
+                    new RecipeItem(0f) { specific = true, specificId = "titaniumslab" },
+                    new RecipeItem(0f) { specific = true, specificId = "titaniumsheet" },
+                    new RecipeItem(0f) { specific = true, specificId = "titaniumsheet" },
                     new RecipeItem(50f) { specific = true, specificId = "biochem", isLiquid = true },
                     hasET
                         ? new RecipeItem(0f) { quality = new CraftingQuality("engineering", 1f), destroyItem = false }
