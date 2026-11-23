@@ -1,5 +1,9 @@
 # DS Tool Extension 变更记录
 
+## v1.2.6 · 2026-11-23
+
+- 性能优化：DrillLoopSound 缓存 InventorySlot/本地 Body，状态每 0.2 秒评估一次；BatteryEncumbranceReduction 每 0.5 秒检查一次，减少每帧 GetComponent 与容器字段写入。
+
 ## v1.2.5 · 2026-11-23
 
 - 循环音效调试日志改为配置开关（General/DebugLog，默认关闭），减少长期游玩时的日志开销。
