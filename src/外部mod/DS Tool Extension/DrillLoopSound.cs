@@ -53,10 +53,11 @@ namespace DsToolExtension
 
             bool on = false;
             Transform parent = transform.parent;
-            if (parent != null && parent.TryGetComponent<InventorySlot>(out var slot) && slot.body != null)
+            // 只让“本地玩家手里的这把钻机”发声；否则主机端也会为客机的钻机播放并叠加音源。
+            Body local = PlayerCamera.main != null ? PlayerCamera.main.body : null;
+            if (local != null && parent != null && parent.TryGetComponent<InventorySlot>(out var slot) && slot.body == local)
             {
-                Body body = slot.body;
-                if (body.GetItem(body.handSlot) == item && body.attackCooldown > -0.1f)
+                if (local.GetItem(local.handSlot) == item && local.attackCooldown > -0.1f)
                 {
                     on = true;
                 }
@@ -86,8 +87,8 @@ namespace DsToolExtension
             {
                 nextLog = Time.unscaledTime + 5f;
                 bool held = false;
-                if (parent != null && parent.TryGetComponent<InventorySlot>(out var s) && s.body != null)
-                    held = s.body.GetItem(s.body.handSlot) == item;
+                if (local != null && parent != null && parent.TryGetComponent<InventorySlot>(out var s) && s.body == local)
+                    held = local.GetItem(local.handSlot) == item;
                 Plugin.LogInfo($"[DS Tool Extension] DrillLoopSound: on={on} held={held} playing={source.isPlaying} vol={source.volume:0.00} parent={(parent != null ? parent.name : "null")}");
             }
         }
