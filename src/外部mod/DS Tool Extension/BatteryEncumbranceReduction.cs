@@ -20,7 +20,7 @@ namespace DsToolExtension
         private void Update()
         {
             if (item == null || container == null) return;
-            float target = (item.battery != null && item.battery.hasCharge) ? 0f : 1f;
+            float target = (item.battery != null && item.battery.hasCharge) ? 0.05f : 1f;   // 有电减 95%，没电/没电池不减
             if (Mathf.Abs(container.encumberanceMult - target) > 0.0001f)
             {
                 container.encumberanceMult = target;

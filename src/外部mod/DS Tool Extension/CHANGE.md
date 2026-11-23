@@ -1,5 +1,10 @@
 # DS Tool Extension 变更记录
 
+## v1.2.1 · 2026-11-23
+
+- 实验性特种腿包减重改为：没电/没电池不减负重，有电池且有电时减 95%（`encumberanceMult = 0.05`）；
+- `Container.EncumbranceReduction` 不再作为减重来源（组件每帧覆盖）。
+
 ## v1.2.0 · 2026-11-23
 
 - 新增第三件装备：实验性特种腿包（`Experimentalspeciallegpack`）：
