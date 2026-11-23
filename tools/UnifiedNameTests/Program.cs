@@ -93,4 +93,23 @@ Check(lateBinding.name == "CustomAlias", "unresolved line can recover when nativ
 Check(system.name == steam.ToString(), "later player messages never rebind a plain numeric system label");
 PlayerNameRepair.Stop();
 Check(Font.Created == 0 && TMP_FontAsset.Created == 0, "unified repair uses game glyphs without system fonts or generated atlases");
+var rawField = typeof(ScavPlayer).GetField("playerName");
+var addColor = typeof(Chat).GetMethod("AddColorTags");
+var joinReads = new[] {
+    new HarmonyLib.CodeInstruction(System.Reflection.Emit.OpCodes.Ldfld, rawField),
+    new HarmonyLib.CodeInstruction(System.Reflection.Emit.OpCodes.Stloc_0),
+    new HarmonyLib.CodeInstruction(System.Reflection.Emit.OpCodes.Ldfld, rawField),
+    new HarmonyLib.CodeInstruction(System.Reflection.Emit.OpCodes.Call, addColor)
+};
+var joinOutput = ((IEnumerable<HarmonyLib.CodeInstruction>)Call("AnnouncementReads", joinReads, typeof(ScavPlayer).GetMethod("Start"))).ToArray();
+Check(joinOutput[0].opcode == System.Reflection.Emit.OpCodes.Ldfld, "join preserves identity reads outside announcement formatting");
+Check(joinOutput[2].opcode == System.Reflection.Emit.OpCodes.Call && ((MethodInfo)joinOutput[2].operand).Name == "GuiDisplay", "join announcement uses unified display name");
+foreach (var method in new[] { typeof(ServerMain).GetMethod("UpdateSyncClientsToClients"), typeof(Lang).GetMethod("TryParseIndividualTag") })
+{
+    var output = ((IEnumerable<HarmonyLib.CodeInstruction>)Call("AnnouncementReads", new[] { new HarmonyLib.CodeInstruction(System.Reflection.Emit.OpCodes.Ldfld, rawField) }, method)).Single();
+    Check(output.opcode == System.Reflection.Emit.OpCodes.Call && ((MethodInfo)output.operand).Name == "GuiDisplay", "finish/tag name reads use unified display name");
+}
+MPfixPlugin.CfgFixPlayerNames.Value = false;
+var liveAnnouncementPlayer = new ScavPlayer { playerName = "native" };
+Check((string)Call("GuiDisplay", liveAnnouncementPlayer) == "native", "announcement adapter restores native name when repair is disabled");
 Console.WriteLine($"PASS {checks} unified name/cache/chat checks; Unity/Steam/native callbacks simulated");

@@ -82,6 +82,7 @@ namespace Together
 {
     public class ScavPlayer : UnityEngine.Object
     {
+        public void Start() { }
         public string playerName;
         public ulong SteamId;
         public static ScavPlayer[] AllPlayers { get; set; } = Array.Empty<ScavPlayer>();
@@ -113,6 +114,7 @@ namespace Together
     public class UIInGame { public static void _GUI__DrawPlayerDirection(NetBody nb, float alpha, bool shiftHeld) { } }
     public static class Chat
     {
+        public static string AddColorTags(object color, string name) => name;
         public static Action<object> BeforeCompile, AfterCompile;
         public static void MeasureChatLine(ChatMsgContainer text, float width) { }
         public static void _GUI_DrawChat() { }
@@ -133,3 +135,5 @@ namespace Together
     }
     public static class UIBullshit { public static UnityEngine.Font FocusedChatFont() => CoopModAssets.gamefont; }
 }
+
+namespace Together { public class ServerMain { public void UpdateSyncClientsToClients() { } } public static class Lang { public static bool TryParseIndividualTag(ref string tag) => true; } }

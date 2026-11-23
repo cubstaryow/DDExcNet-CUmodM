@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>DDEN.UnitListMgr</AssemblyName>
+    <RootNamespace>DDEN.UnitListMgr</RootNamespace>
+    <Version>0.1.0-alpha</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\DDEN.Shared\DDEN.Shared.csproj" />
+  </ItemGroup>
+</Project>

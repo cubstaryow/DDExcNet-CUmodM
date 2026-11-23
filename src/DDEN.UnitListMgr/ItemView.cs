@@ -1,0 +1,245 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using DDEN.Shared;
+using UnityEngine;
+
+namespace DDEN.UnitListMgr
+{
+    internal sealed class ItemView
+    {
+        private readonly SpawnService _service;
+        private readonly string[] _slots;
+        private readonly Action _saveSlots;
+        private List<string> _all = new List<string>(), _filtered = new List<string>();
+        private string _search = "", _lastSearch, _selected, _error = "";
+        private string _count = "1", _condition = "100", _rounds = "0", _battery = "";
+        private bool _hasMag, _editBattery, _editLiquids;
+        private ItemDefaults _spec;
+        private Vector2 _listScroll, _detailScroll;
+        private float _detailHeight = 900;
+        private readonly List<(string Id, string Amount)> _liquids = new List<(string, string)>();
+        private string _picker, _pickSearch = "";
+        private int _liquidIndex;
+        private float _nextRefresh;
+        private int _knownCount = -1;
+        private static string T(string zh, string en) => UnitListPlugin.T(zh, en);
+        private static string Number(float value) => value.ToString("0.####", CultureInfo.InvariantCulture);
+        private static bool Float(string value, out float result) => float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out result) && SpawnRules.Finite(result);
+        internal ItemView(SpawnService service, string[] slots, Action saveSlots) { _service = service; _slots = slots; _saveSlots = saveSlots; }
+
+        internal void Draw(Rect area)
+        {
+            if (Time.unscaledTime >= _nextRefresh)
+            {
+                _nextRefresh = Time.unscaledTime + 2;
+                int count = Item.GlobalItems?.Count ?? 0;
+                if (count != _knownCount) Refresh();
+            }
+            float leftWidth = Mathf.Clamp(area.width * 0.4f, 180, 420);
+            var left = new Rect(area.x, area.y, leftWidth, area.height);
+            var right = new Rect(left.xMax + 12, area.y, Mathf.Max(150, area.width - leftWidth - 12), area.height);
+            DrawList(left);
+            DdenUI.Fill(right, DdenUI.Panel);
+            var viewport = new Rect(right.x + 8, right.y + 8, right.width - 16, right.height - 16);
+            _detailScroll = DdenUI.BeginScrollView(viewport, _detailScroll, new Rect(0, 0, viewport.width - 20, _detailHeight));
+            try { DrawDetail(viewport.width - 20); }
+            finally { DdenUI.EndScrollView(); }
+        }
+        private void Refresh()
+        {
+            _all = Catalog.Items(); _knownCount = Item.GlobalItems?.Count ?? 0; _lastSearch = null;
+        }
+        private void DrawList(Rect box)
+        {
+            _search = DdenUI.TextField(new Rect(box.x, box.y, box.width - 66, 26), _search);
+            if (DdenUI.Button(new Rect(box.xMax - 60, box.y, 60, 26), T("刷新", "Refresh"))) Refresh();
+            DdenUI.Label(new Rect(box.x, box.y + 30, box.width, 20), T("搜索中文名 / 物品 ID", "Search name / item ID"), DdenUI.Sub);
+            if (_lastSearch != _search)
+            {
+                _lastSearch = _search;
+                _filtered = _all.Where(id => id.IndexOf(_search, StringComparison.OrdinalIgnoreCase) >= 0 || Catalog.Name(id).IndexOf(_search, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+                _listScroll = Vector2.zero;
+            }
+            var view = new Rect(box.x, box.y + 55, box.width, Mathf.Max(30, box.height - 55));
+            _listScroll = DdenUI.BeginScrollView(view, _listScroll, new Rect(0, 0, view.width - 20, _filtered.Count * 48));
+            try
+            {
+                // Virtual rows: opening the catalog does not resolve every CCL template or icon.
+                int start = Mathf.Max(0, (int)(_listScroll.y / 48));
+                int end = Mathf.Min(_filtered.Count, start + Mathf.CeilToInt(view.height / 48) + 2);
+                for (int i = start; i < end; i++)
+                {
+                    string id = _filtered[i]; var row = new Rect(0, i * 48, view.width - 20, 44);
+                    DdenUI.Fill(row, id == _selected ? DdenUI.PanelAlt : DdenUI.Panel);
+                    DdenUI.DrawItemIcon(new Rect(5, row.y + 5, 34, 34), id);
+                    DdenUI.Label(new Rect(46, row.y + 3, row.width - 50, 21), Catalog.Name(id), DdenUI.Row);
+                    DdenUI.Label(new Rect(46, row.y + 23, row.width - 50, 18), id, DdenUI.Sub);
+                    if (GUI.Button(row, GUIContent.none, GUIStyle.none)) Select(id);
+                }
+            }
+            finally { DdenUI.EndScrollView(); }
+        }
+        private void Select(string id)
+        {
+            _selected = id; _error = ""; _spec = null; _picker = null; _detailScroll = Vector2.zero;
+            try { _spec = Catalog.Inspect(id); Reset(); }
+            catch (Exception ex) { _error = ex.GetBaseException().Message; }
+        }
+        private void Reset()
+        {
+            if (_spec == null) return;
+            _condition = Number(_spec.Condition * 100); _rounds = (_spec.Rounds ?? 0).ToString(CultureInfo.InvariantCulture);
+            _battery = _spec.Battery ?? ""; _hasMag = _spec.HasMagazine; _editBattery = _editLiquids = false;
+            _liquids.Clear();
+            foreach (var liquid in _spec.Liquids) _liquids.Add((liquid.Id, Number(liquid.Amount)));
+            _error = "";
+        }
+        private void DrawDetail(float width)
+        {
+            float y = 0;
+            void Label(string text, GUIStyle style = null, float height = 23)
+            {
+                DdenUI.Label(new Rect(0, y, width, height), text, style ?? DdenUI.Row); y += height + 3;
+            }
+            void InputRow(string label, ref string text)
+            {
+                DdenUI.Label(new Rect(0, y, width * 0.5f, 25), label, DdenUI.Row);
+                text = DdenUI.TextField(new Rect(width * 0.52f, y, width * 0.48f, 25), text); y += 31;
+            }
+            Label(T("物品工具", "Item tools"), DdenUI.Title);
+            if (_selected == null) { Label(T("点击左侧物品查看默认属性。", "Select an item to inspect its defaults.")); return; }
+            if (_spec == null) { Label(_selected); Label(_error, DdenUI.Sub, 60); return; }
+            DdenUI.DrawItemIcon(new Rect(0, y, 54, 54), _selected);
+            DdenUI.Label(new Rect(64, y, width - 64, 28), _spec.Name, DdenUI.Title);
+            DdenUI.Label(new Rect(64, y + 28, width - 64, 22), _selected, DdenUI.Sub); y += 65;
+            Label(T("默认属性", "Default properties"), DdenUI.Title);
+            Label(T("耐久 / 电量：", "Condition / charge: ") + Number(_spec.Condition * 100) + "%", DdenUI.Sub);
+            if (_spec.Rounds.HasValue) Label(T("默认弹药：", "Default rounds: ") + _spec.Rounds + " / " + _spec.MaxRounds, DdenUI.Sub);
+            if (_spec.HasGun) Label(T("默认枪械：无弹夹，枪膛为空", "Default gun: no magazine, empty chamber"), DdenUI.Sub);
+            if (_spec.HasBattery) Label(T("默认电池：", "Default battery: ") + (string.IsNullOrEmpty(_spec.Battery) ? T("无", "None") : Catalog.Name(_spec.Battery)), DdenUI.Sub);
+            if (_spec.Capacity > 0)
+            {
+                Label(T("液体容量：", "Liquid capacity: ") + Number(_spec.Capacity), DdenUI.Sub);
+                Label(T("默认内容物：", "Default contents: ") + (_spec.Liquids.Count == 0 ? T("空", "Empty")
+                    : string.Join(" + ", _spec.Liquids.Select(x => Catalog.LiquidName(x.Id) + " " + Number(x.Amount)))), DdenUI.Sub, 46);
+            }
+            y += 5;
+            if (DdenUI.Button(new Rect(0, y, width, 25), T("恢复默认属性", "Reset properties to defaults"))) Reset(); y += 34;
+            InputRow(T("生成数量（1–20）", "Count (1–20)"), ref _count);
+            if (_spec.Capacity <= 0) InputRow(T(_spec.HasBattery ? "电量（%）" : "耐久（%）", _spec.HasBattery ? "Charge (%)" : "Condition (%)"), ref _condition);
+            if (_spec.Rounds.HasValue) InputRow(T("子弹数", "Rounds"), ref _rounds);
+            if (_spec.HasGun && _spec.UsesMagazine)
+            {
+                _hasMag = DdenUI.CheckBoxLabeled(new Rect(0, y, width, 24), _hasMag, T("安装弹夹", "Install magazine")); y += 30;
+            }
+            if (_spec.HasBattery)
+            {
+                _editBattery = DdenUI.CheckBoxLabeled(new Rect(0, y, width, 24), _editBattery, T("自定义电池种类", "Override battery type")); y += 30;
+                if (_editBattery)
+                {
+                    if (DdenUI.Button(new Rect(0, y, width, 25), string.IsNullOrEmpty(_battery) ? T("无电池", "No battery") : Catalog.Name(_battery)))
+                    { _picker = "battery"; _pickSearch = ""; }
+                    y += 31;
+                }
+            }
+            if (_spec.Capacity > 0)
+            {
+                _editLiquids = DdenUI.CheckBoxLabeled(new Rect(0, y, width, 24), _editLiquids, T("编辑液体混合物", "Edit liquid mixture")); y += 30;
+                if (_editLiquids)
+                {
+                    for (int i = 0; i < _liquids.Count; i++)
+                    {
+                        var entry = _liquids[i];
+                        if (DdenUI.Button(new Rect(0, y, width * 0.55f, 25), Catalog.LiquidName(entry.Id))) { _picker = "liquid"; _liquidIndex = i; _pickSearch = ""; }
+                        string value = DdenUI.TextField(new Rect(width * 0.57f, y, width * 0.32f - 5, 25), entry.Amount);
+                        _liquids[i] = (entry.Id, value);
+                        if (DdenUI.Button(new Rect(width * 0.89f, y, width * 0.11f, 25), "×")) { _liquids.RemoveAt(i); _picker = null; i--; }
+                        y += 31;
+                    }
+                    if (_liquids.Count < SpawnRules.MaxLiquids && DdenUI.Button(new Rect(0, y, width, 25), T("添加液体", "Add liquid")))
+                    {
+                        string id = Catalog.LiquidIds().FirstOrDefault();
+                        if (id != null) _liquids.Add((id, "1"));
+                    }
+                    y += 31;
+                    Label(T("留空即为空容器；总量不得超过容量。", "Empty list means empty container; total must fit capacity."), DdenUI.Sub, 38);
+                }
+            }
+            if (_picker != null) DrawPicker(width, ref y);
+            y += 6;
+            bool enabled = GUI.enabled;
+            GUI.enabled = enabled && !_service.Busy && SpawnService.LocalBody != null && SpawnService.CanGive(Mp.IsRunning && !Mp.IsServer);
+            try
+            {
+                if (DdenUI.Button(new Rect(0, y, width, 34), T("生成物品 · 本玩家脚下", "Spawn item · at your feet"), true)) Generate();
+            }
+            finally { GUI.enabled = enabled; }
+            y += 41;
+            if (Mp.IsRunning) Label(T("多人：须开启主机作弊；客机另须允许客机作弊。", "MP: host cheats required; guests also need client cheats."), DdenUI.Sub, 42);
+            if (_error.Length > 0) Label(_error, DdenUI.Sub, 42);
+            if (_service.Status.Length > 0) Label(_service.Status, DdenUI.Sub, 65);
+            Label(T("快捷轮盘 · 按住 ", "Quick menu · hold ") + UnitListPlugin.QuickKeyLabel, DdenUI.Title, 27);
+            Label(T("只使用默认属性，在鼠标位置生成；中心 / Esc 取消。", "Default properties only; spawns at cursor. Center / Esc cancels."), DdenUI.Sub, 42);
+            for (int i = 0; i < 8; i++)
+            {
+                string text = (i + 1) + "  " + (string.IsNullOrWhiteSpace(_slots[i]) ? T("空槽 · 点击分配当前物品", "Empty · assign selected item") : Catalog.Name(_slots[i]));
+                if (DdenUI.Button(new Rect(0, y, width - 33, 25), text)) { _slots[i] = _selected; _saveSlots(); }
+                if (DdenUI.Button(new Rect(width - 28, y, 28, 25), "×")) { _slots[i] = ""; _saveSlots(); }
+                y += 31;
+            }
+            Label(T("玩家状态编辑：接口预留", "Player-state editing: reserved interface"), DdenUI.Sub);
+            _detailHeight = y + 10;
+        }
+        private void DrawPicker(float width, ref float y)
+        {
+            _pickSearch = DdenUI.TextField(new Rect(0, y, width - 60, 25), _pickSearch);
+            if (DdenUI.Button(new Rect(width - 55, y, 55, 25), T("关闭", "Close"))) _picker = null;
+            y += 31;
+            if (_picker == null) return;
+            var ids = _picker == "battery" ? Catalog.Batteries().Where(id => ((BatteryInfo)Item.GlobalItems[id]).maxCharge <= _spec.BatteryLimit).Prepend("") : Catalog.LiquidIds();
+            // Bounded selection page, with a filter for long CCL registries.
+            foreach (var id in ids.Where(id => id.IndexOf(_pickSearch, StringComparison.OrdinalIgnoreCase) >= 0
+                || (_picker == "battery" ? Catalog.Name(id) : Catalog.LiquidName(id)).IndexOf(_pickSearch, StringComparison.OrdinalIgnoreCase) >= 0).Take(24))
+            {
+                string title = id.Length == 0 ? T("无电池", "No battery") : (_picker == "battery" ? Catalog.Name(id) : Catalog.LiquidName(id)) + " · " + id;
+                if (DdenUI.Button(new Rect(0, y, width, 24), title))
+                {
+                    if (_picker == "battery") _battery = id;
+                    else if (_liquidIndex >= 0 && _liquidIndex < _liquids.Count) _liquids[_liquidIndex] = (id, _liquids[_liquidIndex].Amount);
+                    _picker = null; y += 29; break;
+                }
+                y += 29;
+            }
+        }
+        private void Generate()
+        {
+            _error = "";
+            var request = new SpawnRequest { RequestId = Guid.NewGuid().ToString("N"), ItemId = _selected };
+            if (!int.TryParse(_count, NumberStyles.Integer, CultureInfo.InvariantCulture, out request.Count)) { _error = T("数量需要整数。", "Count must be an integer."); return; }
+            if (_spec.Capacity <= 0)
+            {
+                if (!Float(_condition, out float percent)) { _error = T("耐久 / 电量无效。", "Invalid condition / charge."); return; }
+                if (Math.Abs(percent - _spec.Condition * 100) > 0.0001f) request.Condition = percent / 100;
+            }
+            if (_spec.Rounds.HasValue)
+            {
+                if (!int.TryParse(_rounds, out int rounds)) { _error = T("子弹数需要整数。", "Rounds must be an integer."); return; }
+                if (rounds != _spec.Rounds) request.Rounds = rounds;
+            }
+            if (_spec.HasGun && _spec.UsesMagazine && _hasMag != _spec.HasMagazine) request.HasMagazine = _hasMag;
+            if (_editBattery) request.Battery = _battery;
+            if (_editLiquids)
+            {
+                request.Liquids = new List<LiquidAmount>();
+                foreach (var entry in _liquids)
+                {
+                    if (!Float(entry.Amount, out float amount)) { _error = T("液体数量无效。", "Invalid liquid amount."); return; }
+                    request.Liquids.Add(new LiquidAmount { Id = entry.Id, Amount = amount });
+                }
+            }
+            _service.Submit(request);
+        }
+    }
+}

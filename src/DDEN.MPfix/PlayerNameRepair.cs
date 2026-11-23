@@ -101,6 +101,19 @@ namespace DDEN.MPfix
                         }
                     }
                 }
+                // Announcement text is serialized independently of chat sender labels.
+                // Resolve names where native MP formats them; never refresh a player/marker or rewrite identity.
+                foreach (var spec in new[] {
+                    ("Together.ScavPlayer", "Start"),
+                    ("Together.ScavPlayer", "OnDestroy"),
+                    ("Together.ScavPlayer", "Server_Kick"),
+                    ("Together.ServerMain", "UpdateSyncClientsToClients"),
+                    ("Together.Lang", "TryParseIndividualTag") })
+                {
+                    var producer = AccessTools.Method(Reflect.Type(spec.Item1), spec.Item2);
+                    if (producer != null) harmony.Patch(producer,
+                        transpiler: new HarmonyMethod(typeof(PlayerNameRepair), nameof(AnnouncementReads)));
+                }
                 Type message = Reflect.Type("Together.Chat+ChatMsgContainer");
                 if (message != null)
                 {
@@ -336,6 +349,28 @@ namespace DDEN.MPfix
                 yield return instruction;
                 if (instruction.opcode == OpCodes.Ldsfld && instruction.operand is FieldInfo field
                     && field.FieldType == typeof(Font) && field.Name == "gamefont") yield return new CodeInstruction(OpCodes.Call, guiFont);
+            }
+        }
+        private static IEnumerable<CodeInstruction> AnnouncementReads(IEnumerable<CodeInstruction> instructions, MethodBase __originalMethod)
+        {
+            var code = new List<CodeInstruction>(instructions);
+            var display = typeof(PlayerNameRepair).GetMethod(nameof(GuiDisplay), BindingFlags.NonPublic | BindingFlags.Static);
+            bool join = __originalMethod.DeclaringType == _player
+                && (__originalMethod.Name == "Start" || __originalMethod.Name == "OnDestroy");
+            for (int i = 0; i < code.Count; i++)
+            {
+                var instruction = code[i];
+                if (instruction.opcode == OpCodes.Ldfld && Equals(instruction.operand, _nativeName))
+                {
+                    // Start also uses the logical name to name the player GameObject. Only the
+                    // name argument immediately passed to Chat.AddColorTags is presentation.
+                    int next = i + 1;
+                    while (next < code.Count && code[next].opcode == OpCodes.Nop) next++;
+                    bool displaySite = !join || next < code.Count && code[next].operand is MethodInfo call
+                        && call.DeclaringType?.FullName == "Together.Chat" && call.Name == "AddColorTags";
+                    if (displaySite) { instruction.opcode = OpCodes.Call; instruction.operand = display; }
+                }
+                yield return instruction;
             }
         }
         private static string Track(string name)
