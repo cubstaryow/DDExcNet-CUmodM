@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using BepInEx;
+using BepInEx.Bootstrap;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
@@ -18,8 +19,9 @@ namespace DsToolExtension
     /// CCL 前置、多人兼容、DDEN L1 软接入（实验性 + 中英双语）。
     /// 中英文本走 CCL 的 zh-CN.json / EN.json（与 DLL 同目录，CCL 自动加载）。
     /// </summary>
-    [BepInPlugin(Guid, "DS Tool Extension", "1.0.1")]
+    [BepInPlugin(Guid, "DS Tool Extension", "1.0.2")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.HardDependency)]
+    [BepInDependency("com.a4kk.enhancedtools", BepInDependency.DependencyFlags.SoftDependency)]
     public class Plugin : BaseUnityPlugin
     {
         public const string Guid = "com.dstool.extension";
@@ -47,10 +49,15 @@ namespace DsToolExtension
             try
             {
                 Enabled = Config.Bind("General", "Enabled", true, "启用 DS 工具扩展。");
-                if (Enabled.Value) RegisterItem();
+                bool hasET = Chainloader.PluginInfos.ContainsKey("com.a4kk.enhancedtools");
+                if (Enabled.Value)
+                {
+                    RegisterItem();
+                    RegisterRecipe(hasET);
+                }
                 new Harmony(Guid).PatchAll(typeof(Plugin));
                 DdenBridge.DdenDocs();
-                Logger.LogInfo("[DS Tool Extension] 已加载：实验性钛合金钻机。");
+                Logger.LogInfo($"[DS Tool Extension] 已加载：实验性钛合金钻机（配方={(hasET ? "ET 版" : "普通版")}）。");
             }
             catch (Exception ex)
             {
@@ -118,6 +125,47 @@ namespace DsToolExtension
             ItemRegistry.Register(ItemId, info, sprite);
         }
 
+        /// <summary>
+        /// 双配方：装 EnhancedTools 用工程化/可改造品质，否则用可捶打/可切割品质。
+        /// 材料与制作等级（INT 17，同增强钛镐）一致。
+        /// </summary>
+        private static void RegisterRecipe(bool hasET)
+        {
+            var recipe = new Recipe
+            {
+                INT = 17,
+                category = (Recipes.RecipeCategory)1,
+                result = new RecipeResult
+                {
+                    id = ItemId,
+                    amount = 1,
+                    isLiquid = false,
+                    resultCondition = 1f
+                },
+                items = new List<RecipeItem>
+                {
+                    new RecipeItem(0f) { specific = true, specificId = "heavydrill" },
+                    new RecipeItem(0f) { specific = true, specificId = "processedcopper" },
+                    new RecipeItem(0.25f) { specific = true, specificId = "mediumbattery" },
+                    new RecipeItem(0.8f) { specific = true, specificId = "circuitboard" },
+                    new RecipeItem(0.8f) { specific = true, specificId = "circuitboard" },
+                    new RecipeItem(0f) { specific = true, specificId = "bundleofwires" },
+                    new RecipeItem(0f) { specific = true, specificId = "bundleofwires" },
+                    new RecipeItem(0f) { specific = true, specificId = "bundleofwires" },
+                    new RecipeItem(0f) { specific = true, specificId = "nails" },
+                    new RecipeItem(0f) { specific = true, specificId = "scrapcube" },
+                    new RecipeItem(50f) { specific = true, specificId = "biochem", isLiquid = true },
+                    hasET
+                        ? new RecipeItem(0f) { quality = new CraftingQuality("engineering", 1f), destroyItem = false }
+                        : new RecipeItem(0f) { quality = new CraftingQuality("hammering", 1f), destroyItem = false },
+                    hasET
+                        ? new RecipeItem(0f) { quality = new CraftingQuality("modification", 4f), destroyItem = false }
+                        : new RecipeItem(0f) { quality = new CraftingQuality("cutting", 1f), destroyItem = false }
+                }
+            };
+            RecipeRegistry.Register(recipe);
+        }
+
         // CCL 的 Locale.LoadLanguage 后缀会先合并 zh-CN.json / EN.json 到 Locale.currentLang；
         // 这里再（priority 低 = 后执行）把物品文本更新为当前语言，切换语言即时生效。
         [HarmonyPatch(typeof(Locale), "LoadLanguage")]
@@ -174,7 +222,7 @@ namespace DsToolExtension
                     "启用后新增实验性钛合金钻机。",
                     "装好后在物品/合成里出现。",
                     "是 · 尚需游戏内验证",
-                    "只注册一个物品，开销可忽略。", false
+                    "只注册一个物品与一个配方，开销可忽略。", false
                 });
         }
 
@@ -194,7 +242,7 @@ namespace DsToolExtension
                 case "启用后新增实验性钛合金钻机。": return "Adds the Experimental Ti-alloy drill when enabled.";
                 case "装好后在物品/合成里出现。": return "Appears in items/crafting once installed.";
                 case "是 · 尚需游戏内验证": return "Yes · needs in-game verification";
-                case "只注册一个物品，开销可忽略。": return "Registers one item; negligible cost.";
+                case "只注册一个物品与一个配方，开销可忽略。": return "Registers one item and one recipe; negligible cost.";
                 default: return zh;
             }
         }
