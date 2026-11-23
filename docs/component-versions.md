@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | DDEN.Shared | 2.0.0 | 公共API代际为v1；`DdenApi.CurrentVersion`及程序集`DDEN.ApiVersion`元数据均为1 |
 | DDExcNet管理器 | 2.0.0 | 内置本次已知模块最新版本目录，支持API v1 |
-| MPfix | 1.7.4 | 声明管理器≥2.0.0、Shared≥2.0.0、API v1 |
+| MPfix | 1.7.5 | 声明管理器≥2.0.0、Shared≥2.0.0、API v1 |
 | 性能跟踪器 | 2.0.0 | 声明管理器≥2.0.0、Shared≥2.0.0、API v1 |
 | 存档编辑器 | 2.0.0-alpha | 声明管理器≥2.0.0、Shared≥2.0.0、API v1 |
 
@@ -36,7 +36,7 @@ public int RequiredSharedApiVersion => 1;
 
 ## 管理器如何显示
 
-管理器自身的`ModuleVersionCatalog`记录当前已知最新版本：mpfix=1.7.4、perf=2.0.0、saveeditor=2.0.0-alpha，Shared记录版本为2.0.0。目录随管理器源码／发布更新，不联网查询，也不会把安装中的未知新版本反过来写成“已知最新”。
+管理器自身的`ModuleVersionCatalog`记录当前已知最新版本：mpfix=1.7.5、perf=2.0.0、saveeditor=2.0.0-alpha，Shared记录版本为2.0.0。目录随管理器源码／发布更新，不联网查询，也不会把安装中的未知新版本反过来写成“已知最新”。
 
 | 结果 | 显示 |
 | --- | --- |

@@ -16,7 +16,7 @@
 
 .NOTES
   · 包版本默认读取管理器项目；每个DLL按自身项目版本验证，-Version不会修改源码。
-  发布包内容 = DDEN 五个组件（公共层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器）+ 许可与说明文件。
+  发布包内容 = DDEN 六个组件（公共层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器 / 单位清单管理器）+ 许可与说明文件。
   · 不会自动 push 分支；分支推送、创建tag及线上Release各自按用户授权处理。
 #>
 [CmdletBinding()]
@@ -63,8 +63,9 @@ try {
         'DDEN.MPfix.dll'            = 'src/DDEN.MPfix/bin/Release/DDEN.MPfix.dll'
         'DDEN.NetPerfTracker.dll'   = 'src/DDEN.NetPerfTracker/bin/Release/DDEN.NetPerfTracker.dll'
         'DDEN.SaveEditor.dll'       = 'src/DDEN.SaveEditor/bin/Release/DDEN.SaveEditor.dll'
+        'DDEN.UnitListMgr.dll'      = 'src/DDEN.UnitListMgr/bin/Release/DDEN.UnitListMgr.dll'
     }
-    # 注意：发布包 = **DDEN 五个组件**（公共层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器）。
+    # 注意：发布包 = **DDEN 六个组件**（公共层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器 / 单位清单管理器）。
     # 独立外部模组「ET-Fix（ET 加热笼修复）」**不随本包发布**，它有自己的仓库与发布节奏；
     # 本脚本不会构建或部署外部模组；JDI-DDEN同样不随包发布。
     foreach ($pair in $releaseBin.GetEnumerator()) {
