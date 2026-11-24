@@ -1,4 +1,4 @@
-# 提交、推送与本地发布 · v1.7.2
+# 提交、推送与本地发布
 
 ## 分支和授权
 
@@ -12,23 +12,23 @@
 dotnet build DDExcNet.slnx -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=false
 ```
 
-`DDExcNet.slnx`只含五个自有发布组件；`CUmod.slnx`还含独立ET-Fix与JDI-DDEN。外部模组保持各自版本，不因DDExcNet版本提升而重发。
+`DDExcNet.slnx`只含六个自有发布组件；`CUmod.slnx`还含独立ET-Fix与JDI-DDEN。外部模组保持各自版本，不因DDExcNet版本提升而重发。
 
-`scripts/build.sh`会部署五个DDEN组件和两个外部模组，不能用于本轮“游戏不动、不部署”的任务。本轮不启动／停止游戏，不改插件、配置、存档或自检标记。检查程序只使用模拟输入和临时样本。
+`scripts/build.sh`会部署五个DDEN组件以及 ET-Fix、JDI-DDEN 和 DS Tool Extension，不能用于本轮“游戏不动、不部署”的任务。本轮不启动／停止游戏，不改插件、配置、存档或自检标记。检查程序只使用模拟输入和临时样本。
 
 ## 本地打包
 
-版本基准为Directory.Build.props的DdenVersion，同时核对四个BepInPlugin字面版本。目前工作树为1.7.2，部分版本及功能移除源码尚未提交，不使用旧包哈希或文件名代替新构建。
+发布版本默认读取 MPfix 项目的 Version。各组件的程序集版本与产品版本按对应项目独立校验。
 
 ```powershell
 pwsh scripts/release.ps1
 ```
 
-默认以DeployOnBuild=false构建五个组件，并生成`dist/DDExcNet-v<版本>.zip`和`dist/RELEASE-v<版本>.md`。包内恰为五个DLL、README、LICENSE、LICENSE-ASSETS与NOTICE；README来自`docs/release/INSTALL.md`，不带损坏的仓库相对链接。不含ET-Fix、JDI-DDEN、第三方依赖、游戏文件、配置、存档或decomp备份。
+默认以DeployOnBuild=false构建六个组件，并生成`dist/DDExcNet-v<版本>.zip`和`dist/RELEASE-v<版本>.md`。包内恰为六个DLL、README、LICENSE、LICENSE-ASSETS与NOTICE；README来自`docs/release/INSTALL.md`，不带损坏的仓库相对链接。不含ET-Fix、JDI-DDEN、第三方依赖、游戏文件、配置、存档或decomp备份。
 
 发布agent显式完成对应修订构建后，可用`-SkipBuild`打包同一批Release产物。脚本核对程序集版本；交付前还须检查插件元数据、ZIP字节和SHA-256。`-Upload`或`-OpenPage`是另外的线上操作，本轮不使用。
 
-最终交付统一放`dist/<版本>/`；现有release.ps1仍将ZIP与说明输出到dist根目录，此差异交发布agent修订／整理，本轮不改脚本。旧Nexus参考资料在`dist/deliverables/`仅作历史，不提交Git、不改写旧包；后续文案需与最终代码一致，不得宣传已移除机制。资料ZIP不是Main File，实际安装包从对应修订最终普通ZIP转换，五个DLL须逐字节一致。
+最终交付统一放`dist/<版本>/`；现有release.ps1仍将ZIP与说明输出到dist根目录，此差异交发布agent修订／整理，本轮不改脚本。旧Nexus参考资料在`dist/deliverables/`仅作历史，不提交Git、不改写旧包；后续文案需与最终代码一致，不得宣传已移除机制。资料ZIP不是Main File，实际安装包从对应修订最终普通ZIP转换，六个DLL须逐字节一致。
 
 提交文档前核对暂存区。若其中含其他agent的源码删除或修改，用显式文档路径的git commit --only提交，保留原源码暂存状态，不混入本次文档提交。文档中明确标识尚未提交的工作树功能；不能把文档push当作相关源码已发布。
 

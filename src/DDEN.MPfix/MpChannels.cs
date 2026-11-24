@@ -20,6 +20,7 @@ namespace DDEN.MPfix
         /// <summary>注册带发送者 clientId 的服务端处理器；成功返回 true。</summary>
         internal static bool TryRegisterSender(string channel, Func<uint, JToken, JToken> handler)
         {
+            if (!Mp.CoreReady) return false;
             try
             {
                 Type bridge = AccessTools.TypeByName("CUCoreLib.Networking.MultiplayerBridge");

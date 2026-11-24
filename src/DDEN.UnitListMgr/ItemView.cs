@@ -264,13 +264,14 @@ namespace DDEN.UnitListMgr
             if (_picker != null) DrawPicker(width, ref y);
             y += 6;
             bool enabled = GUI.enabled;
-            GUI.enabled = enabled && !_service.Busy && SpawnService.LocalBody != null && SpawnService.CanGive(Mp.IsRunning && !Mp.IsServer);
+            GUI.enabled = enabled && _service.CanSubmit && SpawnService.LocalBody != null;
             try
             {
                 if (DdenUI.Button(new Rect(0, y, width, 34), T("生成物品 · 本玩家脚下", "Spawn item · at your feet"), true)) Generate();
             }
             finally { GUI.enabled = enabled; }
             y += 41;
+            if (SpawnService.IsGuest && !_service.GuestChannelReady) Label(T("客机生成所需的 CCL 请求通道尚不可用。", "The CCL request channel required for guest spawning is unavailable."), DdenUI.Sub, 42);
             if (Mp.IsRunning) Label(T("多人：须开启主机作弊；客机另须允许客机作弊。", "MP: host cheats required; guests also need client cheats."), DdenUI.Sub, 42);
 
             Label(T("快捷轮盘 · 按住 ", "Quick menu · hold ") + UnitListPlugin.QuickKeyLabel, DdenUI.Title, 27);

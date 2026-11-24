@@ -1,4 +1,4 @@
-# 文案核对与归纳 · v1.7.2
+# 文案核对与归纳
 
 本次核对README、发布正文、技术说明、工作流程、维护约束、外部接入协议说明；不校对或修改src/外部mod内文档。依据是当前源码及本机上游行为阅读；历史实测只归属于当时版本，不扩展为本次验收。
 
@@ -19,7 +19,7 @@
 | 把物理步／帧当物理压力、等待当GPU根因 | 调度、准确计时、对象状态与观察者开销分开；等待／数量只能提供线索 | `PhysicsTiming/FrameStages/ObjectCensus/PerfAlerts` |
 | Unity 2022.3被当成游戏版本 | 引擎版本与产品版本分开；当前门槛实际只核对Together 5.5.4 | `DdenGate.VersionOk/ExpectedGame` |
 | F11被写成默认值 | 默认F8，冲突后看本机实际配置；F11只是过去测试结果 | 管理器Config.Bind与 `Compat.ResolveHotkey` |
-| “四个／五个／六个”组件数量不一 | DDExcNet包只有五个DLL（含Shared）；仓库另有ET-Fix与JDI-DDEN，二者独立版本且不在包中 | `CUmod.slnx`、发布产物映射 |
+| “四个／五个／六个”组件数量不一 | DDExcNet v1.7.5 包含六个 DLL（含 Shared 和 UnitListMgr）；仓库另有ET-Fix与JDI-DDEN，二者独立版本且不在包中 | `CUmod.slnx`、发布产物映射 |
 | 编辑器默认不部署／不发布与当前脚本矛盾 | 完整构建部署默认含编辑器；`--no-saveeditor`可排除，发布包仍含它 | `scripts/build.sh`、`scripts/release.ps1` |
 | 提示所有DLL必须同目录，独立外部模组也必须装Shared | DDEN组件需要可加载的Shared；ET修复单独可用，不强制引用DDEN | 生产项目引用与L1桥 |
 | 有DdenDraw时“配置”只显示状态页 | 配置路由extconfig，功能路由ext；“配置／单独看”始终到配置项 | `HubPlugin.DrawContent/DrawExternalPage` |
@@ -27,7 +27,7 @@
 | 注册返回值与发送回执混为一谈 | CCL注册方法返回void，Shared现有bool封装不能单独证明是否已注册；本轮仅核正文档，封装语义列为后续检查项 | `Mp.RegisterClientHandler/RegisterServerHandler`与底层签名 |
 | 存档取消cheatedSave被写成保证恢复成就 | 只改保存字段，不承诺游戏平台已授予或被拦截的成就状态 | 编辑器与保存边界 |
 | 根CHANGE与维护说明积累互相矛盾的“本次” | 当前CHANGE短记录；旧对话整份移入history并标为过时 | 文档目录、history，不把旧哈希当新包 |
-| v1.5.0与CageFix旧名仍写成当前 | 当前DDExcNet工作树为v1.7.2，部分源码尚未提交；ET-Fix和JDI-DDEN保持各自版本；旧ET目录链接改为ET-Fix，旧GUID／存档／频道保留兼容 | 项目、BepInPlugin、脚本、独立说明 |
+| v1.5.0与CageFix旧名仍写成当前 | 当前 DDExcNet 发布版本为 v1.7.5；ET-Fix和JDI-DDEN保持各自版本；旧ET目录链接改为ET-Fix，旧GUID／存档／频道保留兼容 | 项目、BepInPlugin、脚本、独立说明 |
 | 双语方案被误认为本版已有功能 | 仅方案，没有语言开关或完整英译的实现承诺 | localization-plan，本次不加UI |
 
 ## 本次追加核对

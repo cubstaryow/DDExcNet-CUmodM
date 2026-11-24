@@ -41,7 +41,21 @@ namespace DDEN.UnitListMgr
         internal bool Enabled = true;
         internal static Body LocalBody => PlayerCamera.main != null ? PlayerCamera.main.body : null;
         private static bool Rule(string name) => Catalog.Read(Reflect.GetStatic("Together.Multiplayer", "rules"), name) is bool flag && flag;
-        internal static bool CanGive(bool remote) => SpawnRules.Allowed(Mp.IsRunning, Rule("sv_cheats"), remote, Rule("AllowClientCheatCommands"));
+        internal static bool CanGive(bool remote)
+        {
+            if (!Mp.IsRunning) return true; // Single-player must not even read Together rules.
+            return SpawnRules.Allowed(true, Rule("sv_cheats"), remote, Rule("AllowClientCheatCommands"));
+        }
+        internal static bool IsGuest => Mp.IsRunning && !Mp.IsServer;
+        internal bool GuestChannelReady => Mp.CoreReady && Registered;
+        internal bool CanSubmit
+        {
+            get
+            {
+                bool guest = IsGuest;
+                return !Busy && (!guest || GuestChannelReady) && CanGive(guest);
+            }
+        }
 
         internal void Tick()
         {
@@ -51,7 +65,7 @@ namespace DDEN.UnitListMgr
                 _completed.Clear(); _next.Clear(); _pending = null;
                 _networkWasRunning = running;
             }
-            if (_handler == null && Time.unscaledTime >= _nextRegister)
+            if (Mp.CoreReady && _handler == null && Time.unscaledTime >= _nextRegister)
             {
                 _nextRegister = Time.unscaledTime + 5;
                 TryRegister();
@@ -65,6 +79,7 @@ namespace DDEN.UnitListMgr
 
         private void TryRegister()
         {
+            if (!Mp.CoreReady) return;
             try
             {
                 var bridge = Reflect.Type("CUCoreLib.Networking.MultiplayerBridge");
@@ -88,7 +103,7 @@ namespace DDEN.UnitListMgr
 
         private JToken Receive(uint sender, JToken payload)
         {
-            if (!Enabled || !Mp.IsRunning || !Mp.IsServer) return Error("Host module unavailable");
+            if (!Enabled || !Mp.CoreReady || !Mp.IsRunning || !Mp.IsServer) return Error("Host module unavailable");
             try
             {
                 if (payload == null || payload.ToString(Newtonsoft.Json.Formatting.None).Length > 8192) return Error("Invalid packet");
@@ -120,7 +135,7 @@ namespace DDEN.UnitListMgr
             }
             if (Mp.IsRunning && !Mp.IsServer)
             {
-                if (!Registered || !Mp.BridgeReady) { Status = UnitListPlugin.T("当前 CCL 联机桥不支持安全的物品请求。", "A sender-aware CCL bridge is required."); return; }
+                if (!GuestChannelReady) { Status = UnitListPlugin.T("当前 CCL 联机桥不支持安全的物品请求。", "A sender-aware CCL bridge is required."); return; }
                 string pending = _pending = request.RequestId; _deadline = Time.unscaledTime + 8;
                 if (!Mp.RequestServer(Channel, request, result =>
                 {
@@ -158,7 +173,7 @@ namespace DDEN.UnitListMgr
             string playerName = remote ? UnitListPlugin.T("客机 #", "Guest #") + sender : UnitListPlugin.T("本机玩家", "Local player");
             try
             {
-                var players = Reflect.GetStatic("Together.ScavPlayer", "BodyToPlayerDict") as System.Collections.IDictionary;
+                var players = (Mp.IsRunning ? Reflect.GetStatic("Together.ScavPlayer", "BodyToPlayerDict") : null) as System.Collections.IDictionary;
                 object player = body != null && players != null && players.Contains(body) ? players[body] : null;
                 var display = Reflect.Type("DDEN.MPfix.PlayerNameRepair")?.GetMethod("Display", BindingFlags.NonPublic | BindingFlags.Static);
                 string name = player != null ? display?.Invoke(null, new[] { player }) as string ?? Catalog.Read(player, "playerName") as string : null;
@@ -183,6 +198,7 @@ namespace DDEN.UnitListMgr
             if (invalid != null) return Error(invalid);
             string key = sender + ":" + r.RequestId;
             if (_completed.TryGet(key, out var previous)) return previous;
+            if (remote && !Mp.CoreReady) return Error("CCL multiplayer bridge is not ready");
             if (!SpawnPolicy.AllowsGuest(remote, UnitListPlugin.AllowGuestSpawn)) return Error("Host disabled guest item spawning");
             if (!CanGive(remote)) return Error("Host cheats / client cheats disabled");
             var world = WorldGeneration.world;

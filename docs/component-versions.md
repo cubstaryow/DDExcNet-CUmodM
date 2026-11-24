@@ -9,6 +9,7 @@
 | MPfix | 1.7.5 | 声明管理器≥2.0.0、Shared≥2.0.0、API v1 |
 | 性能跟踪器 | 2.0.0 | 声明管理器≥2.0.0、Shared≥2.0.0、API v1 |
 | 存档编辑器 | 2.0.0-alpha | 声明管理器≥2.0.0、Shared≥2.0.0、API v1 |
+| UnitListMgr | 0.1.0-alpha | 声明管理器≥2.0.0、Shared≥2.0.0、API v1 |
 
 版本由各组件自己的csproj和插件声明维护。程序集数字版本采用四段数字，例如`2.0.0.0`。当前BepInEx加载器不接受`2.0.0-alpha`作为BepInPlugin版本，其Version会为空；因此编辑器插件加载声明使用`2.0.0`，csproj发行版本、AssemblyInformationalVersion和IDdenModule.Version保留`2.0.0-alpha`。管理器总览及模块页展示含alpha的发行版本，不能仅根据加载器的数字版号称其为正式版。
 
@@ -59,7 +60,7 @@ public int RequiredSharedApiVersion => 1;
 
 发布某个模块时更新自身项目版本及加载器版本，并按实际校对结果更新两组要求和API代际。发布管理器时更新自身项目／插件版本、ModuleVersionCatalog.ManagerRelease、支持API和内置记录表，离线检查校验记录与当前交付组件一致。Shared的产品版本更新不要求所有模块一起升号；API不兼容变化应另行调整API代际。
 
-`scripts/release.ps1`包版本默认取管理器项目，各DLL按自身项目的数字程序集版本及产品发行元数据校验，不再要求五个DLL同号；也会区分Alpha与同数字号正式版。本次仅适配脚本代码，未运行打包、上传或部署。
+`scripts/release.ps1`包版本默认取 MPfix 项目，各DLL按自身项目的数字程序集版本及产品发行元数据校验，不再要求六个DLL同号；也会区分Alpha与同数字号正式版。
 
 离线检查覆盖产品版本、API、两个最低要求分别不足、缺省免检、Alpha／数字比较、缓存及实际编译元数据。提示的游戏内布局及真实联机仍需另行验收。显示接口和旧外部模组兼容约定见[管理器显示规范](manager-ui-contract.md)。
 

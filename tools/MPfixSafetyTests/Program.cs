@@ -94,6 +94,20 @@ internal static class Program
         var ready = new FeatureDependencies(entries, _ => true);
         Check(entries.All(ready.Available), "all controls available when required mods exist");
         Check(!craft.Local.Value, "installing dependency does not silently re-enable a saved-off switch");
+        bool mpReady = false, bridgeReady = false;
+        var dynamic = new FeatureDependencies(entries, _ => true, () => mpReady, () => bridgeReady);
+        craft.Local.Value = names.Local.Value = true;
+        craft.Available = () => dynamic.Available(craft.Entry);
+        names.Available = () => dynamic.Available(names.Entry);
+        dynamic.EnforceAll();
+        Check(!craft.Value && !names.Value && craft.Local.Value && names.Local.Value, "uninitialized MP masks values without destroying saved preferences");
+        Check(dynamic.Reason(names.Entry) == "Together 未就绪", "installed but disabled MP has the explicit availability reason");
+        mpReady = true;
+        Check(names.Value && !craft.Value && dynamic.Reason(craft.Entry) == "CCL MP 未就绪", "bridge not ready only blocks CCL-dependent features");
+        bridgeReady = true;
+        Check(names.Value && craft.Value && dynamic.Available(opt), "late initialization restores availability dynamically");
+        mpReady = false;
+        Check(!craft.Value && !names.Value, "losing MP readiness disables effective values even without a manager");
     }
     private static IEnumerable<TypeDefinition> Types(IEnumerable<TypeDefinition> types)
     {

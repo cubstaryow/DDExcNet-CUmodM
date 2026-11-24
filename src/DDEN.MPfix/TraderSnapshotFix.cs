@@ -77,7 +77,7 @@ namespace DDEN.MPfix
             {
                 try
                 {
-                    if (!MPfixPlugin.Active || !MPfixPlugin.CfgTraderSnapshot.Value || !Mp.IsRunning || !Mp.IsServer)
+                    if (!MPfixPlugin.Active || !Mp.CoreReady || !MPfixPlugin.CfgTraderSnapshot.Value || !Mp.IsRunning || !Mp.IsServer)
                         return new JObject { ["ok"] = false };
                     if (MpChannels.BodyForClient(sender) == null) return new JObject { ["ok"] = false };
                     float now = Time.unscaledTime;

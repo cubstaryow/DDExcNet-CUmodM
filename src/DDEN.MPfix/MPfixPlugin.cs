@@ -83,7 +83,7 @@ namespace DDEN.MPfix
         private bool _forcePushNextTick;
         private int _appliedCount;
         private string _lastReason = "-";
-        private bool _repairRunning;
+        private bool _coreSessionRunning;
 
         private KeyCode _standaloneKey = KeyCode.F10;
         private bool _standaloneVisible;
@@ -95,26 +95,26 @@ namespace DDEN.MPfix
 
         /// <summary>模块真正可以动手吗：总开关打开 **且** 环境版本已核对/被用户显式忽略。</summary>
         internal static bool Active =>
-            CfgMasterEnabled != null && CfgMasterEnabled.Value && !DdenGate.Blocked;
+            CfgMasterEnabled != null && CfgMasterEnabled.Value && Mp.TogetherReady && !DdenGate.Blocked;
 
         /// <summary>管理器据此把本模块的配置项整体置灰（版本闸门拦住 / 总开关关掉时）。</summary>
         public bool ModuleEnabled => Active;
 
         /// <summary>主开关行：模块被闸门关掉时它仍然可点（否则再也打不开）。</summary>
         public string MasterKey => "总开关/启用本模块（MasterEnabled）";
-        public string ConfigNotice => !string.IsNullOrEmpty(_authority?.Notice) ? L(_authority.Notice)
+        public string ConfigNotice => !Mp.TogetherReady ? L("Together 未就绪") : !string.IsNullOrEmpty(_authority?.Notice) ? L(_authority.Notice)
             : _dependencies?.BlockedCount > 0 ? L("部分功能缺少前置，已停用") : "";
         public bool CanEditConfig(ConfigEntryBase entry, bool normallyInteractive)
-            => (_dependencies?.Available(entry) ?? true) && (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgUseHostAuthority)
+            => (Mp.TogetherReady || entry.Definition.Section == "界面" || entry.Definition.Section == "调试") && (_dependencies?.Available(entry) ?? true) && (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgUseHostAuthority)
                 || (normallyInteractive && !(_authority?.Locked ?? false)));
-        public object ConfigDisplayValue(ConfigEntryBase entry) => entry.SettingType == typeof(bool) && !(_dependencies?.Available(entry) ?? true)
+        public object ConfigDisplayValue(ConfigEntryBase entry) => entry.SettingType == typeof(bool) && ((!Mp.TogetherReady && entry.Definition.Section != "界面" && entry.Definition.Section != "调试") || !(_dependencies?.Available(entry) ?? true))
             ? false : _configOverlay?.Display(entry) ?? entry.BoxedValue;
-        public string ConfigUnavailableReason(ConfigEntryBase entry) => _dependencies?.Reason(entry);
+        public string ConfigUnavailableReason(ConfigEntryBase entry) => !Mp.TogetherReady && entry.Definition.Section != "界面" && entry.Definition.Section != "调试" ? L("Together 未就绪") : L(_dependencies?.Reason(entry));
 
         private void InitializeAuthority()
         {
             _configOverlay = new AuthorityOverlay(AuthoritySettings.All, ApplyEffectiveSettingChange);
-            if (!Compat.PluginLoaded("net.cucorelib") || !Compat.PluginLoaded("CasualtiesMP")) return;
+            if (!Mp.CoreReady) return;
             _authority = new HostConfigSync(_configOverlay, () => CfgUseHostAuthority.Value, AuthorityConnection.Read,
                 () => Time.realtimeSinceStartup, token => Mp.Broadcast(HostConfigSync.NoticeChannel, token, false),
                 (token, response) => Mp.RequestServer(HostConfigSync.RequestChannel, token, response),
@@ -173,6 +173,7 @@ namespace DDEN.MPfix
         {
             get
             {
+                if (!Mp.TogetherReady) return DdenHealth.Warn;
                 if (DdenGate.Blocked) return DdenHealth.Severe;
                 if (_patchErrors.Count > 0) return DdenHealth.Warn;
                 return DdenHealth.Ok;
@@ -183,6 +184,7 @@ namespace DDEN.MPfix
         {
             get
             {
+                if (!Mp.TogetherReady) return L("Together 未就绪");
                 if (DdenGate.Blocked) return "版本核对未通过";
                 if (_patchErrors.Count > 0)
                 {
@@ -352,12 +354,12 @@ namespace DDEN.MPfix
         public int RequiredSharedApiVersion => DdenApi.Version;
         public string Version => Info.Metadata.Version.ToString();
         public bool IsRunning => Active && Ready && Mp.IsRunning;
-        public bool Ready => Mp.CoreAvailable;
+        public bool Ready => Mp.TogetherReady;
         public string Summary
         {
             get
             {
-                if (!Mp.CoreAvailable) return L("缺少联机组件");
+                if (!Mp.TogetherReady) return L("Together 未就绪");
                 if (!Mp.IsRunning) return L("未联机");
                 return Mp.IsServer ? L("主机 · 同步中") : L("客机 · 跟随中");
             }
@@ -414,7 +416,7 @@ namespace DDEN.MPfix
 
             Log = DDEN.Shared.Log.For(LogSource, "MPfix", CfgVerbose.Value);
             RegisterDocs();
-            _dependencies = new FeatureDependencies(Config.Entries(), Compat.PluginLoaded);
+            _dependencies = new FeatureDependencies(Config.Entries(), Compat.PluginLoaded, () => Mp.TogetherReady, () => Mp.CoreReady);
             foreach (var setting in AuthoritySettings.All)
             {
                 var captured = setting;
@@ -449,36 +451,10 @@ namespace DDEN.MPfix
             try { Config.SettingChanged += (sender, args) => OnSettingChanged(args.ChangedSetting); }
             catch (Exception ex) { Logger.LogWarning("订阅配置变更失败（改配置后需重启才生效）：" + ex.Message); }
 
-            Harmony harmony = new Harmony(Guid);
-            bool hasMp = Compat.PluginLoaded("CasualtiesMP"), hasCore = Compat.PluginLoaded("net.cucorelib");
-            if (hasMp)
-            {
-                TryPatch(harmony, typeof(WorldGeneration_SetUnchipped_Patch), "无芯片变更广播");
-                TryPatch(harmony, typeof(Utils_Create_ModItemPatch), "联机合成/物品生成兜底");
-                if (hasCore && !CraftSpawnScope.Install(harmony)) NotePatchError("联机合成/物品生成兜底", "合成入口不可用");
-                if (hasCore && !ModItemTemplateRepair.Install(harmony)) NotePatchError("联机合成/物品生成兜底", "模板重建入口不可用");
-                if (!PlayerNameRepair.Install(harmony)) NotePatchError("玩家名称", "名称显示入口不可用");
-                TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropItem_GuardPatch), "物品掉落物理保险（丢出）");
-                TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropWearable_GuardPatch), "物品掉落物理保险（卸下）");
-                TryPatch(harmony, typeof(TraderSnapshotFix.ToggleTradeMenu_Postfix), "打开商人时索要商品表");
-
-                // Install when prerequisites exist; runtime settings still take effect immediately.
-                if (hasCore) TraderUIQuietFix.Install(harmony);
-                BlockDamageRelax.Install(harmony);
-                BuildingDamageRelax.Install(harmony);
-                UnitDamageRepair.Install(harmony);
-                MigrateOldWatchdog();
-                if (hasCore)
-                {
-                    RegisterChannels();
-                    TraderSnapshotFix.RegisterHost();
-                }
-                DoublePurchase.Install(harmony);
-            }
+            InstallRuntimeSupport();
             _warmupUntil = Time.realtimeSinceStartup + 6f;      // 巡检耗时统计跳过冷启动
             DdenHub.Register(this);
             _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
-            InitializeAuthority();
 
             Log.Info("已加载：无芯片同步 + 联机物品/合成 + 物品物理 + 伤害重算 + 商人快照 + 名称显示 + 娱乐开关。");
             LogMpCompatReport();
@@ -556,7 +532,7 @@ namespace DDEN.MPfix
         /// <summary>按当前配置 + 联机状态算出一行的状态。</summary>
         private FixState StateOf(bool switchOn, bool needsMp = true, string patch = null)
         {
-            if (!Compat.PluginLoaded("CasualtiesMP") || DdenGate.Blocked || (CfgMasterEnabled != null && !CfgMasterEnabled.Value)) return FixState.Off;
+            if (!Mp.TogetherReady || DdenGate.Blocked || (CfgMasterEnabled != null && !CfgMasterEnabled.Value)) return FixState.Off;
             if (!switchOn) return FixState.Off;
             if (patch != null && _patchErrors.ContainsKey(patch)) return FixState.Error;
             if (needsMp && !Mp.IsRunning) return FixState.Watching;
@@ -602,15 +578,16 @@ namespace DDEN.MPfix
             float y = area.y;
 
             // 环境版本 / 总开关状态条（2026-11 用户口径：版本对不上就在这里说清楚）
-            var gate = new Rect(area.x, y, area.width, DdenGate.Blocked ? 42f : 24f);
-            DdenUI.Fill(gate, DdenGate.Blocked ? new Color(0.45f, 0.05f, 0.05f, 0.9f)
+            bool unavailable = !Mp.TogetherReady;
+            var gate = new Rect(area.x, y, area.width, !unavailable && DdenGate.Blocked ? 42f : 24f);
+            DdenUI.Fill(gate, unavailable || DdenGate.Blocked ? new Color(0.45f, 0.05f, 0.05f, 0.9f)
                                                : new Color(0.10f, 0.18f, 0.10f, 0.7f));
-            DdenUI.Frame(gate, DdenGate.Blocked ? DdenUI.Bad : DdenUI.Good);
+            DdenUI.Frame(gate, unavailable || DdenGate.Blocked ? DdenUI.Bad : DdenUI.Good);
             DdenUI.Label(new Rect(gate.x + 8f, gate.y + 3f, gate.width - 16f, 18f),
-                DdenGate.Blocked ? "<b>" + L(DdenGate.NoticeText) + "</b>"
+                unavailable ? L("Together 未就绪") : DdenGate.Blocked ? "<b>" + L(DdenGate.NoticeText) + "</b>"
                                  : L("本模块已启用 · ") + GateText,
                 DdenUI.Row);
-            if (DdenGate.Blocked)
+            if (Mp.TogetherReady && DdenGate.Blocked)
             {
                 DdenUI.Label(new Rect(gate.x + 8f, gate.y + 22f, gate.width - 16f, 18f),
                     GateReason + L(" 到「总览 → 忽略核对环境版本」打开后生效。"), DdenUI.Sub);
@@ -674,7 +651,7 @@ namespace DDEN.MPfix
         private void DrawUnchippedStatus(Rect card)
         {
             bool running = Mp.IsRunning, server = running && Mp.IsServer, inWorld = Game.InWorld;
-            bool ready = Mp.CoreAvailable;
+            bool ready = Mp.CoreReady;
             float left = card.x + 12f, width = card.width - 24f, half = (width - 12f) * 0.5f;
 
             DdenUI.Fill(card, DdenUI.Panel);
@@ -708,7 +685,7 @@ namespace DDEN.MPfix
             bool enabled = GUI.enabled;
             try
             {
-                bool canSync = enabled && Active && running;
+                bool canSync = enabled && Active && Mp.CoreReady && running;
                 GUI.enabled = canSync;
                 if (DdenUI.Button(apply, L("同步到本机"), canSync)) ForceApply();
                 if (DdenUI.Button(request, L("刷新主机状态"))) RequestNow();
@@ -748,7 +725,7 @@ namespace DDEN.MPfix
 
         public void ForceApply()
         {
-            if (!Active) return;
+            if (!Active || !Mp.CoreReady || !Mp.IsRunning) return;
             if (!_hasHostValue)
             {
                 RequestNow();
@@ -761,7 +738,7 @@ namespace DDEN.MPfix
 
         public void RequestNow()
         {
-            if (!Active) return;
+            if (!Active || !Mp.CoreReady || !Mp.IsRunning) return;
             Mp.RequestServer(UnchippedProtocol.RequestChannel, new JObject { ["ask"] = "unchipped" }, token =>
             {
                 if (token == null) return;
@@ -773,8 +750,7 @@ namespace DDEN.MPfix
 
         public void ToggleHostState()
         {
-            if (!Active) return;
-            if (!Mp.IsRunning || !Mp.IsServer) return;
+            if (!Active || !Mp.CoreReady || !Mp.IsRunning || !Mp.IsServer) return;
             WorldGeneration world = WorldGeneration.world;
             if (world == null) return;
             bool next = !world.unchippedMode;
@@ -786,11 +762,7 @@ namespace DDEN.MPfix
 
         private void RegisterChannels()
         {
-            if (!Mp.CoreAvailable)
-            {
-                Log.Warn("未检测到 CUCoreLib 联机桥，同步功能要等 CUCoreLib 就绪后由 watchdog 自行启用。");
-                return;
-            }
+            if (!Mp.CoreReady) return;
 
             Mp.RegisterSyncModule(UnchippedProtocol.ModuleKey, CaptureState, ApplyState);
             Mp.RegisterClientHandler(UnchippedProtocol.PushChannel, token =>
@@ -818,7 +790,7 @@ namespace DDEN.MPfix
 
         private JObject CaptureState()
         {
-            if (!Active || !CfgChipEnabled.Value || !Mp.IsServer) return null;
+            if (!Active || !CfgChipEnabled.Value || !Mp.CoreReady || !Mp.IsRunning || !Mp.IsServer) return null;
             bool value = Mp.HostUnchipped();
             OnHostValueSeen(value);
             return new JObject
@@ -845,7 +817,7 @@ namespace DDEN.MPfix
 
         private void OnHostState(bool value, string source, bool manual = false)
         {
-            if (!Active) return;
+            if (!Active || !Mp.CoreReady || !Mp.IsRunning) return;
             // 手动按钮（面板上的「立即按主机同步 / 再问一次主机」）不受「无芯片同步/启用」开关限制
             if (!CfgChipEnabled.Value && !manual) return;
 
@@ -859,7 +831,7 @@ namespace DDEN.MPfix
 
         private void ApplyLocal(bool value, string reason)
         {
-            if (!Active) return;
+            if (!Active || !Mp.CoreReady || !Mp.IsRunning) return;
             if (CfgOverrideIndividualRule.Value) Mp.UnchippedIsIndividual = false;
 
             WorldGeneration world = WorldGeneration.world;
@@ -1018,14 +990,49 @@ namespace DDEN.MPfix
             }
         }
 
+        private bool _runtimeInstalled, _coreSupportInstalled;
+        private void InstallRuntimeSupport()
+        {
+            if (!Mp.TogetherReady) return;
+            if (!_runtimeInstalled)
+            {
+                Harmony harmony = new Harmony(Guid);
+                if (!PlayerNameRepair.Install(harmony)) NotePatchError("玩家名称", "名称显示入口不可用");
+                TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropItem_GuardPatch), "物品掉落物理保险（丢出）");
+                TryPatch(harmony, typeof(ItemPhysicsGuard.Body_DropWearable_GuardPatch), "物品掉落物理保险（卸下）");
+
+                BlockDamageRelax.Install(harmony);
+                BuildingDamageRelax.Install(harmony);
+                UnitDamageRepair.Install(harmony);
+                MigrateOldWatchdog();
+                DoublePurchase.Install(harmony);
+                _runtimeInstalled = true;
+            }
+            if (Mp.CoreReady && !_coreSupportInstalled)
+            {
+                Harmony harmony = new Harmony(Guid);
+                TryPatch(harmony, typeof(WorldGeneration_SetUnchipped_Patch), "无芯片变更广播");
+                TryPatch(harmony, typeof(Utils_Create_ModItemPatch), "联机合成/物品生成兜底");
+                if (!CraftSpawnScope.Install(harmony)) NotePatchError("联机合成/物品生成兜底", "合成入口不可用");
+                if (!ModItemTemplateRepair.Install(harmony)) NotePatchError("联机合成/物品生成兜底", "模板重建入口不可用");
+                TryPatch(harmony, typeof(TraderSnapshotFix.ToggleTradeMenu_Postfix), "打开商人时索要商品表");
+                TraderUIQuietFix.Install(harmony);
+                RegisterChannels();
+                TraderSnapshotFix.RegisterHost();
+                InitializeAuthority();
+                _coreSupportInstalled = true;
+            }
+        }
+
         private void Update()
         {
             try
             {
+                InstallRuntimeSupport();
                 _authority?.Tick(); // Must run even when the repair master switch or a repair branch is disabled.
                 PlayerNameRepair.UpdateLifecycle(); // Cleanup only; native MP callbacks drive name display.
                 // 闸门联动（用户口径 2026-11）：版本对不上 → 自动把总开关关掉；核对通过/被忽略 → 自动恢复。
-                if (CfgMasterEnabled != null)
+                if (Mp.TogetherReady && CfgMasterEnabled != null)
                 {
                     if (DdenGate.Blocked && CfgMasterEnabled.Value && !_autoDisabledByGate)
                     {
@@ -1062,10 +1069,10 @@ namespace DDEN.MPfix
 
                 // 周期处理：这里只量"本模块每帧吃了多少"，
                 // 每 60 秒汇总一条日志 —— 让"巡检是不是卡顿源"有数据，而不是靠感觉。
-                bool repairRunning = Mp.IsRunning;
-                if (_repairRunning != repairRunning)
+                bool coreSessionRunning = Mp.CoreReady && Mp.IsRunning;
+                if (_coreSessionRunning != coreSessionRunning)
                 {
-                    _repairRunning = repairRunning;
+                    _coreSessionRunning = coreSessionRunning;
                     TraderSnapshotFix.Reset();
                     _hasHostValue = false;
                     _wasClient = _requested = false;
@@ -1077,12 +1084,10 @@ namespace DDEN.MPfix
 
                 ReportTickCost((t2 - t0) * 1000f);
 
-                if (!Active || !CfgChipEnabled.Value) return;
-                if (!Mp.CoreAvailable) return;
+                if (!coreSessionRunning || !Active || !CfgChipEnabled.Value) return;
 
-                bool running = Mp.IsRunning;
-                if (running && Mp.IsServer) { TickHost(); return; }
-                if (running && Mp.IsClient) { TickClient(); return; }
+                if (Mp.IsServer) { TickHost(); return; }
+                if (Mp.IsClient) { TickClient(); return; }
 
                 _wasClient = false;
                 _requested = false;

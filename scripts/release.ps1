@@ -108,6 +108,51 @@ try {
     Write-Host "== 产物: dist/DDExcNet-$Tag.zip（$size KB）" -ForegroundColor Green
     Write-Host "   SHA256: $hash"
 
+    # ===== 4b. Nexus 包：目录结构固定为 BepInEx/plugins/DDEN/*.dll（直接解压到游戏根目录即可） =====
+    $nexusStage = Join-Path $dist "nexus-stage-$Tag"
+    if (Test-Path -LiteralPath $nexusStage) { Remove-Item -LiteralPath $nexusStage -Recurse -Force }
+    $nexusDden = Join-Path $nexusStage 'BepInEx/plugins/DDEN'
+    New-Item -ItemType Directory -Force -Path $nexusDden | Out-Null
+    foreach ($pair in $releaseBin.GetEnumerator()) {
+        Copy-Item $pair.Value (Join-Path $nexusDden $pair.Key) -Force
+    }
+    $nexusZip = Join-Path $dist "DDExcNet-$Tag-Nexus.zip"
+    if (Test-Path $nexusZip) { Remove-Item $nexusZip -Force }
+    Compress-Archive -Path (Join-Path $nexusStage '*') -DestinationPath $nexusZip -CompressionLevel Optimal
+    $nexusSize = [math]::Round((Get-Item $nexusZip).Length / 1KB, 1)
+    $nexusHash = (Get-FileHash $nexusZip -Algorithm SHA256).Hash.ToLower()
+    Remove-Item -LiteralPath $nexusStage -Recurse -Force
+    Write-Host "== 产物: dist/DDExcNet-$Tag-Nexus.zip（$nexusSize KB，BepInEx/plugins/DDEN/*.dll）" -ForegroundColor Green
+    Write-Host "   SHA256: $nexusHash"
+
+    # ===== 4c. 外部模组：顺手编译并放到 dist/other/<版本号>/*.dll =====
+    $externalMods = @(
+        @{ Name = 'ET-Fix';            Project = 'src/外部mod/ET-Fix/ET-Fix.csproj';                         Dll = 'ET-Fix.dll' },
+        @{ Name = 'JDI-DDEN';          Project = 'src/外部mod/JDI-DDEN/JDI-DDEN.csproj';                     Dll = 'JDI-DDEN.dll' },
+        @{ Name = 'DS Tool Extension'; Project = 'src/外部mod/DS Tool Extension/DS Tool Extension.csproj';   Dll = 'DS Tool Extension.dll' }
+    )
+    $otherRoot = Join-Path $dist 'other'
+    $otherLines = @()
+    foreach ($mod in $externalMods) {
+        $projectPath = Join-Path $Root $mod.Project
+        if (-not (Test-Path -LiteralPath $projectPath)) { Write-Host "   （跳过外部模组 $($mod.Name)：项目不存在）" -ForegroundColor Yellow; continue }
+        dotnet build $projectPath -c Release -v quiet -m:1 -nodeReuse:false -p:NuGetAudit=false | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-Host "   （外部模组 $($mod.Name) 构建失败，已跳过）" -ForegroundColor Yellow; continue }
+        $modVersion = Read-ProjectVersion $mod.Project
+        $builtDll = Join-Path (Split-Path -Parent $projectPath) "bin/Release/$($mod.Dll)"
+        if (-not (Test-Path -LiteralPath $builtDll)) { Write-Host "   （外部模组 $($mod.Name) 缺产物，已跳过）" -ForegroundColor Yellow; continue }
+        $targetDir = Join-Path $otherRoot $modVersion
+        New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+        Copy-Item -LiteralPath $builtDll -Destination (Join-Path $targetDir $mod.Dll) -Force
+        $dllHash = (Get-FileHash (Join-Path $targetDir $mod.Dll) -Algorithm SHA256).Hash.ToLower()
+        $otherLines += "$($mod.Name) $modVersion -> other/$modVersion/$($mod.Dll)  SHA256 $dllHash"
+        Write-Host "   other/$modVersion/$($mod.Dll)（$($mod.Name) $modVersion）" -ForegroundColor DarkGray
+    }
+    if ($otherLines.Count -gt 0) {
+        Set-Content -LiteralPath (Join-Path $otherRoot 'MANIFEST.txt') -Value ($otherLines -join "`r`n") -Encoding UTF8
+        Write-Host "== 外部模组: dist/other/<版本号>/（清单 other/MANIFEST.txt）" -ForegroundColor Green
+    }
+
     # ===== 5. 发布说明 =====
     $branch = (git rev-parse --abbrev-ref HEAD).Trim()
     $lastTag = (git tag --sort=-v:refname | Select-Object -First 1)

@@ -9,7 +9,7 @@ namespace DDEN.UnitListMgr
 {
     [BepInPlugin(Guid, "DDEN Unit List Manager", "0.1.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
-    public sealed class UnitListPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleVersion, IDdenModuleActivity, IDdenConfigPolicy, IDdenConfigPresentation
+    public sealed class UnitListPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleVersion, IDdenModuleActivity, IDdenConfigPolicy, IDdenConfigPresentation, IDdenConfigAvailability
     {
         public const string Guid = "com.dden.unitlistmgr";
         internal static LogChannel Log;
@@ -41,9 +41,17 @@ namespace DDEN.UnitListMgr
         public string TestedSharedVersion => "2.0.0";
         public int RequiredSharedApiVersion => DdenApi.Version;
         public IEnumerable<ConfigEntryBase> ConfigEntries => Config.Entries();
-        public bool CanEditConfig(ConfigEntryBase entry, bool normallyInteractive) => normallyInteractive;
+        public bool CanEditConfig(ConfigEntryBase entry, bool normallyInteractive) => normallyInteractive && ConfigUnavailableReason(entry) == null;
         public object ConfigDisplayValue(ConfigEntryBase entry) => entry.BoxedValue;
-        public string ConfigNotice => "";
+        public string ConfigNotice => !Mp.TogetherReady ? T("Together 未就绪 · 物品工具以单机模式运行，成就选项仍生效。", "Together is not ready. Item tools use single-player mode; achievement policy remains active.")
+            : Mp.IsRunning && !Mp.IsServer && !Mp.CoreReady ? T("CCL MP 未就绪 · 客机生成不可用。", "CCL multiplayer bridge is not ready; guest spawning is unavailable.") : "";
+        public string ConfigUnavailableReason(ConfigEntryBase entry)
+        {
+            if (!ReferenceEquals(entry, _allowGuests)) return null;
+            if (!Mp.TogetherReady) return T("Together 未就绪", "Together is not ready");
+            if (!Mp.CoreReady) return T("CCL MP 未就绪", "CCL multiplayer bridge is not ready");
+            return Mp.IsRunning && !Mp.IsServer ? T("此项由主机决定。", "The host controls this setting.") : null;
+        }
         public string Localize(string original, string language) => original;
         public DdenConfigMetadata Metadata(ConfigEntryBase entry)
         {

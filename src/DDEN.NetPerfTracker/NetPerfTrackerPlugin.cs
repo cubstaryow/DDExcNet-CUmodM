@@ -289,7 +289,7 @@ namespace DDEN.NetPerfTracker
         }
         private void LightSample(float now)
         {
-            int players = DictionaryCount("Together.ScavPlayer", "ClientIdToPlayerDict");
+            int players = Mp.TogetherReady ? DictionaryCount("Together.ScavPlayer", "ClientIdToPlayerDict") : -1;
             if (_lastPlayers >= 0 && players >= 0 && players != _lastPlayers)
             { _event |= 1; _nextObjects = now; _eventUntil = now + 10f; }
             _lastPlayers = players;
@@ -324,7 +324,7 @@ namespace DDEN.NetPerfTracker
                 ReferenceFps = _referenceFps.Value, WarningFps = CfgSlowFps.Value, SpikeRatio = _spikeRatio.Value, SpikeMinMs = _spikeMs.Value, SpikeCount = _spikeCount.Value, SpikeCooldown = _spikeCooldown.Value,
                 Detailed = _detailed.Value, Collision = _inspectCollision.Value,
                 Focused = Application.isFocused,
-                Sync = DictionaryCount("Together.NetObjectRegistry", "SyncRegistry"), Event = _event,
+                Sync = Mp.TogetherReady ? DictionaryCount("Together.NetObjectRegistry", "SyncRegistry") : -1, Event = _event,
                 Objects = _items.Result, Scene = _scene.Result, Stages = _stages.Snapshot()
             };
             _alerts.Sample(sample, _startedAt, CfgSlowFps.Value);

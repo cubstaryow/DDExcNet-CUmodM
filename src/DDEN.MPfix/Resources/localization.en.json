@@ -176,5 +176,7 @@
   "未知": "Unknown",
   "未安装联机组件": "MP component missing",
   "DDEN未校对此环境版本兼容性，需要打开面板处理！": "DDEN has not verified this environment. Open the panel to review compatibility.",
-  "当前游戏 {0} · 联机组件 {1}；本版是针对联机组件 {2} 做的修复。": "Game {0} · MP {1}; these fixes were checked against MP {2}."
+  "当前游戏 {0} · 联机组件 {1}；本版是针对联机组件 {2} 做的修复。": "Game {0} · MP {1}; these fixes were checked against MP {2}.",
+  "Together 未就绪": "Together is not ready",
+  "CCL MP 未就绪": "CCL multiplayer bridge is not ready"
 }

@@ -1,4 +1,4 @@
-# cubstaryow 协作者维护说明 · v1.7.2
+# cubstaryow 协作者维护说明
 
 本文件属于cubstaryow协作者使用的agent维护说明。公共协作入口见 [根目录agent.md](../agent.md)，其他协作者使用自己的说明，不将本文件自动视为所有人的个人工作约定。文中未作链接的源码路径以仓库根目录为基准。
 
@@ -39,11 +39,11 @@ cubstaryow 名下有两位 agent 在同一个仓库工作，分工如下（同�
 
 ## 工作边界
 
-- DDEN组件独立版本：Shared 2.0.0（API v1）、管理器2.0.0、MPfix 1.7.4、性能跟踪器2.0.0、存档编辑器2.0.0-alpha；各csproj独立维护，不再统一升号，见[版本契约](../docs/component-versions.md)。DDExcNet发布包仅五个DDEN产物（含Shared）；ET-Fix／JDI-DDEN独立版本，不随包发布，不把Unity引擎版本当游戏版本。
+- DDEN组件独立版本：Shared 2.0.0（API v1）、管理器2.0.0、MPfix 1.7.5、性能跟踪器2.0.0、存档编辑器2.0.0-alpha、UnitListMgr 0.1.0-alpha；各csproj独立维护，不再统一升号，见[版本契约](../docs/component-versions.md)。DDExcNet发布包仅六个DDEN产物（含Shared）；ET-Fix／JDI-DDEN独立版本，不随包发布，不把Unity引擎版本当游戏版本。
 - Git操作以用户授权及仓库工作流程为准；在 `dev`提交经过检查的相关文件，获准后普通推送 `origin/dev`。不force push、不改remote、不替用户合并master、打tag或创建Release。不要把一次任务的授权推广到无关任务。
 - 写入L盘需依照工具权限申请执行；不要把工具权限失败误判为仓库bare或擅自修改git配置。保护用户已有改动，不用reset/clean丢弃内容，不用无差别add把无关文件带入提交。
 - 不提交 `bin/obj/dist/artifacts/decomp/backup`或商业游戏／第三方依赖。反编译仅阅读结论，不复制他人实现。
-- **发布包只含 DDEN 五个组件**（公共层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器）；独立外部模组「ET-Fix（ET 加热笼修复）」不随包发布，本机部署仍会带上它供联调，但不进 dist。
+- **发布包只含 DDEN 六个组件**（公共层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器 / 物品工具）；独立外部模组「ET-Fix（ET 加热笼修复）」不随包发布，本机部署仍会带上它供联调，但不进 dist。
 - **外部模组冻结（2026-11-22 用户定）**：`src/外部mod/` 下的 ET-Fix、JDI-DDEN 版本号、代码、文档一律不主动变更；只有用户当次明确点名某个外部模组时才动，且不动另一个。DDEN 及其子模块的版本号自身独立维护。
 - **不跑 UITEST（2026-11-22 用户定）**：不默认启动游戏做 UITEST / SELFTEST 冒烟；只做编译与离线检查，用户明确要求验证界面时才启动，跑完确认 `BepInEx/config/cumod.uitest` 已删除。
 - 不停止用户游戏。部署前确认已退出；只处理列明的自有文件，不创建插件备份，不碰其他模组，不通配删除plugins目录。不在未授权时改真实存档／配置。
