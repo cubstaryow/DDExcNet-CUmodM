@@ -246,7 +246,7 @@ foreach (DdenReleaseStatus state in Enum.GetValues<DdenReleaseStatus>()) Check(M
 using (var mp = AssemblyDefinition.ReadAssembly(Path.Combine(root, "src/DDEN.MPfix/bin/Release/DDEN.MPfix.dll")))
     Check(mp.Name.Version == new Version(1,7,5,0), "MPfix independent assembly version");
 using (var perf = AssemblyDefinition.ReadAssembly(Path.Combine(root, "src/DDEN.NetPerfTracker/bin/Release/DDEN.NetPerfTracker.dll")))
-    Check(perf.Name.Version == new Version(2,0,0,0), "tracker independent assembly version");
+    Check(perf.Name.Version == new Version(2,1,0,0), "tracker independent assembly version");
 using (var editor = AssemblyDefinition.ReadAssembly(Path.Combine(root, "src/DDEN.SaveEditor/bin/Release/DDEN.SaveEditor.dll")))
 {
     Check(editor.Name.Version == new Version(2,0,0,0), "editor numeric assembly version");

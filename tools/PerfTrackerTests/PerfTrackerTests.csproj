@@ -6,6 +6,7 @@
     <NoWarn>$(NoWarn);CS0649</NoWarn>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="Mono.Cecil"><HintPath>$(BepInExCoreDir)/Mono.Cecil.dll</HintPath><Private>true</Private></Reference>
     <Reference Update="BepInEx;Newtonsoft.Json;UnityEngine;UnityEngine.CoreModule"><Private>true</Private></Reference>
     <Compile Include="../../src/DDEN.Shared/DdenLocalization.cs" Link="DdenLocalization.cs" />
     <Compile Include="../../src/DDEN.NetPerfTracker/ModuleText.cs" Link="ModuleText.cs" />
@@ -13,5 +14,7 @@
     <Compile Include="../../src/DDEN.NetPerfTracker/PerfData.cs" Link="PerfData.cs" />
     <Compile Include="../../src/DDEN.NetPerfTracker/PerfAlerts.cs" Link="PerfAlerts.cs" />
     <Compile Include="../../src/DDEN.NetPerfTracker/PerfLog.cs" Link="PerfLog.cs" />
+    <Compile Include="../../src/DDEN.NetPerfTracker/TogetherEvidence.cs" Link="TogetherEvidence.cs" />
+    <Compile Include="../../src/DDEN.NetPerfTracker/ProbeReport.cs" Link="ProbeReport.cs" />
   </ItemGroup>
 </Project>

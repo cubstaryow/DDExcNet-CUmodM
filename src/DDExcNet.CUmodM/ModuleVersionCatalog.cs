@@ -11,7 +11,7 @@ namespace DDExcNet.CUmodM
         internal const int SupportedApi = 1;
         private static readonly Dictionary<string, string> Recorded = new Dictionary<string, string>(System.StringComparer.Ordinal)
         {
-            ["mpfix"] = "1.7.5", ["perf"] = "2.0.0", ["saveeditor"] = "2.0.0-alpha"
+            ["mpfix"] = "1.7.5", ["perf"] = "2.1.0", ["saveeditor"] = "2.0.0-alpha"
         };
         internal static string Latest(string id) => id != null && Recorded.TryGetValue(id, out var version) ? version : null;
         private static readonly Dictionary<IDdenModule, DdenVersionResult> Results = new Dictionary<IDdenModule, DdenVersionResult>();

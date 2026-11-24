@@ -40,7 +40,7 @@ docs/history/                     明确过时的历史记录
 dotnet build DDExcNet.slnx -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=false
 ```
 
-`DeployOnBuild`默认false；单纯构建不应写游戏目录。中文路径项目与嵌套检查项目已纳入解决方案／相对引用。DDEN组件均在各自csproj维护独立版本，不再使用DdenVersion统一属性：Shared 2.0.0（API v1）、管理器2.0.0、MPfix 1.7.5、性能跟踪器2.0.0、存档编辑器2.0.0-alpha、UnitListMgr 0.1.0-alpha。Alpha的加载器声明使用数字版2.0.0，发行元数据及模块显示保留alpha；外部模组版本不变。产品版本、两个适配最低要求和API代际见[版本契约](component-versions.md)。
+`DeployOnBuild`默认false；单纯构建不应写游戏目录。中文路径项目与嵌套检查项目已纳入解决方案／相对引用。DDEN组件均在各自csproj维护独立版本，不再使用DdenVersion统一属性：Shared 2.0.0（API v1）、管理器2.0.0、MPfix 1.7.5、性能跟踪器2.1.0、存档编辑器2.0.0-alpha、UnitListMgr 0.1.0-alpha。Alpha的加载器声明使用数字版2.0.0，发行元数据及模块显示保留alpha；外部模组版本不变。产品版本、两个适配最低要求和API代际见[版本契约](component-versions.md)。
 
 ## 部署与改名迁移
 

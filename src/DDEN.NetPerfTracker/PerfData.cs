@@ -77,6 +77,8 @@ namespace DDEN.NetPerfTracker
         internal ObjectCounts Objects;
         internal SceneCounts Scene;
         internal StageTimings Stages;
+        internal bool FluctuationAlerts;
+        internal TogetherSnapshot Probe;
     }
     internal struct TimingValue
     {

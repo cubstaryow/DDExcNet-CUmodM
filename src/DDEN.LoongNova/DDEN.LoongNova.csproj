@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>DDEN.LoongNova</AssemblyName>
+    <RootNamespace>DDEN.LoongNova</RootNamespace>
+    <Version>0.1.0-alpha</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../DDEN.Shared/DDEN.Shared.csproj" />
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>$(ManagedDir)/UnityEngine.AudioModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <EmbeddedResource Include="Content.json" />
+    <EmbeddedResource Include="images/*.png" />
+  </ItemGroup>
+</Project>

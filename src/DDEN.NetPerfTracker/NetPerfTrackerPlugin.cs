@@ -16,7 +16,7 @@ using UnityEngine;
 namespace DDEN.NetPerfTracker
 {
     /// <summary>Read-only, zero patches. Wall-frame timing, optional exact 2D marker and budgeted object censuses.</summary>
-    [BepInPlugin(Guid, "DDEN NetPerfTracker", "2.0.0")]
+    [BepInPlugin(Guid, "DDEN NetPerfTracker", "2.1.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     public class NetPerfTrackerPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleVersion, IDdenModuleActivity, IDdenModuleGate
     {
@@ -28,7 +28,7 @@ namespace DDEN.NetPerfTracker
         internal static ConfigEntry<bool> CfgEnabled, CfgWriteLog, CfgVerbose;
         internal static ConfigEntry<float> CfgSampleSeconds, CfgHeavySeconds, CfgSlowFps, CfgWindowSeconds, CfgAutoStopMinutes;
         internal static ConfigEntry<int> CfgMaxSamples;
-        private ConfigEntry<bool> _detailed, _inspectCollision, _stageTiming;
+        private ConfigEntry<bool> _detailed, _inspectCollision, _stageTiming, _fluctuationAlerts, _togetherProbe;
         private ConfigEntry<float> _budgetMs, _referenceFps, _spikeRatio, _spikeMs, _spikeCooldown;
         private ConfigEntry<int> _spikeCount;
         private readonly SampleRing<PerfSample> _buf = new SampleRing<PerfSample>(2400);
@@ -37,6 +37,7 @@ namespace DDEN.NetPerfTracker
         private readonly PhysicsTiming _physics = new PhysicsTiming();
         private readonly FrameStages _stages = new FrameStages();
         private readonly PerfAlerts _alerts = new PerfAlerts();
+        private readonly TogetherProbe _probe = new TogetherProbe();
         private readonly PerfChart[] _charts = new PerfChart[4];
         private readonly Dictionary<string, FieldInfo> _dictionaryFields = new Dictionary<string, FieldInfo>();
         private readonly float[][] _series = new float[12][];
@@ -53,8 +54,8 @@ namespace DDEN.NetPerfTracker
         private bool _stageTestActive, _showEvents;
         private int _lastAlertRevision;
         private Vector2 _alertScroll;
-        private readonly string[] _eventRows = new string[160];
-        private readonly float[] _eventHeights = new float[160];
+        private readonly string[] _eventRows = new string[192];
+        private readonly float[] _eventHeights = new float[192];
         private float _eventContentHeight;
         private int _eventViewCount;
         private byte _event;
@@ -121,6 +122,8 @@ namespace DDEN.NetPerfTracker
                 _inspectCollision = Config.Bind("详细统计", "物品碰撞检查", false, "检查清醒自由物品是否有实体碰撞；分帧进行，默认关闭。");
                 _budgetMs = Config.Bind("采样", "每帧清点预算毫秒", 0.4f, new ConfigDescription("分帧清点达到预算后暂停；单次引擎调用无法中途打断。", new AcceptableValueRange<float>(0.1f, 2f)));
                 _stageTiming = Config.Bind("诊断", "CPU与GPU阶段计时", false, "按需读取主线程、渲染线程、GPU与等待计时；有额外采样成本，默认关闭。缺失不会填零。");
+                _fluctuationAlerts = Config.Bind("诊断", "波动告警", false, "是否记录自动波动告警；默认关闭，不影响正常曲线或Together探针。已有历史保留。");
+                _togetherProbe = Config.Bind("诊断", "Together探针", false, "只读记录Together/LES报错、同步状态、主线程CPU和可用Job/GC计时。限量保留堆栈，手动导出，默认关闭。");
                 _referenceFps = Config.Bind("诊断", "参考帧率", 60f, new ConfigDescription("用于计算可疑开销参考预算，不改变游戏限帧。", new AcceptableValueRange<float>(5, 240)));
                 _spikeRatio = Config.Bind("诊断", "突变倍数", 2f, new ConfigDescription("同时超过倍数和最小变化量才记录突变。", new AcceptableValueRange<float>(1.25f, 10)));
                 _spikeMs = Config.Bind("诊断", "耗时突变最小毫秒", 8f, new ConfigDescription("耗时相对平滑基线的最小增量；自身CPU使用不高于2ms的增量。", new AcceptableValueRange<float>(1, 100)));
@@ -165,9 +168,15 @@ namespace DDEN.NetPerfTracker
                 "避免把等待或低帧直接归因于物理。",
                 "只连接准确的引擎计时器；结果可能延迟数帧，缺失明确显示。",
                 isExperimental: false, performanceImpact: DdenPerformanceImpact.Medium, performanceNote: "有额外成本，默认关闭；不提供具体函数调用栈");
+            DdenDocs.AddStructured("诊断", "波动告警", "自动记录数值波动，可独立关闭。", "普通波动记录过多时关闭。",
+                "默认关闭；关闭后保留历史，曲线与联机探针继续按各自设置工作。", false,
+                DdenPerformanceImpact.Low, performanceNote: "只影响自动事件，不改变游戏参数");
+            DdenDocs.AddStructured("诊断", "Together探针", "记录联机报错和同步状态。", "排查客机加入后掉帧、错误重复及同步停止推进。",
+                "仅观察现有日志和状态；堆栈限量保留，内部字段或计时器不支持时显示不可用。", true,
+                DdenPerformanceImpact.Medium, performanceNote: "默认关闭；不发包、不打补丁、不自动写盘");
         }
         private void ConfigureAlerts()
-        { _alerts.Ratio = _spikeRatio.Value; _alerts.MinMs = _spikeMs.Value; _alerts.CountDelta = _spikeCount.Value; _alerts.Cooldown = _spikeCooldown.Value; }
+        { _alerts.Enabled = _fluctuationAlerts.Value; _alerts.Ratio = _spikeRatio.Value; _alerts.MinMs = _spikeMs.Value; _alerts.CountDelta = _spikeCount.Value; _alerts.Cooldown = _spikeCooldown.Value; }
         private void Start()
         {
             try
@@ -192,6 +201,7 @@ namespace DDEN.NetPerfTracker
                 ConfigureAlerts(); _alerts.ResetBaselines();
                 if (!Recording || !_stageTiming.Value) _stages.Dispose();
                 else if (_pageOpened) _stages.Start();
+                SyncProbe(Time.realtimeSinceStartup);
                 _nextText = 0;
             }
             catch (Exception ex) { Log.Exception(ex, "修改采样设置"); }
@@ -202,6 +212,13 @@ namespace DDEN.NetPerfTracker
             _windowSeconds = _worstMs = _physicsSum = _physicsPeak = _selfSum = _selfPeak = _expectedHzSum = 0;
             _gc0 = GC.CollectionCount(0); _gc1 = GC.CollectionCount(1); _gc2 = GC.CollectionCount(2);
             _stages.ResetWindow();
+            _probe.ResetWindow();
+        }
+        private void SyncProbe(float now)
+        {
+            if (Recording && _togetherProbe.Value)
+            { _probe.Start(now - _startedAt); _physics.Start(); }
+            else { _probe.Stop(); if (!_pageOpened || !Recording) _physics.Dispose(); }
         }
         private void FixedUpdate()
         {
@@ -220,12 +237,13 @@ namespace DDEN.NetPerfTracker
                     _wasRecording = recording; ResetWindow(now); _nextLight = now + CfgSampleSeconds.Value;
                     if (recording) { _event |= 32; _lastCpu = -1; Cpu(now); }
                     _alerts.ResetBaselines();
+                    SyncProbe(now);
                     if (!recording) { _items.Cancel(); _scene.Cancel(); _physics.Dispose(); _stages.Dispose(); }
                     else if (_pageOpened) { _physics.Start(); if (_stageTiming.Value) _stages.Start(); }
                 }
                 float self = _selfThisFrame; _selfThisFrame = 0;
                 if (!recording) return;
-                if (CfgAutoStopMinutes.Value > 0 && now - _startedAt >= CfgAutoStopMinutes.Value * 60f) { _stopped = true; return; }
+                if (CfgAutoStopMinutes.Value > 0 && now - _startedAt >= CfgAutoStopMinutes.Value * 60f) { _stopped = true; _probe.Stop(); return; }
                 float elapsed = Math.Max(0, now - _lastNow); _lastNow = now;
                 if (elapsed > 0)
                 {
@@ -236,6 +254,7 @@ namespace DDEN.NetPerfTracker
                     float physics = _physics.ReadMs();
                     if (physics >= 0) { _physicsSum += physics; _physicsPeak = Math.Max(_physicsPeak, physics); _physicsFrames++; }
                     _stages.ReadFrame(Application.isFocused);
+                    _probe.Frame(now - _startedAt, elapsed * 1000);
                     _alerts.Frame(now - _startedAt, elapsed * 1000, self, _stages.Started ? _stages.Current : null, physics);
                 }
                 if (_pageOpened) PumpCensuses(now);
@@ -294,16 +313,17 @@ namespace DDEN.NetPerfTracker
             { _event |= 1; _nextObjects = now; _eventUntil = now + 10f; }
             _lastPlayers = players;
             bool running = Mp.IsRunning;
-            if (running != _lastRunning) { _lastRunning = running; _event |= 8; _items.Reset(); _scene.Reset(); _alerts.ResetBaselines(); }
+            if (running != _lastRunning) { _lastRunning = running; _event |= 8; _items.Reset(); _scene.Reset(); _alerts.ResetBaselines(); _probe.ResetContext(); }
             var world = WorldGeneration.world;
             int id = world != null ? world.GetInstanceID() : 0, depth = world != null ? world.biomeDepth : int.MinValue;
             if (id != _worldId || depth != _depth)
             {
                 _worldId = id; _depth = depth; _event |= 2; _items.Reset(); _scene.Reset();
                 _nextObjects = _nextScene = now;
-                _physics.Dispose(); if (_pageOpened) _physics.Start();
+                _physics.Dispose(); if (_pageOpened || _probe.Active) _physics.Start();
                 _stages.Dispose(); if (_pageOpened && (_stageTiming.Value || _stageTestActive)) _stages.Start();
                 _alerts.ResetBaselines();
+                _probe.ResetContext();
             }
             if (_frames / _windowSeconds < CfgSlowFps.Value) _event |= 4;
             var sample = new PerfSample
@@ -325,7 +345,8 @@ namespace DDEN.NetPerfTracker
                 Detailed = _detailed.Value, Collision = _inspectCollision.Value,
                 Focused = Application.isFocused,
                 Sync = Mp.TogetherReady ? DictionaryCount("Together.NetObjectRegistry", "SyncRegistry") : -1, Event = _event,
-                Objects = _items.Result, Scene = _scene.Result, Stages = _stages.Snapshot()
+                Objects = _items.Result, Scene = _scene.Result, Stages = _stages.Snapshot(),
+                FluctuationAlerts = _fluctuationAlerts.Value, Probe = _probe.Capture(now - _startedAt)
             };
             _alerts.Sample(sample, _startedAt, CfgSlowFps.Value);
             if (_lastAlertRevision != _alerts.Revision) { sample.Event |= 128; _lastAlertRevision = _alerts.Revision; }
@@ -367,6 +388,12 @@ namespace DDEN.NetPerfTracker
                 GUI.Label(new Rect(area.x + 4, y + 4, area.width - 8, _indicatorHeight), _indicators, DdenUI.Wrap); y += _indicatorHeight + 12;
                 if (_showEvents)
                 {
+                    float halfControl = (area.width - 8) / 2;
+                    if (DdenUI.Button(new Rect(area.x, y, halfControl, 24), _fluctuationAlerts.Value ? L("波动告警：开") : L("波动告警：关"), _fluctuationAlerts.Value))
+                        _fluctuationAlerts.Value = !_fluctuationAlerts.Value;
+                    if (DdenUI.Button(new Rect(area.x + halfControl + 8, y, halfControl, 24), _togetherProbe.Value ? L("Together探针：开") : L("Together探针：关"), _togetherProbe.Value))
+                        _togetherProbe.Value = !_togetherProbe.Value;
+                    y += 29;
                     float listHeight = Math.Max(70, area.yMax - y - 92);
                     _alertScroll = DdenUI.BeginScrollView(new Rect(area.x, y, area.width, listHeight), _alertScroll, new Rect(0, 0, area.width - 20, _eventContentHeight));
                     try
@@ -418,7 +445,7 @@ namespace DDEN.NetPerfTracker
             _top = LF($"记录于{s.T:0.0}s（距今{Math.Max(0, now - _startedAt - s.T):0.0}s）· {s.Fps:0} fps · 平均{s.MeanMs:0.0}ms / 最长{s.WorstMs:0.0}ms · 2D {Milliseconds(s.PhysicsMs)} · 自身{s.SelfMs:0.00}ms / 峰{s.SelfPeakMs:0.00}ms");
             var o = s.Objects; var scene = s.Scene;
             _indicators = PerfIndicators.Report(s, _referenceFps.Value, CfgSlowFps.Value);
-            _recent = _alerts.Recent(2);
+            _recent = _fluctuationAlerts.Value ? _alerts.Recent(2) : L("波动告警已关闭；普通曲线仍在记录。");
 
             string objectText = o.Valid ? LF($"物品 {o.Total}（启用 {o.Active}）· 自由动态 {o.Simulated}（清醒 {o.Awake} / 休眠 {o.Sleeping}）· 向下运动 {o.Downward} · 无实体碰撞 {(o.CollisionChecked ? o.NoSolid.ToString() : L("未检查"))}") : L("物品清点：等待完成");
             string age = o.Valid ? LF($"物品数据距今 {Math.Max(0, now - o.Ended):0.0}s，清点跨度 {o.Ended - o.Started:0.00}s") : L("物品状态尚无完整记录");
@@ -432,25 +459,41 @@ namespace DDEN.NetPerfTracker
         private void RefreshEventRows(float width)
         {
             _eventContentHeight = 0;
-            _eventViewCount = _alerts.Events.Count;
-            for (int i = 0; i < _eventViewCount; i++)
+            _eventViewCount = 0;
+            if (!_probe.Active && _buf.Count > 0 && _buf[_buf.Count - 1].Probe.Enabled)
+                AddEventRow(L("Together探针当前未采集；下方保留此前的观察结果。"), width);
+            AddEventRow(_buf.Count > 0 ? ProbeReport.Format(_buf[_buf.Count - 1])
+                : L("Together探针已关闭；开启后记录报错样本、同步状态与线程CPU，不改变联机行为。"), width);
+            var messages = _probe.Messages();
+            int recentStart = Math.Max(0, messages.Length - 8);
+            for (int i = 0; i < messages.Length; i++)
+                if (messages[i].Error) { if (i < recentStart) AddEventRow(ProbeReport.Message(messages[i]), width); break; }
+            for (int i = messages.Length - 1; i >= recentStart; i--)
+                AddEventRow(ProbeReport.Message(messages[i]), width);
+            AddEventRow(_fluctuationAlerts.Value ? L("波动告警记录") : L("波动告警已关闭；普通曲线仍在记录。"), width);
+            for (int i = 0; i < _alerts.Events.Count; i++)
             {
-                _eventRows[i] = PerfAlerts.Format(_alerts.Events[_alerts.Events.Count - 1 - i]);
-                _measureText.text = _eventRows[i]; _eventHeights[i] = DdenUI.Wrap.CalcHeight(_measureText, width);
-                _eventContentHeight += _eventHeights[i] + 9;
+                AddEventRow(PerfAlerts.Format(_alerts.Events[_alerts.Events.Count - 1 - i]), width);
             }
+        }
+        private void AddEventRow(string text, float width)
+        {
+            if (_eventViewCount >= _eventRows.Length) return;
+            int i = _eventViewCount++; _eventRows[i] = text;
+            _measureText.text = text; _eventHeights[i] = DdenUI.Wrap.CalcHeight(_measureText, width);
+            _eventContentHeight += _eventHeights[i] + 9;
         }
         private void DrawButtons(Rect area, ref float y)
         {
             _stageButton = _stageTiming.Value ? L("阶段计时：开") : L("阶段计时：关");
-            _eventsButton = _showEvents ? L("返回曲线") : L("突变记录：") + _alerts.Events.Count;
+            _eventsButton = _showEvents ? L("返回曲线") : L("告警与联机反馈");
             if (DdenUI.Button(new Rect(area.x, y, 65, 23), _stopped ? L("清空重启") : _paused ? L("继续") : L("暂停"), true))
             {
-                if (_stopped) { _buf.Clear(); _alerts.Clear(); _version++; _startedAt = Time.realtimeSinceStartup; _nextObjects = _nextScene = _startedAt; _items.Reset(); _scene.Reset(); _stopped = _paused = false; }
+                if (_stopped) { _probe.Stop(); _probe.Clear(); _buf.Clear(); _alerts.Clear(); _version++; _startedAt = Time.realtimeSinceStartup; _nextObjects = _nextScene = _startedAt; _items.Reset(); _scene.Reset(); _stopped = _paused = false; }
                 else _paused = !_paused;
                 _nextText = 0;
             }
-            if (DdenUI.Button(new Rect(area.x + 70, y, 65, 23), L("清空"))) { _buf.Clear(); _alerts.Clear(); _version++; _nextText = 0; _summary = L("等待采样"); }
+            if (DdenUI.Button(new Rect(area.x + 70, y, 65, 23), L("清空"))) { _buf.Clear(); _alerts.Clear(); _probe.Clear(); _version++; _nextText = 0; _summary = L("等待采样"); }
             if (DdenUI.Button(new Rect(area.x + 140, y, 100, 23), L("标记并清点"))) { _event |= 16; _nextObjects = _nextScene = Time.realtimeSinceStartup; }
             if (DdenUI.Button(new Rect(area.x + 245, y, 110, 23), _detailed.Value ? L("详细统计：开") : L("详细统计：关"))) _detailed.Value = !_detailed.Value;
             if (DdenUI.Button(new Rect(area.x + 360, y, 90, 23), L("导出日志"))) ExportLog();
@@ -514,6 +557,7 @@ namespace DDEN.NetPerfTracker
             b.Append(" spikeRatio=").Append(s.SpikeRatio.ToString("0.###", c)).Append(" spikeMinMs=").Append(s.SpikeMinMs.ToString("0.###", c)).Append(" spikeCount=").Append(s.SpikeCount).Append(" spikeMergeSeconds=").Append(s.SpikeCooldown.ToString("0.###", c));
             b.Append(" detailed=").Append(s.Detailed ? 1 : 0).Append(" collisionCheck=").Append(s.Collision ? 1 : 0);
             b.Append(" focused=").Append(s.Focused ? 1 : 0);
+            b.Append(" fluctuationAlerts=").Append(s.FluctuationAlerts ? 1 : 0).Append(s.Probe.Describe());
             var o = s.Objects;
             b.Append(" objectsValid=").Append(o.Valid ? 1 : 0).Append(" objectsStart=").Append((o.Started).ToString("0.000", c)).Append(" objectsEnd=").Append(o.Ended.ToString("0.000", c));
             b.Append(" items=").Append(o.Valid ? o.Total : -1).Append(" activeItems=").Append(o.Valid ? o.Active : -1).Append(" free=").Append(o.Valid ? o.Free : -1);
@@ -544,13 +588,14 @@ namespace DDEN.NetPerfTracker
                 _file = Path.Combine(dir, "perf-" + DateTime.UtcNow.ToString("yyyyMMddTHHmmssfffZ") + ".log");
                 using (var writer = new StreamWriter(_file, false, new UTF8Encoding(false), 65536))
                 {
-                    writer.WriteLine("# DDEN perf schema=3 exportedUtc=" + DateTime.UtcNow.ToString("O") + " engineTimeAtStart=" + _startedAt.ToString("0.000", CultureInfo.InvariantCulture));
+                    writer.WriteLine("# DDEN perf schema=4 exportedUtc=" + DateTime.UtcNow.ToString("O") + " engineTimeAtStart=" + _startedAt.ToString("0.000", CultureInfo.InvariantCulture));
                     writer.WriteLine("# version=" + Version + " physicsSource=" + _physics.Source + "; -1=unavailable, never zero-filled; timing unit=ms per rendered frame; steps are scheduling only");
                     writer.WriteLine("# object/scene timestamps use engine realtime seconds; counts are interval censuses, not simultaneous snapshots; all settings and costs belong to the recorded point");
                     writer.WriteLine("# free=no parent; freeDynamic=active,simulated,dynamic; awake excludes sleeping; downward=awake free velocityY<-2; noSolid excludes trigger colliders");
-                    writer.WriteLine("# event bits:1=players,2=world,4=lowFPS,8=connection,16=manual,32=resume,64=selftest,128=alerts; observer CPU covers sampling+page code, not GPU/engine recorder work");
+                    writer.WriteLine("# event bits:1=players,2=world,4=lowFPS,8=connection,16=manual,32=resume,64=selftest,128=alerts; observer timing covers sampling+page code, not log callbacks or GPU/engine recorder work");
                     writer.WriteLine("# stage times are independent, not additive; native counters may lag several frames; event t=observation/completed-census time, baselineT=previous observation; repeated events include lastT/peak/count");
                     writer.WriteLine("# stage counters: CPU Total Frame Time, CPU Main Thread Frame Time, CPU Render Thread Frame Time, GPU Frame Time, Gfx.WaitForPresentOnGfxThread, WaitForTargetFPS, PlayerLoop; times in ms; ValidReads counts successful reads, not unique native frames");
+                    _probe.WriteEvidence(writer);
                     PerfLog.WriteTimeline(writer, _buf, _alerts.Events, Describe);
                 }
                 Log.Info("已导出 " + _buf.Count + " 条记录：" + _file); return _buf.Count;
@@ -587,8 +632,12 @@ namespace DDEN.NetPerfTracker
         private void OnDestroy()
         {
             DdenLocalization.Unregister(Config);
-            try { _physics.Dispose(); _stages.Dispose(); _items.Cancel(); _scene.Cancel(); foreach (var chart in _charts) chart?.Dispose(); _process?.Dispose(); }
+            try { _probe.Dispose(); _physics.Dispose(); _stages.Dispose(); _items.Cancel(); _scene.Cancel(); foreach (var chart in _charts) chart?.Dispose(); _process?.Dispose(); }
             catch (Exception ex) { Log.Debug("结束跟踪失败：" + ex.Message); }
+        }
+        private void OnDisable()
+        {
+            _probe.Stop(); _physics.Dispose(); _stages.Dispose(); _items.Cancel(); _scene.Cancel(); _wasRecording = false;
         }
     }
 }
