@@ -15,8 +15,8 @@
       指定版本号与一段自定义说明。
 
 .NOTES
-  · 默认读取 DdenVersion；改版本还须同步各插件BepInPlugin字面版本，-Version不会改源码版本。
-  发布包内容 = DDEN 五个组件（公共层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器）+ 许可与说明文件。
+  · 包版本默认读取管理器项目；每个DLL按自身项目版本验证，-Version不会修改源码。
+  发布包内容 = DDEN 六个组件（公共层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器 / 单位清单管理器）+ 许可与说明文件。
   · 不会自动 push 分支；分支推送、创建tag及线上Release各自按用户授权处理。
 #>
 [CmdletBinding()]
@@ -36,17 +36,19 @@ $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Push-Location $Root
 try {
     # ===== 1. 版本号 =====
-    if (-not $Version) {
-        $props = Get-Content 'Directory.Build.props' -Raw
-        $m = [regex]::Match($props, '<DdenVersion>([^<]+)</DdenVersion>')
-        if (-not $m.Success) { throw 'Directory.Build.props 里没有找到 <DdenVersion>，请先补上或用 -Version 指定。' }
-        $Version = $m.Groups[1].Value.Trim()
+    function Read-ProjectVersion([string]$relativePath) {
+        [xml]$project = [IO.File]::ReadAllText((Join-Path $Root $relativePath))
+        $values = @($project.SelectNodes('/Project/PropertyGroup/Version') | ForEach-Object { $_.InnerText.Trim() } | Where-Object { $_ })
+        if ($values.Count -ne 1 -or $values[0] -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw "项目未声明明确的独立版本：$relativePath" }
+        return $values[0]
     }
-    if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw '版本号必须为主.次.补丁数字。' }
-    $sourceVersion = [regex]::Match([IO.File]::ReadAllText((Join-Path $Root 'Directory.Build.props')), '<DdenVersion>([^<]+)</DdenVersion>').Groups[1].Value.Trim()
-    if ($Version -ne $sourceVersion) { throw "版本参数与源码不符：$Version / $sourceVersion" }
+    # 发布包版本跟 **MPfix（DDEN.MPfix）** 走；各组件各自独立版本，不再要求与管理器同号。
+    $packageSource = 'src/DDEN.MPfix/DDEN.MPfix.csproj'
+    $sourceVersion = Read-ProjectVersion $packageSource
+    if (-not $Version) { $Version = $sourceVersion }
+    if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw "发布包版本格式不合法：$Version" }
     $Tag = "v$Version"
-    Write-Host "== 版本: $Version（tag $Tag）" -ForegroundColor Cyan
+    Write-Host "== 版本: $Version（tag $Tag，按 MPfix 版本；管理器 $((Read-ProjectVersion 'src/DDExcNet.CUmodM/DDExcNet.CUmodM.csproj'))）" -ForegroundColor Cyan
 
     # ===== 2. 构建 =====
     if (-not $SkipBuild) {
@@ -61,14 +63,21 @@ try {
         'DDEN.MPfix.dll'            = 'src/DDEN.MPfix/bin/Release/DDEN.MPfix.dll'
         'DDEN.NetPerfTracker.dll'   = 'src/DDEN.NetPerfTracker/bin/Release/DDEN.NetPerfTracker.dll'
         'DDEN.SaveEditor.dll'       = 'src/DDEN.SaveEditor/bin/Release/DDEN.SaveEditor.dll'
+        'DDEN.UnitListMgr.dll'      = 'src/DDEN.UnitListMgr/bin/Release/DDEN.UnitListMgr.dll'
     }
-    # 注意：发布包 = **DDEN 五个组件**（公共层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器）。
+    # 注意：发布包 = **DDEN 六个组件**（公共层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器 / 单位清单管理器）。
     # 独立外部模组「ET-Fix（ET 加热笼修复）」**不随本包发布**，它有自己的仓库与发布节奏；
     # 本脚本不会构建或部署外部模组；JDI-DDEN同样不随包发布。
     foreach ($pair in $releaseBin.GetEnumerator()) {
         if (-not (Test-Path -LiteralPath $pair.Value -PathType Leaf)) { throw "缺少产物：$($pair.Value)（先构建 Release）" }
+        $projectName = if ($pair.Key -eq 'DDExcNet-CUmodM.dll') { 'DDExcNet.CUmodM' } else { [IO.Path]::GetFileNameWithoutExtension($pair.Key) }
+        $componentVersion = Read-ProjectVersion "src/$projectName/$projectName.csproj"
+        $expectedAssemblyVersion = ($componentVersion -split '-')[0] + '.0'
         $assemblyVersion = [Reflection.AssemblyName]::GetAssemblyName((Join-Path $Root $pair.Value)).Version.ToString()
-        if ($assemblyVersion -ne "$Version.0") { throw "程序集版本不匹配：$($pair.Key) = $assemblyVersion，预期 $Version.0" }
+        $productVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $Root $pair.Value)).ProductVersion
+        if (-not $productVersion -or ($productVersion -split '\+')[0] -ne $componentVersion) { throw "组件发行版本不匹配：$($pair.Key) = $productVersion，项目 $componentVersion" }
+        if ($assemblyVersion -ne $expectedAssemblyVersion) { throw "组件版本不匹配：$($pair.Key) = $assemblyVersion，项目 $componentVersion（预期 $expectedAssemblyVersion）" }
+
     }
 
     # ===== 3. 组装发布目录 =====
@@ -98,6 +107,51 @@ try {
     $hash = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
     Write-Host "== 产物: dist/DDExcNet-$Tag.zip（$size KB）" -ForegroundColor Green
     Write-Host "   SHA256: $hash"
+
+    # ===== 4b. Nexus 包：目录结构固定为 BepInEx/plugins/DDEN/*.dll（直接解压到游戏根目录即可） =====
+    $nexusStage = Join-Path $dist "nexus-stage-$Tag"
+    if (Test-Path -LiteralPath $nexusStage) { Remove-Item -LiteralPath $nexusStage -Recurse -Force }
+    $nexusDden = Join-Path $nexusStage 'BepInEx/plugins/DDEN'
+    New-Item -ItemType Directory -Force -Path $nexusDden | Out-Null
+    foreach ($pair in $releaseBin.GetEnumerator()) {
+        Copy-Item $pair.Value (Join-Path $nexusDden $pair.Key) -Force
+    }
+    $nexusZip = Join-Path $dist "DDExcNet-$Tag-Nexus.zip"
+    if (Test-Path $nexusZip) { Remove-Item $nexusZip -Force }
+    Compress-Archive -Path (Join-Path $nexusStage '*') -DestinationPath $nexusZip -CompressionLevel Optimal
+    $nexusSize = [math]::Round((Get-Item $nexusZip).Length / 1KB, 1)
+    $nexusHash = (Get-FileHash $nexusZip -Algorithm SHA256).Hash.ToLower()
+    Remove-Item -LiteralPath $nexusStage -Recurse -Force
+    Write-Host "== 产物: dist/DDExcNet-$Tag-Nexus.zip（$nexusSize KB，BepInEx/plugins/DDEN/*.dll）" -ForegroundColor Green
+    Write-Host "   SHA256: $nexusHash"
+
+    # ===== 4c. 外部模组：顺手编译并放到 dist/other/<版本号>/*.dll =====
+    $externalMods = @(
+        @{ Name = 'ET-Fix';            Project = 'src/外部mod/ET-Fix/ET-Fix.csproj';                         Dll = 'ET-Fix.dll' },
+        @{ Name = 'JDI-DDEN';          Project = 'src/外部mod/JDI-DDEN/JDI-DDEN.csproj';                     Dll = 'JDI-DDEN.dll' },
+        @{ Name = 'DS Tool Extension'; Project = 'src/外部mod/DS Tool Extension/DS Tool Extension.csproj';   Dll = 'DS Tool Extension.dll' }
+    )
+    $otherRoot = Join-Path $dist 'other'
+    $otherLines = @()
+    foreach ($mod in $externalMods) {
+        $projectPath = Join-Path $Root $mod.Project
+        if (-not (Test-Path -LiteralPath $projectPath)) { Write-Host "   （跳过外部模组 $($mod.Name)：项目不存在）" -ForegroundColor Yellow; continue }
+        dotnet build $projectPath -c Release -v quiet -m:1 -nodeReuse:false -p:NuGetAudit=false | Out-Null
+        if ($LASTEXITCODE -ne 0) { Write-Host "   （外部模组 $($mod.Name) 构建失败，已跳过）" -ForegroundColor Yellow; continue }
+        $modVersion = Read-ProjectVersion $mod.Project
+        $builtDll = Join-Path (Split-Path -Parent $projectPath) "bin/Release/$($mod.Dll)"
+        if (-not (Test-Path -LiteralPath $builtDll)) { Write-Host "   （外部模组 $($mod.Name) 缺产物，已跳过）" -ForegroundColor Yellow; continue }
+        $targetDir = Join-Path $otherRoot $modVersion
+        New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+        Copy-Item -LiteralPath $builtDll -Destination (Join-Path $targetDir $mod.Dll) -Force
+        $dllHash = (Get-FileHash (Join-Path $targetDir $mod.Dll) -Algorithm SHA256).Hash.ToLower()
+        $otherLines += "$($mod.Name) $modVersion -> other/$modVersion/$($mod.Dll)  SHA256 $dllHash"
+        Write-Host "   other/$modVersion/$($mod.Dll)（$($mod.Name) $modVersion）" -ForegroundColor DarkGray
+    }
+    if ($otherLines.Count -gt 0) {
+        Set-Content -LiteralPath (Join-Path $otherRoot 'MANIFEST.txt') -Value ($otherLines -join "`r`n") -Encoding UTF8
+        Write-Host "== 外部模组: dist/other/<版本号>/（清单 other/MANIFEST.txt）" -ForegroundColor Green
+    }
 
     # ===== 5. 发布说明 =====
     $branch = (git rev-parse --abbrev-ref HEAD).Trim()

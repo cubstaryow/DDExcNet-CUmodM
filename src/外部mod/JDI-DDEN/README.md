@@ -11,7 +11,7 @@
 
 - 插件名：`JDI-DDEN`
 - GUID：`com.dden.jdi`
-- 版本：1.4.0
+- 版本：1.5.0
 - 公司：MornJor
 - 文件：`JDI-DDEN.dll`
 

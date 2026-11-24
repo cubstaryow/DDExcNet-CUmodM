@@ -19,7 +19,7 @@ internal static class Program
         Directory.CreateDirectory(dir);
         try
         {
-            Names(); Dependencies(dir); Assemblies(root);
+            Names(); Dependencies(dir); Assemblies(root); DirectionNameReads(root);
             Console.WriteLine("PASS " + _checks + " checks (names, missing dependencies, authority override, installed API contracts, compiled spawn/identity boundaries)");
         }
         finally
@@ -94,11 +94,76 @@ internal static class Program
         var ready = new FeatureDependencies(entries, _ => true);
         Check(entries.All(ready.Available), "all controls available when required mods exist");
         Check(!craft.Local.Value, "installing dependency does not silently re-enable a saved-off switch");
+        bool mpReady = false, bridgeReady = false;
+        var dynamic = new FeatureDependencies(entries, _ => true, () => mpReady, () => bridgeReady);
+        craft.Local.Value = names.Local.Value = true;
+        craft.Available = () => dynamic.Available(craft.Entry);
+        names.Available = () => dynamic.Available(names.Entry);
+        dynamic.EnforceAll();
+        Check(!craft.Value && !names.Value && craft.Local.Value && names.Local.Value, "uninitialized MP masks values without destroying saved preferences");
+        Check(dynamic.Reason(names.Entry) == "Together 未就绪", "installed but disabled MP has the explicit availability reason");
+        mpReady = true;
+        Check(names.Value && !craft.Value && dynamic.Reason(craft.Entry) == "CCL MP 未就绪", "bridge not ready only blocks CCL-dependent features");
+        bridgeReady = true;
+        Check(names.Value && craft.Value && dynamic.Available(opt), "late initialization restores availability dynamically");
+        mpReady = false;
+        Check(!craft.Value && !names.Value, "losing MP readiness disables effective values even without a manager");
     }
     private static IEnumerable<TypeDefinition> Types(IEnumerable<TypeDefinition> types)
     {
         foreach (var type in types)
         { yield return type; foreach (var child in Types(type.NestedTypes)) yield return child; }
+    }
+    private static void DirectionNameReads(string root)
+    {
+        // Execute the actual compiled transpiler against installed MP metadata; no Unity methods run.
+        string game = @"L:\SteamLibrary\steamapps\common\Casualties Unknown";
+        string output = Path.Combine(root, "src/DDEN.MPfix/bin/Release");
+        string[] search = { output, Path.Combine(game, "BepInEx/core"), Path.Combine(game, "CasualtiesUnknown_Data/Managed"), Path.Combine(game, "BepInEx/plugins/Together") };
+        System.Reflection.Assembly Resolve(System.Runtime.Loader.AssemblyLoadContext context, System.Reflection.AssemblyName name)
+        {
+            foreach (string folder in search)
+            {
+                string path = Path.Combine(folder, name.Name + ".dll");
+                if (File.Exists(path)) return context.LoadFromAssemblyPath(path);
+            }
+            return null;
+        }
+        var load = System.Runtime.Loader.AssemblyLoadContext.Default;
+        load.Resolving += Resolve;
+        try
+        {
+            var fix = load.LoadFromAssemblyPath(Path.Combine(output, "DDEN.MPfix.dll"));
+            var mp = load.LoadFromAssemblyPath(Path.Combine(game, "BepInEx/plugins/Together/CasualtiesMP.dll"));
+            var harmony = load.LoadFromAssemblyPath(Path.Combine(game, "BepInEx/core/0Harmony.dll"));
+            var type = fix.GetType("DDEN.MPfix.PlayerNameRepair", true);
+            var flags = System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic;
+            var body = mp.GetType("Together.NetBody", true);
+            var getter = body.GetProperty("playerName").GetMethod;
+            type.GetField("_bodyNameGetter", flags).SetValue(null, getter);
+            type.GetField("_nativeName", flags).SetValue(null, mp.GetType("Together.ScavPlayer").GetField("playerName"));
+            type.GetField("_netApply", flags).SetValue(null, body.GetMethods().Single(m => m.Name == "ApplyNameAndColor"));
+            var original = mp.GetType("Together.UIInGame").GetMethod("_GUI__DrawPlayerDirection", flags);
+            var instructionType = harmony.GetType("HarmonyLib.CodeInstruction", true);
+            var transpile = type.GetMethod("DisplayReads", flags);
+            var operand = instructionType.GetField("operand");
+            var opcode = instructionType.GetField("opcode");
+            var noop = typeof(string).GetProperty("Length").GetMethod;
+            foreach (var call in new[] { System.Reflection.Emit.OpCodes.Callvirt, System.Reflection.Emit.OpCodes.Call })
+            {
+                object instruction = Activator.CreateInstance(instructionType, new object[] { call, getter });
+                object unrelated = Activator.CreateInstance(instructionType, new object[] { System.Reflection.Emit.OpCodes.Callvirt, noop });
+                var input = Array.CreateInstance(instructionType, 2);
+                input.SetValue(instruction, 0); input.SetValue(unrelated, 1);
+                var rewritten = ((System.Collections.IEnumerable)transpile.Invoke(null, new object[] { input, original })).Cast<object>().ToArray();
+                Check(rewritten.Length == 2 && ReferenceEquals(rewritten[0], instruction), "getter rewrite keeps instruction identity/labels");
+                Check(((System.Reflection.MethodInfo)operand.GetValue(rewritten[0])).Name == "GuiBodyName"
+                    && (System.Reflection.Emit.OpCode)opcode.GetValue(rewritten[0]) == System.Reflection.Emit.OpCodes.Call,
+                    "installed NetBody property read routes to display resolver: " + call);
+                Check(ReferenceEquals(operand.GetValue(rewritten[1]), noop), "unrelated property calls remain unchanged");
+            }
+        }
+        finally { load.Resolving -= Resolve; }
     }
     private static void Assemblies(string root)
     {
@@ -125,24 +190,45 @@ internal static class Program
             && (m.Name == "Invoke" || m.Name == "GetValue" || m.Name == "Display" || m.Name == "GetComponent"
                 || m.DeclaringType.Name == "PlayerNameFonts" && m.Name == "Tick")),
             "lifecycle never polls players, redraws labels or invokes native name refresh");
-        Check(name.Methods.Single(m => m.Name == "BodyName").Body.Instructions.Any(i => i.Operand is MethodReference m
+        Check(name.Methods.Single(m => m.Name == "RefreshNametag").Body.Instructions.Any(i => i.Operand is MethodReference m
             && m.DeclaringType.Name == "PlayerNameRepair" && m.Name == "Display")
-            && name.Methods.Single(m => m.Name == "Install").Body.Instructions.Any(i => i.Operand is string s && s == "BodyName"),
-            "native MP name callback retains display-name resolution without an extra refresh queue");
+            && name.Methods.Single(m => m.Name == "Install").Body.Instructions.Any(i => i.Operand is string s && s == "LateUpdate"),
+            "native visual refresh reads unified display names without invoking native name/color refresh");
+        Check(!name.Methods.Any(m => m.Name == "BodyName"), "display repair no longer rewrites NetBody name callback arguments");
+        foreach (string method in new[] { "Display", "ChatName" })
+            Check(name.Methods.Single(m => m.Name == method).Body.Instructions.Any(i => i.Operand is MethodReference m
+                && m.DeclaringType.Name == "NameDisplayCache" && m.Name == "Resolve"), method + " uses the shared name resolver");
+        Check(!name.Methods.Where(m => m.HasBody).SelectMany(m => m.Body.Instructions).Any(i => i.Operand is MethodReference m
+            && m.DeclaringType.Name == "NameDisplayRules" && m.Name == "Choose"), "UI adapters contain no duplicate name recovery rules");
         var fonts = all.Single(t => t.Name == "PlayerNameFonts");
         Check(!Types(new[] { fonts }).SelectMany(t => t.Methods).Where(m => m.HasBody).SelectMany(m => m.Body.Instructions).Any(i => i.Operand is MethodReference m && (m.Name == "GetOSInstalledFontNames" || m.Name == "CreateDynamicFontFromOSFont" || m.DeclaringType.FullName == "TMPro.TMP_FontAsset" && m.Name == "CreateFontAsset")), "name font repair never queries or creates system fonts or generated fallback atlases");
         Check(!name.Methods.Where(m => m.HasBody).SelectMany(m => m.Body.Instructions).Any(i =>
             i.OpCode == OpCodes.Stfld && i.Operand is FieldReference f && f.Name == "playerName" && f.DeclaringType.FullName == "Together.ScavPlayer"), "name repair never writes logical name identity");
         var nativeTypes = Types(mp.MainModule.Types).ToDictionary(t => t.FullName);
+        var direction = nativeTypes["Together.UIInGame"].Methods.Single(m => m.Name == "_GUI__DrawPlayerDirection");
+        Check(direction.Body.Instructions.Any(i => i.OpCode == OpCodes.Callvirt && i.Operand is MethodReference m
+            && m.Name == "get_playerName" && m.DeclaringType.FullName == "Together.NetBody"), "installed Shift pointer uses the property getter regression case");
+        var template = all.Single(t => t.Name == "ModItemTemplateRepair");
+        Check(!Types(new[] { template }).SelectMany(t => t.Methods).Where(m => m.HasBody).SelectMany(m => m.Body.Instructions)
+            .Any(i => i.Operand is MethodReference m && (m.Name == "Instantiate" || m.Name == "InstantiateReturn" || m.Name == "SetActive" || m.Name == "Destroy")),
+            "template repair never spawns, activates, protects or destroys item objects");
+        var cclTypes = Types(ccl.MainModule.Types).ToDictionary(t => t.FullName);
+        var cclFactory = cclTypes["CUCoreLib.Helpers.CustomInstantiate"];
+        Check(cclFactory.Fields.Any(f => f.Name == "_templateCache")
+            && cclFactory.Methods.Any(m => m.Name == "ClearTemplateCache" && m.Parameters.Count == 1)
+            && cclFactory.Methods.Any(m => m.Name == "GetOrCreateTemplate" && m.ReturnType.FullName == "UnityEngine.GameObject"), "installed CCL cache rebuild API matches");
+        Check(cclTypes["CUCoreLib.Registries.ItemRegistry"].Fields.Any(f => f.Name == "RegisteredItems"), "installed CCL registration table is a field");
         foreach (var spec in new[] {
             ("Together.ScavPlayer", "ApplyNameAndColor"), ("Together.ScavPlayer", "get_AllPlayers"),
             ("Together.KSteam", "GetSteamUsername"), ("Together.KSteam", "OnPersonaStateChange"),
             ("Together.NetBody", "ApplyNameAndColor"), ("Together.CharStatusVisuals", "ApplyNameAndColor"),
+            ("Together.CharStatusVisuals", "LateUpdate"), ("Together.Chat", "MeasureChatLine"),
             ("Together.UIMainMenu", "_GUI___DrawPlayerInList"), ("Together.UIMainMenu", "_GUI__PlrListDrawPlr"),
             ("Together.UIInGame", "_GUI__DrawPlayerDirection"), ("Together.UIInGame", "_GUI_DoGeneralMPGui"),
             ("Together.UIInGame", "_GUI_PlayerInteractionGui"), ("Together.UI.TeammateList.Roster", "Touch"),
             ("Together.UI.TeammateList.Roster", "ReadBlood"), ("Together.UI.TeammateList.Roster", "GameFont"),
             ("Together.MinigameMPManager/MinigameRemotePeerHand", "Start"),
+            ("Together.MinigameMPManager/MinigameRemotePeerHand", "Update"),
             ("Together.Chat", "Client_ChatMessageReceive"), ("Together.Chat", "_GUI_DrawChat"),
             ("Together.UIBullshit", "FocusedChatFont"),
             ("Together.Chat/ChatMsgContainer", "Compile"),

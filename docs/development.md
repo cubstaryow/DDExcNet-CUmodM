@@ -1,4 +1,4 @@
-# 工作区、构建与检查 · v1.7.2
+# 工作区、构建与检查 · v1.7.5
 
 ## 目录职责
 
@@ -29,7 +29,7 @@ docs/history/                     明确过时的历史记录
 
 - 游戏：`L:\SteamLibrary\steamapps\common\Casualties Unknown`；路径可通过 `Directory.Build.props`或 `-p:GameDir=...`覆盖。
 - Unity 2022.3.62f3／Mono是引擎与运行时信息，不是游戏产品版本号。目标netstandard2.1，BepInEx 5、游戏自带HarmonyX和Newtonsoft.Json。
-- .NET SDK 10使用 `DDExcNet.slnx` 构建五个发布组件；`CUmod.slnx` 是包含外部模组的整仓开发入口。Shared以外的插件不得硬引用Together或QoL；ET-Fix、JDI-DDEN还不得硬引用DDEN公共层；外部模组的具体依赖由各自项目说明维护，本次不作校对。
+- .NET SDK 10使用 `DDExcNet.slnx` 构建六个发布组件；`CUmod.slnx` 是包含外部模组的整仓开发入口。Shared以外的插件不得硬引用Together或QoL；ET-Fix、JDI-DDEN还不得硬引用DDEN公共层；外部模组的具体依赖由各自项目说明维护，本次不作校对。
 - 当前联机核对目标为Together 5.5.4、CUCoreLib 1.1。只有对本机安装文件及明确测试过的接口作结论，更新后重新检查。
 
 ## 只构建
@@ -40,7 +40,7 @@ docs/history/                     明确过时的历史记录
 dotnet build DDExcNet.slnx -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=false
 ```
 
-`DeployOnBuild`默认false；单纯构建不应写游戏目录。中文路径项目与嵌套检查项目已纳入解决方案／相对引用。五个发布组件版本由 `DdenVersion`统一（外部模组保持各自项目版本），目前工作树为1.7.2（部分代码尚未提交）；各插件 `BepInPlugin`中的字面版本也要同步，不能只改props。
+`DeployOnBuild`默认false；单纯构建不应写游戏目录。中文路径项目与嵌套检查项目已纳入解决方案／相对引用。DDEN组件均在各自csproj维护独立版本，不再使用DdenVersion统一属性：Shared 2.0.0（API v1）、管理器2.0.0、MPfix 1.7.5、性能跟踪器2.0.0、存档编辑器2.0.0-alpha、UnitListMgr 0.1.0-alpha。Alpha的加载器声明使用数字版2.0.0，发行元数据及模块显示保留alpha；外部模组版本不变。产品版本、两个适配最低要求和API代际见[版本契约](component-versions.md)。
 
 ## 部署与改名迁移
 
@@ -51,11 +51,11 @@ dotnet build DDExcNet.slnx -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=fal
 ./scripts/build.sh Release --no-saveeditor
 ```
 
-默认部署五个DDEN产物、ET-Fix及JDI-DDEN；`--no-saveeditor`只撤下已知的自有编辑器文件。**等待用户游戏退出后再部署，不为部署强制结束进程**，不造插件备份，不操作其它作者插件。部署目录为 `BepInEx/plugins/DDEN/`，只准按自有准确文件名处理。
+`scripts/build.sh` 默认部署五个DDEN产物以及 ET-Fix、JDI-DDEN 和 DS Tool Extension。UnitListMgr 随发布包提供；`--no-saveeditor`只撤下已知的自有编辑器文件。**等待用户游戏退出后再部署，不为部署强制结束进程**，不造插件备份，不操作其它作者插件。部署目录为 `BepInEx/plugins/DDEN/`，只准按自有准确文件名处理。
 
 CageFix现名 `ET-Fix.dll`。原GUID `com.dden.heatingcagefix`、cfg、存档键与网络频道保留。部署脚本在DDEN目录移除已知旧名 `CageFix.dll`；若曾在plugins其它位置独立安装，用户需关闭游戏后移除那里那份旧文件。不全场扫描后删除未知DLL。
 
-DDExcNet发布包仅包含五个DDEN产物和四份说明／许可；ET-Fix与JDI-DDEN不随包发布。普通包README取自独立安装说明，避免包内出现不存在的仓库文档链接。配置、存档、第三方依赖和游戏文件不打包；详情见 [工作流程](workflow.md)。
+DDExcNet发布包仅包含六个DDEN产物和四份说明／许可；ET-Fix与JDI-DDEN不随包发布。普通包README取自独立安装说明，避免包内出现不存在的仓库文档链接。配置、存档、第三方依赖和游戏文件不打包；详情见 [工作流程](workflow.md)。
 
 ## 离线检查
 
@@ -72,7 +72,8 @@ dotnet run --no-build --project tools/DamageRepairTests/DamageRepairTests.csproj
 | `MPfixSafetyTests` | 生成兜底、依赖、身份与名称安全约束 |
 | `HostAuthorityTests` | 临时配置层、本机恢复与有界同步 |
 | `NameFontTests` | 游戏字库策略、Unicode缺字与恢复 |
-| `PerfTrackerTests` | 性能采样、分帧清点、告警与日志逻辑 |
+| `PerfTrackerTests` | 性能采样、分帧清点、告警与日志逻辑，切换语言保留事件和原始日志证据 |
+| `ManagerLocalizationTests` | 双语目录／格式参数、原配置身份及控件、规范化显示标记、旧L1反射签名、外部语言桥、导航与折叠高度；GUI边界模拟 |
 | `EditorTests` | 原始字段保留、物品附加属性、容量与保存边界 |
 | `src/外部mod/ET-Fix/tests/HeatingCageFixTests` | 腐坏／配方／保存／网络状态与实际L1扫描，Unity和传输边界模拟 |
 

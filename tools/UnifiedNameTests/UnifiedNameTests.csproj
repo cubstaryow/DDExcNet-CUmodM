@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings>
+    <NameSourceDir Condition="'$(NameSourceDir)' == ''">../../src/DDEN.MPfix</NameSourceDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Remove="@(Reference)" />
+    <Compile Include="$(NameSourceDir)/PlayerNameRepair.cs" Link="PlayerNameRepair.cs" />
+    <Compile Include="$(NameSourceDir)/NameDisplayCache.cs" Link="NameDisplayCache.cs" />
+    <Compile Include="$(NameSourceDir)/NameDisplayRules.cs" Link="NameDisplayRules.cs" />
+    <Compile Include="$(NameSourceDir)/PlayerNameFonts.cs" Link="PlayerNameFonts.cs" />
+    <Compile Include="$(NameSourceDir)/NameGlyphRules.cs" Link="NameGlyphRules.cs" />
+  </ItemGroup>
+</Project>

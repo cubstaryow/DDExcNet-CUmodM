@@ -11,20 +11,40 @@ namespace DDEN.Shared
     /// </summary>
     public static class Mp
     {
+        private static Func<bool> _initialized, _forceDisabled;
         private static Func<bool> _running, _client, _server, _bridgeReady, _coreAvailable;
         private static readonly Dictionary<string, MethodInfo> Methods = new Dictionary<string, MethodInfo>();
-        private static bool Flag(ref Func<bool> read, string typeName, string name)
+        private static bool? Flag(ref Func<bool> read, string typeName, string name)
         {
-            if (read == null)
+            try
             {
-                var getter = Reflect.Type(typeName)?.GetProperty(name, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static)?.GetGetMethod(true);
-                if (getter == null) return false; // No negative cache: dependencies can still be loading.
-                read = (Func<bool>)Delegate.CreateDelegate(typeof(Func<bool>), getter);
+                if (read == null)
+                {
+                    const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
+                    var type = Reflect.Type(typeName);
+                    var getter = type?.GetProperty(name, flags)?.GetGetMethod(true);
+                    if (getter != null)
+                        read = (Func<bool>)Delegate.CreateDelegate(typeof(Func<bool>), getter);
+                    else
+                    {
+                        var field = type?.GetField(name, flags);
+                        if (field?.FieldType != typeof(bool)) return null;
+                        read = () => (bool)field.GetValue(null);
+                    }
+                }
+                return read();
             }
-            try { return read(); } catch { return false; }
+            catch { return null; }
         }
+        public static bool TogetherReady => Compat.PluginLoaded("CasualtiesMP")
+            && Flag(ref _initialized, "Together.Plugin", "SUCCESFULLY_INITIALIZED") == true
+            && Flag(ref _forceDisabled, "Together.Plugin", "FORCE_DISABLE_MP_MOD") == false;
+        public static bool CoreReady => CoreAvailable && BridgeReady;
+
         private static object Bridge(string method, Type[] types, params object[] args)
         {
+            if (!CoreReady) return null;
+            if ((method == "Broadcast" || method == "SendToServer" || method == "RequestServer") && !IsRunning) return null;
             string key = method + "/" + types.Length;
             if (!Methods.TryGetValue(key, out var call))
             {
@@ -36,12 +56,12 @@ namespace DDEN.Shared
             object result = call.Invoke(null, args);
             return call.ReturnType == typeof(void) ? (object)true : result;
         }
-        public static bool BridgeReady => Flag(ref _bridgeReady, "CUCoreLib.Networking.MultiplayerApi", "BridgeReceiversInstalled");
+        public static bool BridgeReady => TogetherReady && Compat.PluginLoaded("net.cucorelib") && Flag(ref _bridgeReady, "CUCoreLib.Networking.MultiplayerApi", "BridgeReceiversInstalled") == true;
         public static bool CoreAvailable
         {
             get
             {
-                try { return Compat.PluginLoaded("net.cucorelib") && Flag(ref _coreAvailable, "CUCoreLib.Networking.MultiplayerApi", "IsAvailable"); }
+                try { return TogetherReady && Compat.PluginLoaded("net.cucorelib") && Flag(ref _coreAvailable, "CUCoreLib.Networking.MultiplayerApi", "IsAvailable") == true; }
                 catch (Exception ex) { Log.Debug("Mp.CoreAvailable: " + ex.Message); return false; }
             }
         }
@@ -50,7 +70,7 @@ namespace DDEN.Shared
         {
             get
             {
-                try { return Flag(ref _running, "Together.Net", "IsRunning"); }
+                try { return TogetherReady && Flag(ref _running, "Together.Net", "IsRunning") == true; }
                 catch { return false; }
             }
         }
@@ -59,7 +79,7 @@ namespace DDEN.Shared
         {
             get
             {
-                try { return Flag(ref _server, "Together.Net", "IsServer"); }
+                try { return TogetherReady && Flag(ref _server, "Together.Net", "IsServer") == true; }
                 catch { return false; }
             }
         }
@@ -68,7 +88,7 @@ namespace DDEN.Shared
         {
             get
             {
-                try { return Flag(ref _client, "Together.Net", "IsClient"); }
+                try { return TogetherReady && Flag(ref _client, "Together.Net", "IsClient") == true; }
                 catch { return false; }
             }
         }
@@ -76,6 +96,7 @@ namespace DDEN.Shared
         /// <summary>注册“主机快照里的一个模块”：capture 在主机打包时调用，apply 在客机收到快照时调用。</summary>
         public static bool RegisterSyncModule(string key, Func<JObject> capture, Action<JObject> apply)
         {
+            if (!CoreReady) return false;
             try
             {
                 var type = Reflect.Type("CUCoreLib.Networking.MultiplayerSyncRegistry");
@@ -155,6 +176,7 @@ namespace DDEN.Shared
                 var dict = WorldGeneration.runSettings;
                 if (dict != null && dict.TryGetValue("unchipped", out object v) && v is bool b) return b;
 
+                if (!TogetherReady) return false;
                 Type mpWorld = Reflect.Type("Together.WorldMP");
                 if (mpWorld != null)
                 {
@@ -178,6 +200,7 @@ namespace DDEN.Shared
         {
             get
             {
+                if (!TogetherReady) return false;
                 object rules = Reflect.GetStatic(Reflect.Type("Together.Multiplayer"), "rules");
                 if (rules == null) return false;
                 object v = Reflect.GetInstance(rules, "UnchippedIsIndividual");
@@ -185,6 +208,7 @@ namespace DDEN.Shared
             }
             set
             {
+                if (!TogetherReady) return;
                 Type mp = Reflect.Type("Together.Multiplayer");
                 if (mp == null) return;
                 Reflect.MutateStructMember(mp.FullName, "rules", boxed =>
@@ -198,6 +222,7 @@ namespace DDEN.Shared
         {
             try
             {
+                if (!TogetherReady) return null;
                 object local = Reflect.GetStatic(Reflect.Type("Together.ScavPlayer"), "LocalPlayer");
                 object name = Reflect.GetInstance(local, "playerName");
                 return name as string;

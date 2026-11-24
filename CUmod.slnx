@@ -4,10 +4,12 @@
     <Project Path="src/DDEN.NetPerfTracker/DDEN.NetPerfTracker.csproj" />
     <Project Path="src/DDEN.SaveEditor/DDEN.SaveEditor.csproj" />
     <Project Path="src/DDEN.Shared/DDEN.Shared.csproj" />
+    <Project Path="src/DDEN.UnitListMgr/DDEN.UnitListMgr.csproj" />
     <Project Path="src/DDExcNet.CUmodM/DDExcNet.CUmodM.csproj" />
   </Folder>
   <Folder Name="/src/外部mod/">
     <Project Path="src/外部mod/ET-Fix/ET-Fix.csproj" />
     <Project Path="src/外部mod/JDI-DDEN/JDI-DDEN.csproj" />
+    <Project Path="src/外部mod/DS Tool Extension/DS Tool Extension.csproj" />
   </Folder>
 </Solution>

@@ -1,3 +1,4 @@
+using static DDEN.NetPerfTracker.ModuleText;
 using System;
 using DDEN.Shared;
 using UnityEngine;
@@ -16,7 +17,7 @@ namespace DDEN.NetPerfTracker
         private readonly string[] _labels;
         private readonly string[] _legend;
         private string _axis = "", _hoverText;
-        private int _hoverIndex = -1, _hoverVersion = -1;
+        private int _hoverIndex = -1, _hoverVersion = -1, _languageRevision = -1;
         internal PerfChart(float[][] series, Color[] colors, string[] labels)
         { _series = series; _colors = colors; _labels = labels; _legend = new string[labels.Length]; }
         internal void SetSeries(int i, float[] values) => _series[i] = values;
@@ -25,6 +26,12 @@ namespace DDEN.NetPerfTracker
             int version, float start, float end)
         {
             if (Event.current.type != EventType.Repaint) return;
+            if (_languageRevision != DdenLocalization.Revision)
+            {
+                _languageRevision = DdenLocalization.Revision; _hoverIndex = -1;
+                // Refresh only text; do not rasterize the chart again just to change language.
+                UpdateLegend(count);
+            }
             DdenUI.Fill(rect, new Color(0, 0, 0, 0.22f)); DdenUI.Frame(rect, DdenUI.AccentDim);
             GUI.Label(new Rect(rect.x + 5, rect.y + 1, rect.width - 10, 17), title, DdenUI.Sub);
             var plot = new Rect(rect.x + 34, rect.y + 20, Math.Max(20, rect.width - 130), Math.Max(8, rect.height - 29));
@@ -59,14 +66,19 @@ namespace DDEN.NetPerfTracker
                     if (_hoverIndex != index || _hoverVersion != version)
                     {
                         _hoverIndex = index; _hoverVersion = version;
-                        _hoverText = "记录于 " + times[index].ToString("0.0") + "s";
-                        for (int i = 0; i < _labels.Length; i++) _hoverText += "\n" + _labels[i] + " " + Format(_series[i][index]);
+                        _hoverText = L("记录于 ") + times[index].ToString("0.0") + "s";
+                        for (int i = 0; i < _labels.Length; i++) _hoverText += "\n" + L(_labels[i]) + " " + Format(_series[i][index]);
                     }
                     var tip = new Rect(Mathf.Clamp(x + 8, plot.x, Math.Max(plot.x, plot.xMax - 150)), plot.y, 150, 19 + _labels.Length * 15);
                     DdenUI.Fill(tip, new Color(0.04f, 0.05f, 0.07f, 0.98f));
                     GUI.Label(new Rect(tip.x + 5, tip.y + 2, tip.width - 10, tip.height - 4), _hoverText, DdenUI.Small);
                 }
             }
+        }
+
+        private void UpdateLegend(int count)
+        {
+            for (int i = 0; i < _legend.Length; i++) _legend[i] = L(_labels[i]) + " " + Format(count > 0 ? _series[i][count - 1] : -1);
         }
 
         private void Render(float[] times, byte[] events, int count)
@@ -78,7 +90,7 @@ namespace DDEN.NetPerfTracker
                 for (int i = begin; i < count; i++) if (values[i] > _maximum) _maximum = values[i];
             _maximum *= 1.1f;
             _axis = _maximum.ToString("0.#");
-            for (int i = 0; i < _legend.Length; i++) _legend[i] = _labels[i] + " " + Format(count > 0 ? _series[i][count - 1] : -1);
+            UpdateLegend(count);
             for (int y = 0; y < _height; y += Math.Max(1, _height / 2))
                 for (int x = 0; x < _width; x++) Dot(x, y, new Color32(100, 100, 100, 45));
             for (int s = 0; s < _series.Length; s++)

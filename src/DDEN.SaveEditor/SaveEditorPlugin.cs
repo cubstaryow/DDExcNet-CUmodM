@@ -9,10 +9,10 @@ using UnityEngine;
 
 namespace DDEN.SaveEditor
 {
-    [BepInPlugin(Guid, "DDEN Save Editor", "1.7.2")]
+    [BepInPlugin(Guid, "DDEN Save Editor", "2.0.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("org.bepinex.plugins.qol_unknown", BepInDependency.DependencyFlags.SoftDependency)]
-    public class SaveEditorPlugin : BaseUnityPlugin, IDdenModule
+    public class SaveEditorPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleVersion
     {
         public const string Guid = "com.dden.saveeditor";
         private const string Title = "存档编辑器";
@@ -33,7 +33,14 @@ namespace DDEN.SaveEditor
         // ===== IDdenModule =====
         public string Id => "saveeditor";
         public string DisplayName => Title;
-        public string Version => Info.Metadata.Version.ToString();
+        public string MinimumManagerVersion => "2.0.0";
+        public string TestedManagerVersion => "2.0.0";
+        public string MinimumSharedVersion => "2.0.0";
+        public string TestedSharedVersion => "2.0.0";
+        public int RequiredSharedApiVersion => DdenApi.Version;
+        // The loader accepts numeric versions only; the release and module UI retain the alpha tag.
+        public const string ReleaseVersion = "2.0.0-alpha";
+        public string Version => ReleaseVersion;
         public bool Ready => true;
         public string Summary
         {

@@ -1,5 +1,4 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
@@ -14,23 +13,35 @@ namespace DDEN.MPfix
     /// <summary>Display aliases only. Never write ScavPlayer.playerName, SyncString, SteamID, or the join packet.</summary>
     internal static class PlayerNameRepair
     {
-        private sealed class State
+        private sealed class LabelState
         {
-            public State() { }
-            internal string Raw, Native, Display;
-            internal ulong Steam;
-            internal float RetryAt;
+            public LabelState() { }
+            internal object Player;
+            internal TMP_Text Label;
+            internal string Native, Display, Rendered;
+            internal float NextCheck;
+            internal int Revision = -1;
+        }
+        private sealed class ChatState
+        {
+            public ChatState() { }
+            internal NameDisplayCache.Snapshot Sender;
+            internal string Native, Compiled;
+            internal float NextCheck;
+            internal int Revision = -1;
         }
         private struct GuiFonts
         {
             internal GUISkin Skin;
             internal Font Label, Box, Button;
         }
-        private static ConditionalWeakTable<object, State> _states = new ConditionalWeakTable<object, State>();
+        private static readonly NameDisplayCache Names = new NameDisplayCache(LookupPersona);
+        private static ConditionalWeakTable<object, LabelState> _labels = new ConditionalWeakTable<object, LabelState>();
+        private static readonly List<WeakReference<LabelState>> LabelStates = new List<WeakReference<LabelState>>();
+        private static ConditionalWeakTable<object, ChatState> _chat = new ConditionalWeakTable<object, ChatState>();
         private static Type _player;
         private static FieldInfo _nativeName, _steam, _gameFont;
-        private static PropertyInfo _allPlayers;
-        private static MethodInfo _persona, _netApply;
+        private static MethodInfo _persona, _netApply, _bodyNameGetter, _chatCompile;
         private static bool _wasEnabled, _installed, _needsUnicode;
         internal static bool Enabled => _installed && MPfixPlugin.Active && MPfixPlugin.CfgFixPlayerNames.Value && Mp.IsRunning;
 
@@ -42,16 +53,18 @@ namespace DDEN.MPfix
                 _nativeName = AccessTools.Field(_player, "playerName");
                 _steam = AccessTools.Field(_player, "SteamId");
                 _gameFont = AccessTools.Field(Reflect.Type("Together.CoopModAssets"), "gamefont");
-                _allPlayers = AccessTools.Property(_player, "AllPlayers");
                 _persona = AccessTools.Method(Reflect.Type("Together.KSteam"), "GetSteamUsername", new[] { typeof(ulong), typeof(bool) });
                 var apply = AccessTools.Method(_player, "ApplyNameAndColor");
                 _netApply = AccessTools.Method(Reflect.Type("Together.NetBody"), "ApplyNameAndColor", new[] { typeof(string), typeof(Color) });
+                _bodyNameGetter = AccessTools.PropertyGetter(Reflect.Type("Together.NetBody"), "playerName");
                 var visual = AccessTools.Method(Reflect.Type("Together.CharStatusVisuals"), "ApplyNameAndColor", Type.EmptyTypes);
-                if (_nativeName == null || _steam == null || _allPlayers == null
-                    || apply == null || _netApply == null || visual == null) return false;
+                if (_nativeName == null || _steam == null
+                    || apply == null || _netApply == null || _bodyNameGetter == null || visual == null) return false;
                 harmony.Patch(apply, prefix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(Capture)));
-                harmony.Patch(_netApply, prefix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(BodyName)));
                 harmony.Patch(visual, postfix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(PrepareNametag)));
+                var visualUpdate = AccessTools.Method(visual.DeclaringType, "LateUpdate");
+                if (visualUpdate == null) return false;
+                harmony.Patch(visualUpdate, postfix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(RefreshNametag)));
                 var personaChanged = AccessTools.Method(Reflect.Type("Together.KSteam"), "OnPersonaStateChange");
                 if (personaChanged != null) harmony.Patch(personaChanged, postfix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(Invalidate)));
 
@@ -71,21 +84,48 @@ namespace DDEN.MPfix
                     var method = AccessTools.Method(Reflect.Type(spec.Item1), spec.Item2);
                     if (method != null)
                     {
-                        harmony.Patch(method, transpiler: new HarmonyMethod(typeof(PlayerNameRepair), nameof(DisplayReads)));
-                        if (spec.Item1 == "Together.UIMainMenu")
+                        bool hand = spec.Item1.Contains("MinigameRemotePeerHand");
+                        if (!hand) harmony.Patch(method, transpiler: new HarmonyMethod(typeof(PlayerNameRepair), nameof(DisplayReads)));
+                        if (spec.Item1 == "Together.UIMainMenu" || spec.Item2 == "_GUI_DrawChat")
                             harmony.Patch(method, prefix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(BeginGui)),
                                 finalizer: new HarmonyMethod(typeof(PlayerNameRepair), nameof(EndGui)));
-                        if (spec.Item1.Contains("MinigameRemotePeerHand"))
+                        if (spec.Item2 == "_GUI__DrawPlayerDirection")
+                            harmony.Patch(method, prefix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(BeginDirectionGui)),
+                                finalizer: new HarmonyMethod(typeof(PlayerNameRepair), nameof(EndGui)));
+                        if (hand)
+                        {
                             harmony.Patch(method, postfix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(PrepareHandName)));
+                            var update = AccessTools.Method(method.DeclaringType, "Update");
+                            if (update == null) return false;
+                            harmony.Patch(update, postfix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(RefreshNametag)));
+                        }
                     }
+                }
+                // Announcement text is serialized independently of chat sender labels.
+                // Resolve names where native MP formats them; never refresh a player/marker or rewrite identity.
+                foreach (var spec in new[] {
+                    ("Together.ScavPlayer", "Start"),
+                    ("Together.ScavPlayer", "OnDestroy"),
+                    ("Together.ScavPlayer", "Server_Kick"),
+                    ("Together.ServerMain", "UpdateSyncClientsToClients"),
+                    ("Together.Lang", "TryParseIndividualTag") })
+                {
+                    var producer = AccessTools.Method(Reflect.Type(spec.Item1), spec.Item2);
+                    if (producer != null) harmony.Patch(producer,
+                        transpiler: new HarmonyMethod(typeof(PlayerNameRepair), nameof(AnnouncementReads)));
                 }
                 Type message = Reflect.Type("Together.Chat+ChatMsgContainer");
                 if (message != null)
                 {
-                    foreach (var ctor in message.GetConstructors()) harmony.Patch(ctor, transpiler: new HarmonyMethod(typeof(PlayerNameRepair), nameof(DisplayReads)));
-                    var compile = AccessTools.Method(message, "Compile");
-                    if (compile != null) harmony.Patch(compile, prefix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(ChatName)));
+                    _chatCompile = AccessTools.Method(message, "Compile");
+                    var measure = AccessTools.Method(Reflect.Type("Together.Chat"), "MeasureChatLine");
+                    if (_chatCompile == null || measure == null) return false;
+                    // Preserve the original sender text in constructors; only presentation caches are changed.
+                    harmony.Patch(_chatCompile, prefix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(ChatName)),
+                        postfix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(ChatCompiled)));
+                    harmony.Patch(measure, prefix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(RefreshChatLine)));
                 }
+                else return false;
                 var gameFont = AccessTools.Method(Reflect.Type("Together.UI.TeammateList.Roster"), "GameFont");
                 if (gameFont != null) harmony.Patch(gameFont, postfix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(GameFont)));
                 var chatFont = AccessTools.Method(Reflect.Type("Together.UIBullshit"), "FocusedChatFont");
@@ -100,8 +140,7 @@ namespace DDEN.MPfix
         {
             try
             {
-                var state = _states.GetOrCreateValue(__instance);
-                state.Raw = name; state.Display = null;
+                Names.Capture(__instance, name, Steam(__instance));
             }
             catch (Exception ex) { MPfixPlugin.Log.Debug("[名称显示] 记录名称失败：" + ex.Message); }
         }
@@ -113,34 +152,45 @@ namespace DDEN.MPfix
             {
                 native = _nativeName?.GetValue(player) as string ?? "";
                 if (!Enabled) return native;
-                var state = _states.GetOrCreateValue(player);
-                ulong steam = _steam.GetValue(player) is ulong value ? value : 0;
-                float now = Time.unscaledTime;
-                if (state.Display != null && state.Native == native && state.Steam == steam && now < state.RetryAt) return Track(state.Display);
-                string profile = steam != 0 && _persona != null ? _persona.Invoke(null, new object[] { steam, false }) as string : null;
-                state.Display = NameDisplayRules.Choose(state.Raw ?? native, profile, steam);
-                state.Native = native; state.Steam = steam; state.RetryAt = now + 5f;
-                return Track(state.Display);
+                return Track(Names.Resolve(player, native, Steam(player), Time.unscaledTime));
             }
             catch (Exception ex) { MPfixPlugin.Log.Debug("[名称显示] 读取名称失败：" + ex.Message); return native; }
         }
-        private static void BodyName(object __instance, ref string name)
+        private static ulong Steam(object player) => _steam?.GetValue(player) is ulong value ? value : 0;
+        private static string LookupPersona(ulong steam) => _persona?.Invoke(null, new object[] { steam, false }) as string;
+        private static bool Live(object player) => player != null && !(player is UnityEngine.Object obj && obj == null);
+        private static void RefreshNametag(object __instance)
         {
             try
             {
-                if (!Enabled) return;
-                object player = Reflect.GetInstance(__instance, "plr");
-                if (player != null) name = Display(player);
+                if (!_labels.TryGetValue(__instance, out var state) || state.Label == null) return;
+                if (!Enabled)
+                {
+                    RestoreLabel(state);
+                    return;
+                }
+                if (!Live(state.Player) || !state.Label.gameObject.activeInHierarchy) return;
+                float now = Time.unscaledTime;
+                if (now < state.NextCheck && state.Revision == Names.Revision) return;
+                state.NextCheck = now + 0.25f;
+                string display = Display(state.Player);
+                state.Display = display;
+                if (state.Label.text != display) state.Label.text = display;
+                PlayerNameFonts.Prepare(state.Label);
+                state.Rendered = state.Label.text; state.Revision = Names.Revision;
             }
-            catch (Exception ex) { MPfixPlugin.Log.Debug("[名称显示] 更新名牌失败：" + ex.Message); }
+            catch (Exception ex) { MPfixPlugin.Log.Debug("[名称显示] 更新名牌显示失败：" + ex.Message); }
         }
         private static void PrepareNametag(object __instance)
         {
             try
             {
-                if (!Enabled) return;
+                object player = Reflect.GetInstance(__instance, "plr");
+                if (!Live(player)) return;
                 var tag = Reflect.GetInstance(__instance, "nametag") as GameObject;
-                if (tag != null) PlayerNameFonts.Prepare(tag.GetComponent<TMP_Text>());
+                var label = tag != null ? tag.GetComponent<TMP_Text>() : null;
+                if (label == null) return;
+                BindLabel(__instance, player, label);
             }
             catch (Exception ex) { MPfixPlugin.Log.Debug("[名称显示] 补充名称字体失败：" + ex.Message); }
         }
@@ -148,32 +198,106 @@ namespace DDEN.MPfix
         {
             try
             {
-                if (!Enabled) return;
-                object player = Reflect.GetInstance(__instance, "plr");
-                if (player != null) Reflect.TrySetInstance(__instance, "name", GuiDisplay(player));
+                if (!_chat.TryGetValue(__instance, out var state))
+                {
+                    if (!Enabled) return;
+                    object player = Reflect.GetInstance(__instance, "plr");
+                    // Plain server/system text is not an authenticated player identity.
+                    string native = Reflect.GetInstance(__instance, "name") as string ?? "";
+                    state = _chat.GetOrCreateValue(__instance);
+                    state.Native = native; state.Compiled = native;
+                    if (Live(player)) state.Sender = Names.CaptureMessage(player, native, _nativeName.GetValue(player) as string ?? native, Steam(player));
+                }
+                else if (state.Sender == null)
+                {
+                    // Only an explicit native player binding can turn an unresolved line into a player message.
+                    object player = Reflect.GetInstance(__instance, "plr");
+                    if (Live(player)) state.Sender = Names.CaptureSnapshot(player, _nativeName.GetValue(player) as string ?? state.Native, Steam(player));
+                }
+                if (state.Sender == null) return;
+                string name = Enabled ? GuiName(Track(Names.Resolve(state.Sender, Time.unscaledTime))) : state.Native;
+                Reflect.TrySetInstance(__instance, "name", name);
             }
             catch (Exception ex) { MPfixPlugin.Log.Debug("[名称显示] 更新聊天名称失败：" + ex.Message); }
+        }
+        private static void ChatCompiled(object __instance)
+        {
+            if (_chat.TryGetValue(__instance, out var state))
+                state.Compiled = Reflect.GetInstance(__instance, "name") as string;
+        }
+        private static void RefreshChatLine(object text)
+        {
+            try
+            {
+                float now = Time.unscaledTime;
+                if (_chat.TryGetValue(text, out var cached) && now < cached.NextCheck && cached.Revision == Names.Revision) return;
+                ChatName(text);
+                if (!_chat.TryGetValue(text, out var state)) return;
+                state.NextCheck = now + 0.25f; state.Revision = Names.Revision;
+                if (state.Sender == null) return;
+                // Chat's outer GUI scope restores fonts; measure and draw use this same chosen font.
+                if (Enabled && _needsUnicode && GUI.skin != null)
+                {
+                    var font = PlayerNameFonts.GuiFont(_gameFont?.GetValue(null) as Font);
+                    if (font != null) GUI.skin.label.font = font;
+                }
+                string name = Reflect.GetInstance(text, "name") as string;
+                // Refresh MP's cached name string before it measures the line, only when it changed.
+                if (name != state.Compiled) _chatCompile.Invoke(text, null);
+            }
+            catch (Exception ex) { MPfixPlugin.Log.Debug("[名称显示] 更新聊天缓存失败：" + ex.GetBaseException().Message); }
         }
         private static void PrepareHandName(object __instance)
         {
             try
             {
-                if (!Enabled || !(__instance is Component hand) || hand == null) return;
+                if (!(__instance is Component hand) || hand == null) return;
+                object player = Reflect.GetInstance(__instance, "plr");
+                if (!Live(player)) return;
                 foreach (var label in hand.GetComponentsInChildren<TMP_Text>(true))
-                    if (label.gameObject.name == "RemoteHandPlayerName") PlayerNameFonts.Prepare(label);
+                    if (label.gameObject.name == "RemoteHandPlayerName") BindLabel(__instance, player, label);
             }
             catch (Exception ex) { MPfixPlugin.Log.Debug("[名称显示] 更新协作名称字体失败：" + ex.Message); }
+        }
+        private static void BindLabel(object owner, object player, TMP_Text label)
+        {
+            if (!_labels.TryGetValue(owner, out var state))
+            {
+                state = _labels.GetOrCreateValue(owner);
+                LabelStates.RemoveAll(weak => !weak.TryGetTarget(out var old) || old.Label == null);
+                LabelStates.Add(new WeakReference<LabelState>(state));
+            }
+            state.Player = player; state.Label = label; state.Native = label.text;
+            state.NextCheck = 0; state.Revision = -1;
+            RefreshNametag(owner);
+        }
+        private static void RestoreLabel(LabelState state)
+        {
+            if (state.Label != null && state.Rendered != null
+                && (state.Label.text == state.Rendered || state.Label.text == state.Display)) state.Label.text = state.Native;
+            state.Display = state.Rendered = null; state.Revision = -1;
+        }
+        private static void RestoreLabels()
+        {
+            foreach (var weak in LabelStates) if (weak.TryGetTarget(out var state)) RestoreLabel(state);
+        }
+        private static void BeginDirectionGui(object nb, out GuiFonts __state)
+        {
+            // Observe this label before choosing its font, within MP's original GUI call.
+            if (Enabled) GuiBodyName(nb);
+            BeginGui(out __state);
         }
         private static void BeginGui(out GuiFonts __state)
         {
             __state = default;
             try
             {
-                if (!Enabled || !_needsUnicode || GUI.skin == null) return;
+                if (!Enabled || GUI.skin == null) return;
                 var skin = GUI.skin;
+                __state = new GuiFonts { Skin = skin, Label = skin.label.font, Box = skin.box.font, Button = skin.button.font };
+                if (!_needsUnicode) return;
                 var replacement = PlayerNameFonts.GuiFont(skin.label.font);
                 if (replacement == null) return;
-                __state = new GuiFonts { Skin = skin, Label = skin.label.font, Box = skin.box.font, Button = skin.button.font };
                 skin.label.font = skin.box.font = skin.button.font = replacement;
             }
             catch (Exception ex) { MPfixPlugin.Log.Debug("[名称显示] 切换名单字体失败：" + ex.Message); }
@@ -192,9 +316,10 @@ namespace DDEN.MPfix
         {
             string name = Display(player);
             if (!Enabled) return name;
-            try { return PlayerNameFonts.GuiName(name, _gameFont?.GetValue(null) as Font); }
+            try { return GuiName(name); }
             catch (Exception ex) { MPfixPlugin.Log.Debug("[名称显示] 检查名单字形失败：" + ex.Message); return name; }
         }
+        private static string GuiName(string name) => PlayerNameFonts.GuiName(name, _gameFont?.GetValue(null) as Font);
         private static string GuiBodyName(object body)
         {
             string name = Reflect.GetInstance(body, "playerName") as string ?? "";
@@ -209,18 +334,43 @@ namespace DDEN.MPfix
         private static IEnumerable<CodeInstruction> DisplayReads(IEnumerable<CodeInstruction> instructions, MethodBase __originalMethod)
         {
             bool gui = !(__originalMethod.DeclaringType?.FullName?.Contains("MinigameRemotePeerHand") ?? false);
-            var display = AccessTools.Method(typeof(PlayerNameRepair), gui ? nameof(GuiDisplay) : nameof(Display));
-            var bodyName = AccessTools.Method(typeof(PlayerNameRepair), nameof(GuiBodyName));
-            var guiFont = AccessTools.Method(typeof(PlayerNameRepair), nameof(GuiFont));
+            const BindingFlags ownMethods = BindingFlags.Static | BindingFlags.NonPublic;
+            var display = typeof(PlayerNameRepair).GetMethod(gui ? nameof(GuiDisplay) : nameof(Display), ownMethods);
+            var bodyName = typeof(PlayerNameRepair).GetMethod(nameof(GuiBodyName), ownMethods);
+            var guiFont = typeof(PlayerNameRepair).GetMethod(nameof(GuiFont), ownMethods);
             foreach (var instruction in instructions)
             {
                 if (instruction.opcode == OpCodes.Ldfld && Equals(instruction.operand, _nativeName))
                 { instruction.opcode = OpCodes.Call; instruction.operand = display; }
                 else if (gui && instruction.opcode == OpCodes.Ldfld && instruction.operand is FieldInfo f && f.Name == "playerName" && f.DeclaringType == _netApply.DeclaringType)
                 { instruction.opcode = OpCodes.Call; instruction.operand = bodyName; }
+                else if (gui && _bodyNameGetter != null && instruction.Calls(_bodyNameGetter))
+                { instruction.opcode = OpCodes.Call; instruction.operand = bodyName; }
                 yield return instruction;
                 if (instruction.opcode == OpCodes.Ldsfld && instruction.operand is FieldInfo field
                     && field.FieldType == typeof(Font) && field.Name == "gamefont") yield return new CodeInstruction(OpCodes.Call, guiFont);
+            }
+        }
+        private static IEnumerable<CodeInstruction> AnnouncementReads(IEnumerable<CodeInstruction> instructions, MethodBase __originalMethod)
+        {
+            var code = new List<CodeInstruction>(instructions);
+            var display = typeof(PlayerNameRepair).GetMethod(nameof(GuiDisplay), BindingFlags.NonPublic | BindingFlags.Static);
+            bool join = __originalMethod.DeclaringType == _player
+                && (__originalMethod.Name == "Start" || __originalMethod.Name == "OnDestroy");
+            for (int i = 0; i < code.Count; i++)
+            {
+                var instruction = code[i];
+                if (instruction.opcode == OpCodes.Ldfld && Equals(instruction.operand, _nativeName))
+                {
+                    // Start also uses the logical name to name the player GameObject. Only the
+                    // name argument immediately passed to Chat.AddColorTags is presentation.
+                    int next = i + 1;
+                    while (next < code.Count && code[next].opcode == OpCodes.Nop) next++;
+                    bool displaySite = !join || next < code.Count && code[next].operand is MethodInfo call
+                        && call.DeclaringType?.FullName == "Together.Chat" && call.Name == "AddColorTags";
+                    if (displaySite) { instruction.opcode = OpCodes.Call; instruction.operand = display; }
+                }
+                yield return instruction;
             }
         }
         private static string Track(string name)
@@ -237,13 +387,7 @@ namespace DDEN.MPfix
         private static void GameFont(ref Font __result) { __result = GuiFont(__result); }
         internal static void Invalidate()
         {
-            try { foreach (var state in States()) state.Display = null; }
-            catch (Exception ex) { MPfixPlugin.Log.Debug("[名称显示] 刷新名称缓存失败：" + ex.Message); }
-        }
-        private static IEnumerable<State> States()
-        {
-            if (_allPlayers?.GetValue(null) is IEnumerable players)
-                foreach (object player in players) if (player != null) yield return _states.GetOrCreateValue(player);
+            Names.Invalidate();
         }
         // This only releases local font/cache resources. Name updates belong to MP's own callbacks.
         internal static void UpdateLifecycle()
@@ -252,11 +396,18 @@ namespace DDEN.MPfix
             if (!enabled && _wasEnabled)
             {
                 PlayerNameFonts.Clear();
-                _states = new ConditionalWeakTable<object, State>();
+                RestoreLabels();
+                Names.Clear();
                 _needsUnicode = false;
             }
             _wasEnabled = enabled;
         }
-        internal static void Stop() { _wasEnabled = false; _states = new ConditionalWeakTable<object, State>(); PlayerNameFonts.Dispose(); }
+        internal static void Stop()
+        {
+            _wasEnabled = _needsUnicode = false; Names.Clear();
+            PlayerNameFonts.Dispose(); RestoreLabels(); LabelStates.Clear();
+            _labels = new ConditionalWeakTable<object, LabelState>();
+            _chat = new ConditionalWeakTable<object, ChatState>();
+        }
     }
 }

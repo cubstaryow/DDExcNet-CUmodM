@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><AssemblyName>ET-Fix</AssemblyName><RootNamespace>HeatingCageFix</RootNamespace><Version>1.7.2</Version><Company>MornJor</Company></PropertyGroup>
+  <PropertyGroup><AssemblyName>ET-Fix</AssemblyName><RootNamespace>HeatingCageFix</RootNamespace><Version>1.7.4</Version><Company>MornJor</Company></PropertyGroup>
   <ItemGroup>
     <Reference Remove="CUCoreLib" />
     <Compile Remove="tests/**/*.cs" />

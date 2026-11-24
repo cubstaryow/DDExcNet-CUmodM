@@ -30,12 +30,30 @@ namespace DDEN.MPfix
         {
             string source = original ?? "";
             string cleaned = Clean(source), persona = Clean(profile);
-            bool validPersona = persona.Length > 0 && persona != steamId.ToString()
-                && !persona.Equals("[unknown]", StringComparison.OrdinalIgnoreCase) && persona != "[UNKNOWN]";
+            bool validPersona = ValidPersona(persona, steamId);
             bool broken = cleaned.Length == 0 || cleaned == steamId.ToString() || cleaned == "EMPTY_STRING"
                 || cleaned == "ERROR-NO-NAME" || cleaned.Trim('?', ' ', '\ufffd').Length == 0;
-            if (validPersona && (broken || source == AsciiOnly(profile) || source == LegacyBytes(profile))) return persona;
+            if (validPersona && (broken || source == AsciiOnly(profile) || source == LegacyBytes(profile)
+                || MissingGlyphCopy(cleaned, persona))) return persona;
             return cleaned.Length == 0 ? "玩家" : cleaned;
+        }
+        internal static bool ValidPersona(string profile, ulong steamId)
+        {
+            string name = Clean(profile);
+            return name.Length > 0 && name != steamId.ToString()
+                && !name.Equals("[unknown]", StringComparison.OrdinalIgnoreCase);
+        }
+        private static bool MissingGlyphCopy(string source, string profile)
+        {
+            if (source.Length != profile.Length) return false;
+            bool replaced = false;
+            for (int i = 0; i < source.Length; i++)
+            {
+                if (source[i] == profile[i]) continue;
+                if (source[i] != '?' && source[i] != '\ufffd') return false;
+                replaced = true;
+            }
+            return replaced;
         }
         private static string AsciiOnly(string text)
         {

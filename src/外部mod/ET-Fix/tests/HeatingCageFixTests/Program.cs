@@ -224,9 +224,9 @@ internal static class Program
     {
         var paths = Assembly.GetExecutingAssembly().GetCustomAttributes<AssemblyMetadataAttribute>().ToDictionary(a => a.Key, a => a.Value);
         using var assembly = AssemblyDefinition.ReadAssembly(paths["HeatingCageFixAssembly"]);
-        Check(assembly.Name.Name == "ET-Fix" && assembly.Name.Version == new Version(1, 7, 2, 0), "renamed assembly identity and version match v1.6.0");
+        Check(assembly.Name.Name == "ET-Fix" && assembly.Name.Version == new Version(1, 7, 4, 0), "renamed assembly identity and version match v1.6.0");
         var metadata = assembly.MainModule.Types.Single(t => t.FullName == "HeatingCageFix.Plugin").CustomAttributes.Single(a => a.AttributeType.FullName == "BepInEx.BepInPlugin");
-        Check((string)metadata.ConstructorArguments[0].Value == "com.dden.heatingcagefix" && (string)metadata.ConstructorArguments[1].Value == "ET-Fix" && (string)metadata.ConstructorArguments[2].Value == "1.7.2", "plugin rename preserves the existing GUID/config identity and version");
+        Check((string)metadata.ConstructorArguments[0].Value == "com.dden.heatingcagefix" && (string)metadata.ConstructorArguments[1].Value == "ET-Fix" && (string)metadata.ConstructorArguments[2].Value == "1.7.4", "plugin rename preserves the existing GUID/config identity and version");
         Check(!assembly.MainModule.AssemblyReferences.Any(a => a.Name.StartsWith("DDEN", StringComparison.Ordinal) || a.Name == "EnhancedTools" || a.Name == "CasualtiesMP" || a.Name == "CUCoreLib"), "standalone ET-Fix has no hard DDEN, ET, MP or CCL reference");
         var bridge = assembly.MainModule.Types.Single(t => t.FullName == "HeatingCageFix.DdenBridge");
         Check(bridge.IsPublic && bridge.Methods.Any(m => m.Name == "get_DdenConfig" && m.IsPublic && m.IsStatic), "ET-Fix exports the documented public static bridge");

@@ -15,3 +15,9 @@
 - 在 `src/外部mod/JDI-DDEN/` 新建外部模组：`Plugin.cs`、`JDI-DDEN.csproj`（$(GameDir)/$(BepInExPluginsDir) 引用）、README/AGENTS/CHANGE/docs、LICENSE 等；
 - 更新 `CUmod.slnx`、`scripts/build.sh`（OWNED + 部署 `JDI-DDEN.dll`）、`src/AGENTS.md`；
 - 编译验证通过；GUID `com.dden.jdi`、版本 1.4.0 不变。
+
+## 2026-11-23 · DS Tool Extension 入库（dev）
+
+- 在 `src/外部mod/DS Tool Extension/` 新建外部模组：`Plugin.cs`、`DrillLoopSound.cs`、`DS Tool Extension.csproj`、`zh-CN.json`、`EN.json`、`images/`、README/AGENTS/CHANGE 与许可文件；
+- 更新 `CUmod.slnx`、`scripts/build.sh`、`src/AGENTS.md`；
+- 第一件装备：实验性钛合金钻机（CCL 物品，1.0.1）。

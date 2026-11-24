@@ -24,6 +24,12 @@ namespace DDEN.Shared
         string HealthNote { get; }
     }
 
+    /// <summary>Optional explicit activity state. Enabled and loaded do not imply ongoing work.</summary>
+    public interface IDdenModuleActivity
+    {
+        bool IsRunning { get; }
+    }
+
     public interface IDdenModuleGate
     {
         bool ModuleEnabled { get; }

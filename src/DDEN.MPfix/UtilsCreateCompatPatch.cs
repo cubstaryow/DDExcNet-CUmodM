@@ -11,17 +11,10 @@ namespace DDEN.MPfix
     /// <summary>
     /// 兼容修复：联机合成“无法合成：无法生成物品”。
     ///
-    /// 病根（反编译核对）：
-    ///   1) Together 在主机侧重新实现了一份合成生成：
-    ///      <c>PlayerCamera_TryCraft_MultiplayerPatch.RecipeResult_SpawnResult</c>
-    ///      → <c>Utils.Create(rres.id, pos, rot)</c> → <c>Instantiate(Resources.Load(id))</c>。
-    ///   2) 模组物品（EnhancedTools / 通过 CUCoreLib 注册的物品等）不在 Unity Resources 里，
-    ///      而是运行时从 AssetBundle/文件加载的 → <c>Resources.Load(id)</c> 返回 null
-    ///      → 生成失败 → <c>CraftReason.SpawnFailed</c> → 客户端提示 "Can't craft: the result could not be made"。
-    ///   3) 单机不走这条路（单机是 <c>RecipeResult.SpawnResult</c>，CUCoreLib 已经 prefix 掉了并换成
-    ///      <c>CustomInstantiate</c>），所以只有联机才会踩。
-    ///   4) Together 会把这次失败按 attempt 缓存成 receipt，同一会话里重试仍然是失败，
-    ///      直到换层/重连换了 session —— 这就是“过一层又能合成”的观感。
+    /// Together's host spawn helper calls Utils.Create, which CCL also patches.
+    /// Preserve CCL's result. Its dead-template cache is repaired separately before construction.
+    /// SpawnFailed also covers pickup/spending exceptions; those are not safe spawn retries.
+    /// MP receipt caching deduplicates the same attempt, not all later crafts in the session.
     ///
     /// Let CCL and the original function finish first. Only a missing result within the
     /// native server craft transaction may be repaired. Entertainment remains independent.
@@ -152,8 +145,8 @@ namespace DDEN.MPfix
             {
                 Type t = AccessTools.TypeByName("CUCoreLib.Registries.ItemRegistry");
                 if (t == null) return "ItemRegistry 类型不存在";
-                var prop = t.GetProperty("RegisteredItems", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                if (prop?.GetValue(null) is System.Collections.IDictionary dict)
+                var registrations = Reflect.GetStatic(t, "RegisteredItems");
+                if (registrations is System.Collections.IDictionary dict)
                 {
                     bool has = dict.Contains(id);
                     return has ? $"已注册（{dict.Count} 条）" : $"未注册（{dict.Count} 条）";
