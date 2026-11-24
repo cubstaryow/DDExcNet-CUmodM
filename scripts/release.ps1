@@ -66,7 +66,7 @@ try {
         'DDEN.UnitListMgr.dll'      = 'src/DDEN.UnitListMgr/bin/Release/DDEN.UnitListMgr.dll'
         'DDEN.LoongNova.dll'       = 'src/DDEN.LoongNova/bin/Release/DDEN.LoongNova.dll'
     }
-    # 注意：发布包 = **DDEN 六个组件**（公共层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器 / 单位清单管理器）。
+    # 注意：发布包 = **DDEN 七个组件**（公共层 / 管理器 / 多人修复 / 性能跟踪器 / 存档编辑器 / 单位清单管理器 / 龙灼线束）。
     # 独立外部模组「ET-Fix（ET 加热笼修复）」**不随本包发布**，它有自己的仓库与发布节奏；
     # 本脚本不会构建或部署外部模组；JDI-DDEN同样不随包发布。
     foreach ($pair in $releaseBin.GetEnumerator()) {
