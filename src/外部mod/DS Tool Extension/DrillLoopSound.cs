@@ -1,11 +1,12 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace DsToolExtension
 {
     /// <summary>
     /// 重型钻机同款循环音效（Resources 里的 drillLoop）。
-    /// 性能优化版：缓存 InventorySlot 与本地 Body，状态每 0.2 秒评估一次，避免每帧 GetComponent/查找。
-    /// 本地玩家手持且攻击时正常播放；其他玩家在 12 米内以较低音量播放。
+    /// 性能优化版：缓存 clip / InventorySlot / 本地 Body，状态每 0.2 秒评估一次；
+    /// 不在玩家槽位时禁用自身（每 1 秒由 Plugin 兜底重新检查），静默时 Update 早退。
     /// </summary>
     public class DrillLoopSound : MonoBehaviour
     {
@@ -13,6 +14,9 @@ namespace DsToolExtension
         private const float OtherPlayerVolume = 0.5f;
         private const float LocalRefreshInterval = 0.5f;
         private const float EvaluateInterval = 0.2f;
+
+        private static readonly List<DrillLoopSound> All = new List<DrillLoopSound>();
+        private static AudioClip _cachedClip;
 
         private Item item;
         private AudioSource source;
@@ -26,6 +30,7 @@ namespace DsToolExtension
 
         private void Awake()
         {
+            All.Add(this);
             item = GetComponent<Item>();
             source = gameObject.AddComponent<AudioSource>();
             source.clip = LoadDrillClip();
@@ -42,19 +47,47 @@ namespace DsToolExtension
                 Plugin.LogInfo($"[DS Tool Extension] DrillLoopSound ready: clip={source.clip.name}, item={(item != null ? item.id : "null")}");
         }
 
+        private void OnDestroy()
+        {
+            All.Remove(this);
+        }
+
         private void OnTransformParentChanged()
         {
             RefreshSlot();
         }
 
+        private void OnEnable()
+        {
+            // 被重新启用时刷新一次槽位，避免 Parent 变化未触发时长期失效。
+            if (slot == null) RefreshSlot();
+        }
+
         private void RefreshSlot()
         {
             slot = transform.parent != null ? transform.parent.GetComponent<InventorySlot>() : null;
+            // 不在任何玩家的槽位里（地上/普通容器）就没有播放意义，直接停掉 Update。
+            enabled = slot != null && slot.body != null;
         }
 
-        /// <summary>优先从原生 heavydrill prefab 复制 AudioSource.clip，失败再回退 Resources 路径。</summary>
+        internal static void SweepAll()
+        {
+            for (int i = All.Count - 1; i >= 0; i--)
+            {
+                DrillLoopSound s = All[i];
+                if (s == null)
+                {
+                    All.RemoveAt(i);
+                    continue;
+                }
+                if (!s.enabled) s.RefreshSlot();
+            }
+        }
+
+        /// <summary>静态缓存：所有钻机共享同一个 drillLoop clip；资源被卸载后重新加载。</summary>
         private static AudioClip LoadDrillClip()
         {
+            if (_cachedClip != null) return _cachedClip;
             try
             {
                 GameObject prefab = Resources.Load<GameObject>("heavydrill");
@@ -62,11 +95,12 @@ namespace DsToolExtension
                 {
                     AudioSource prefabSource = prefab.GetComponent<AudioSource>();
                     if (prefabSource != null && prefabSource.clip != null)
-                        return prefabSource.clip;
+                        return _cachedClip = prefabSource.clip;
                 }
             }
             catch { }
-            return Resources.Load<AudioClip>("drillLoop");
+            _cachedClip = Resources.Load<AudioClip>("drillLoop");
+            return _cachedClip;
         }
 
         private void Update()
@@ -84,6 +118,7 @@ namespace DsToolExtension
                 nextEvaluate = now + EvaluateInterval;
                 Evaluate();
             }
+            if (!on && source.volume <= 0f && !source.isPlaying) return;
 
             if (on)
             {

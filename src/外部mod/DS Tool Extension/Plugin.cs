@@ -19,7 +19,7 @@ namespace DsToolExtension
     /// 第二件：实验性等离子束发射器（Experimentalplasmaemitter）——等离子切割器升级版。
     /// CCL 前置、多人兼容、DDEN L1 软接入（实验性 + 中英双语）。
     /// </summary>
-    [BepInPlugin(Guid, "DS Tool Extension", "1.2.6")]
+    [BepInPlugin(Guid, "DS Tool Extension", "1.2.7")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.HardDependency)]
     [BepInDependency("com.a4kk.enhancedtools", BepInDependency.DependencyFlags.SoftDependency)]
     public class Plugin : BaseUnityPlugin
@@ -49,6 +49,8 @@ namespace DsToolExtension
         private const float DrillRotateAmount = 6f;
         private const float DrillVolume = 0.8f;
 
+        private float _nextSweep;
+
         private void Awake()
         {
             Instance = this;
@@ -75,6 +77,14 @@ namespace DsToolExtension
             {
                 Logger.LogError("[DS Tool Extension] 初始化失败：" + ex);
             }
+        }
+
+        private void Update()
+        {
+            // 兜底：物品 Parent 变化未触发时，每 1 秒重新检查不在槽位里的钻机音效组件。
+            if (UnityEngine.Time.unscaledTime < _nextSweep) return;
+            _nextSweep = UnityEngine.Time.unscaledTime + 1f;
+            DrillLoopSound.SweepAll();
         }
 
         private void RegisterDrill()

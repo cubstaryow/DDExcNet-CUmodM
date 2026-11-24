@@ -1,5 +1,9 @@
 # DS Tool Extension 变更记录
 
+## v1.2.7 · 2026-11-24
+
+- 性能：DrillLoopSound 静态缓存 drillLoop clip；Update 在静默时早退；物品不在玩家槽位时禁用组件，Plugin 每 1 秒兜底重新检查（Parent 变化未触发也能恢复）。
+
 ## v1.2.6 · 2026-11-23
 
 - 性能优化：DrillLoopSound 缓存 InventorySlot/本地 Body，状态每 0.2 秒评估一次；BatteryEncumbranceReduction 每 0.5 秒检查一次，减少每帧 GetComponent 与容器字段写入。
