@@ -16,5 +16,7 @@
     <Compile Include="../../src/DDEN.NetPerfTracker/PerfLog.cs" Link="PerfLog.cs" />
     <Compile Include="../../src/DDEN.NetPerfTracker/TogetherEvidence.cs" Link="TogetherEvidence.cs" />
     <Compile Include="../../src/DDEN.NetPerfTracker/ProbeReport.cs" Link="ProbeReport.cs" />
+    <Compile Include="../../src/DDEN.NetPerfTracker/DeepTimingData.cs" Link="DeepTimingData.cs" />
+    <Compile Include="../../src/DDEN.NetPerfTracker/DeepTimingReport.cs" Link="DeepTimingReport.cs" />
   </ItemGroup>
 </Project>

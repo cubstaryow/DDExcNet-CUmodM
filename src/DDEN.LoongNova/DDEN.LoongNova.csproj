@@ -2,7 +2,7 @@
   <PropertyGroup>
     <AssemblyName>DDEN.LoongNova</AssemblyName>
     <RootNamespace>DDEN.LoongNova</RootNamespace>
-    <Version>0.1.0-alpha</Version>
+    <Version>1.0.1</Version>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../DDEN.Shared/DDEN.Shared.csproj" />
@@ -11,6 +11,6 @@
       <Private>false</Private>
     </Reference>
     <EmbeddedResource Include="Content.json" />
-    <EmbeddedResource Include="images/*.png" />
+    <EmbeddedResource Include="images/*.png" Exclude="images/dragon-wing-back-side.png;images/gravity-belt.png;images/dragon-wing-back.png;images/dragon-wing-waist.png" />
   </ItemGroup>
 </Project>

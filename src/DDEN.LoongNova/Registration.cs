@@ -21,6 +21,9 @@ namespace DDEN.LoongNova
         internal const string DragonQuality = "loongnova.dragonization";
         internal static BatteryInfo CellStats { get; private set; }
         internal static Sprite GunSprite { get; private set; }
+        internal static Sprite GunLoadedSprite { get; private set; }
+        internal static Sprite WingFoldedSprite { get; private set; }
+        internal static Sprite WingOpenSprite { get; private set; }
         private static JObject _text;
         internal static string Text(string key) => _text?.Value<string>(key) ?? key;
 
@@ -39,12 +42,12 @@ namespace DDEN.LoongNova
                 category = "utility", tags = "gun,cangetwet", weight = 2f, value = 48,
                 slotRotation = -90, onlyHoldInHands = true, usable = true, usableWithLMB = true,
                 autoAttack = true, destroyAtZeroCondition = false, rec = new Recognition(10),
-                DropPool = Sources, WorldSpawnPerChunk = 0,
+                DropPool = DropPool.None, WorldSpawnPerChunk = 0,
                 Gun = new GunProperties
                 {
                     AmmoType = GunScript.AmmoType.Rifle, FiringMode = GunScript.FiringMode.Auto,
-                    FeedType = GunScript.FeedType.Mag, MagCapacity = 20, KnockBack = 2,
-                    StructureDamage = 3000, AnimalDamage = 650, Loudness = 2.5f,
+                    FeedType = GunScript.FeedType.Mag, MagCapacity = 100, KnockBack = 2,
+                    StructureDamage = 625, AnimalDamage = 225, Loudness = 2.5f,
                     DesiredGasTime = DragonGun.ShotInterval, ShotsPerFire = 1, VerticalSpread = 0,
                     ConditionLossPerShot = 0.2f, BeforeAttack = Trigger
                 }
@@ -55,60 +58,71 @@ namespace DDEN.LoongNova
                 fullName = Text("cellName"), description = Text("cellDescription"),
                 category = "utility", tags = "battery", weight = 0.3f, value = 32,
                 usable = false, destroyAtZeroCondition = false, rec = new Recognition(6),
-                DropPool = Sources, WorldSpawnPerChunk = 0
+                DropPool = DropPool.None, WorldSpawnPerChunk = 0
             };
             CellStats = new BatteryInfo { maxCharge = EnergyState.Capacity };
             foreach (var field in typeof(ItemInfo).GetFields(BindingFlags.Instance | BindingFlags.Public))
                 field.SetValue(CellStats, field.GetValue(cell));
             CellStats.SetTags();
-            GunSprite = LoadSprite("dragon-scorch-rifle.png", "rifle");
+            GunSprite = LoadSprite("dragon-scorch-rifle-v2.png", "rifle");
+            GunLoadedSprite = LoadSprite("dragon-scorch-rifle.png", "rifle");
             var originalGun = Resources.Load<GameObject>("rifle").GetComponent<GunScript>();
             gun.Gun.BarrelOffset = originalGun.barrel.localPosition;
-            gun.Gun.NormalSprite = gun.Gun.RackedSprite = gun.Gun.NormalSpriteNoMag = gun.Gun.RackedSpriteNoMag = GunSprite;
+            gun.Gun.NormalSprite = gun.Gun.RackedSprite = GunLoadedSprite;
+            gun.Gun.NormalSpriteNoMag = gun.Gun.RackedSpriteNoMag = GunSprite;
             using (ItemRegistry.BeginOwnerRegistration(LoongNovaPlugin.Guid))
             {
-                ItemRegistry.Register(GunId, (ItemInfo)gun, GunSprite, 0.02f);
-                ItemRegistry.Register(CellId, (ItemInfo)cell, LoadSprite("dragon-breath-cell.png", "riflemagazine"), 0.05f);
+                ItemRegistry.Register(GunId, (ItemInfo)gun, GunSprite, 0);
+                ItemRegistry.Register(CellId, (ItemInfo)cell, LoadSprite("dragon-breath-cell.png", "riflemagazine"), 0);
                 RegisterEquipment();
             }
             using (RecipeRegistry.BeginOwnerRegistration(LoongNovaPlugin.Guid)) RegisterRecipes();
         }
-
-        private const DropPool Sources = DropPool.AllTraders | DropPool.Corpse | DropPool.ContainerCrate
-            | DropPool.DropCapsule | DropPool.CapsuleContainer;
 
         private static Sprite NativeSprite(string id) => Resources.Load<GameObject>(id).GetComponent<SpriteRenderer>().sprite;
 
         private static void RegisterEquipment()
         {
             LocaleRegistry.RegisterCraftingQuality(DragonQuality, Text("dragonQuality"));
+            LocaleRegistry.RegisterCraftingQuality("modification", Text("modificationQuality"));
             var prefab = Resources.Load<GameObject>("belt");
             var container = prefab.GetComponent<Container>();
             var swap = prefab.GetComponent<WearableSpriteSwap>();
+            var beltSprite = LoadSprite("gravity-belt-v2.png", "belt");
+            var waistReference = swap != null && swap.sprites.Count > 0 ? swap.sprites[0] : NativeSprite("belt");
+            WingFoldedSprite = LoadSprite("dragon-wing-folded-side.png", "belt", waistReference,
+                new Vector2(0.8f, 0.9f), widthScale: 1.05f, pixelWidth: 32);
+            WingOpenSprite = LoadSprite("dragon-wing-open-side.png", "belt", waistReference,
+                new Vector2(0.8f, 0.58f), widthScale: 2.1f, pixelWidth: 64);
             var belt = new CustomItemInfo
             {
                 fullName = Text("beltName"), description = Text("beltDescription"),
                 category = "container", weight = 1.5f, value = 45, rec = new Recognition(10),
                 wearable = true, desiredWearLimb = "DownTorso", wearSlotId = "belt", wearableVisualOffset = 2,
                 wearableHitDurabilityLossMultiplier = 0, destroyAtZeroCondition = false,
-                decayInfo = 0, rotSpeed = 0, usable = false, DropPool = Sources, WorldSpawnPerChunk = 0,
+                decayInfo = 0, rotSpeed = 0, usable = false, DropPool = DropPool.None, WorldSpawnPerChunk = 0,
                 Container = new ContainerProperties
                 {
                     Capacity = 6, MaxWeightPerItem = container.maxWeightPerItem,
                     EncumbranceReduction = 0.6f, ItemsVisible = container.itemsVisible,
                     TagRestriction = container.tagRestriction
                 },
-                WornSprite = swap != null && swap.sprites.Count > 0 ? swap.sprites[0] : NativeSprite("belt")
+                WornSprite = LoadSprite("dragon-wing-waist-side.png", "belt", waistReference),
+                MultiWornSprites = new Dictionary<string, Sprite>
+                {
+                    ["UpTorso"] = WingFoldedSprite
+                },
+                MultiWornSpriteOffsets = new Dictionary<string, Vector2> { ["UpTorso"] = new Vector2(-0.35f, 0.25f) }
             };
-            // No BatteryProperties: every newly generated or crafted belt has an empty energy socket.
+            // Authenticated 1000-capacity socket; native BatteryItem slots cap at 300. New belts stay empty.
             belt.AddSpawnComponent<GravityBelt>();
-            ItemRegistry.Register(BeltId, (ItemInfo)belt, NativeSprite("belt"), 0.02f);
+            ItemRegistry.Register(BeltId, (ItemInfo)belt, beltSprite, 0);
             ItemRegistry.Register(MatterId, (ItemInfo)new CustomItemInfo
             {
                 fullName = Text("matterName"), description = Text("matterDescription"),
                 category = "custom", tags = "material", weight = 0.5f, value = 8,
                 usable = false, destroyAtZeroCondition = true, DropPool = DropPool.None, WorldSpawnPerChunk = 0
-            }, NativeSprite("turbulentcrystalshard"), 0);
+            }, LoadSprite("dragon-breath-matter.png", "turbulentcrystalshard"), 0);
             ItemRegistry.Register(DragonId, (ItemInfo)new CustomItemInfo
             {
                 fullName = Text("dragonName"), description = Text("dragonDescription"),
@@ -125,18 +139,26 @@ namespace DDEN.LoongNova
                 qualities = new List<CraftingQuality>
                 {
                     new CraftingQuality("cutting", 100000), new CraftingQuality("hammering", 100000),
-                    new CraftingQuality(DragonQuality, 100000)
+                    new CraftingQuality(DragonQuality, 100000), new CraftingQuality("modification", 100000)
                 },
                 DropPool = DropPool.None, WorldSpawnPerChunk = 0
-            }, NativeSprite("wrench"), 0);
+            }, LoadSprite("dragon-claw-wrench.png", "wrench"), 0);
         }
 
         internal static void UseWrench(Body body, Item item)
         {
-            float before = item.condition;
-            Item.GetItem("wrench").useAction?.Invoke(body, item);
-            if (item != null && item.condition < before)
-                item.condition = before - (before - item.condition) * 0.001f;
+            if (body == null || item == null) return;
+            var strike = new AttackInfo
+            {
+                structuralDamage = 375, damage = 350,
+                cooldown = 0.1f, attackCooldownMult = 1f / 3.5f,
+                distance = 5.2f, knockBack = 70, staminaUse = 0.5f,
+                attackAnim = Resources.Load<GameObject>("SwingAnim"),
+                swingSounds = new[] { "BSSwing1", "BSSwing2", "BSSwing3", "BSSwing4" },
+                volume = 0.5f, rotateAmount = 10
+            };
+            if (body.Attack(strike, body.handSlot))
+                item.condition = Mathf.Max(0, item.condition - 0.00000125f);
         }
 
         private static bool Trigger(ref object state, GunScript gun, Body body, Item item)
@@ -146,7 +168,7 @@ namespace DDEN.LoongNova
             return false;
         }
 
-        private static Sprite LoadSprite(string resource, string reference)
+        private static Sprite LoadSprite(string resource, string reference, Sprite sizeReference = null, Vector2? pivot = null, float widthScale = 1, int pixelWidth = 0)
         {
             var texture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
             using (var stream = Resource(resource))
@@ -167,9 +189,9 @@ namespace DDEN.LoongNova
                 maxX = Math.Max(maxX, x); maxY = Math.Max(maxY, y);
             }
             if (maxX < minX) throw new InvalidDataException("Empty sprite: " + resource);
-            var original = Resources.Load<GameObject>(reference).GetComponent<SpriteRenderer>().sprite;
+            var original = sizeReference ?? Resources.Load<GameObject>(reference).GetComponent<SpriteRenderer>().sprite;
             int width = maxX - minX + 1, height = maxY - minY + 1;
-            int targetWidth = reference == "rifle" ? 64 : 16;
+            int targetWidth = pixelWidth > 0 ? pixelWidth : reference == "rifle" ? 64 : reference == "wrench" ? 48 : reference == "belt" ? 32 : 16;
             int targetHeight = Math.Max(1, Mathf.RoundToInt((float)height * targetWidth / width));
             var compact = new Texture2D(targetWidth, targetHeight, TextureFormat.RGBA32, false)
             {
@@ -186,13 +208,17 @@ namespace DDEN.LoongNova
             compact.SetPixels32(sampled);
             compact.Apply(false, false); // CCL snapshots need a readable texture for serialization.
             UnityEngine.Object.Destroy(texture);
-            float ppu = targetWidth / original.bounds.size.x;
-            return Sprite.Create(compact, new Rect(0, 0, targetWidth, targetHeight), new Vector2(0.5f, 0.5f), ppu);
+            float ppu = targetWidth / (original.bounds.size.x * widthScale);
+            return Sprite.Create(compact, new Rect(0, 0, targetWidth, targetHeight), pivot ?? new Vector2(0.5f, 0.5f), ppu);
         }
 
         private static RecipeItem Material(string id) => new RecipeItem(0) { specific = true, specificId = id };
         private static RecipeItem Fluid(float amount) => new RecipeItem(amount) { specific = true, specificId = "biochem", isLiquid = true };
-        private static RecipeItem Tool(string quality) => new RecipeItem(0) { quality = new CraftingQuality(quality, 1), destroyItem = false };
+        private static RecipeItem Tool(string quality) => new RecipeItem(quality == DragonQuality ? DragonizationRules.WearFraction : 0)
+        {
+            quality = new CraftingQuality(quality, quality == DragonQuality ? DragonizationRules.RequiredUnits : 1),
+            destroyItem = false
+        };
         private static void AddRecipe(string result, List<RecipeItem> items, int intelligence = 18)
         {
             RecipeRegistry.Register(new Recipe
@@ -221,7 +247,7 @@ namespace DDEN.LoongNova
             });
             var depleted = Material(CellId);
             depleted.noMaxCondition = true;
-            AddRecipe(CellId, new List<RecipeItem> { depleted, Fluid(160), Material("flammablepowder") });
+            AddRecipe(CellId, new List<RecipeItem> { depleted, Fluid(160), Material("flammablepowder"), Tool(DragonQuality) });
             AddRecipe(BeltId, new List<RecipeItem>
             {
                 Material("belt"), Material("turbulentcrystalshard"), Material("gravbag"),

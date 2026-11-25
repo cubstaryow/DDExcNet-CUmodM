@@ -14,9 +14,9 @@ namespace DDExcNet.CUmodM
     /// <summary>
     /// DDExcNet-CUmodM —— DDEN 系列的统一管理器：
     /// ① 一个窗口管全部功能界面与配置界面；② 兼容性总控（互斥检测、快捷键抢键、补丁栈、旧文件残留）；
-    /// ③ 各模块仍可单独工作，管理器缺席时它们退化成独立小窗。
+    /// ③ 各模块功能页统一由管理器打开。
     /// </summary>
-    [BepInPlugin(Guid, "DDExcNet CUmod Manager", "2.0.0")]
+    [BepInPlugin(Guid, "DDExcNet CUmod Manager", "2.1.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("org.bepinex.plugins.qol_unknown", BepInDependency.DependencyFlags.SoftDependency)]
@@ -55,7 +55,7 @@ namespace DDExcNet.CUmodM
         private bool _visible;
         private bool _modalActive;
         private float _lastToggleAt = -1f;
-        private KeyCode _effectiveKey = KeyCode.F8;
+        private KeyCode _effectiveKey = KeyCode.F11;
 
         private const int WindowId = 0x4444454E; // 'DDEN'
         private const float SidebarWidth = 236f;
@@ -73,7 +73,7 @@ namespace DDExcNet.CUmodM
             Instance = this;
             LogSource = base.Logger;
 
-            CfgToggleKey = Config.Bind("UI", "ToggleKey", new KeyboardShortcut(KeyCode.F8),
+            CfgToggleKey = Config.Bind("UI", "ToggleKey", new KeyboardShortcut(KeyCode.F11),
                 "打开/关闭管理器。这个键如果和别的模组撞了，启动时会自动换一个空闲键。");
             CfgScale = Config.Bind("UI", "Scale", 1.1f,
                 new ConfigDescription("界面缩放。", new AcceptableValueRange<float>(0.75f, 2f)));
@@ -88,7 +88,7 @@ namespace DDExcNet.CUmodM
                 new ConfigDescription("挡点击时那层暗色的深浅（0 = 完全透明，只是挡住点击）。",
                     new AcceptableValueRange<float>(0f, 0.8f)));
             CfgIgnoreEnv = Config.Bind("兼容性", "忽略核对环境版本（IgnoreEnvVersion）", false,
-                "默认关闭。本版 DDEN 针对联机组件 5.5.4 逐行核对过；版本对不上时相关模块会停手，打开这一项才允许它们继续工作。");
+                "默认关闭。本版 DDEN 针对联机组件 5.5.5 逐行核对过；版本对不上时相关模块会停手，打开这一项才允许它们继续工作。");
             CfgVerbose = Config.Bind("调试", "详细日志（Verbose）", false, "输出更详细的日志。");
             CfgLanguage = Config.Bind("UI", "Language", ManagerLanguage.Chinese,
                 "界面语言 / UI language: Chinese, English. 管理器、MPfix、性能跟踪器共用；不改游戏语言、配置键或联机设置。");
@@ -97,6 +97,9 @@ namespace DDExcNet.CUmodM
             DdenLocalization.Changed += OnLanguageChanged;
 
             Log = DDEN.Shared.Log.For(LogSource, "CUmodM", CfgVerbose.Value);
+            DDEN.Shared.Log.RegisterSink(Guid, LogSource, 10);
+            DDEN.Shared.Log.Verbose = CfgVerbose.Value;
+            CfgVerbose.SettingChanged += (_, __) => DDEN.Shared.Log.Verbose = CfgVerbose.Value;
             DDEN.Shared.Log.Attach(LogSource, "DDEN", CfgVerbose.Value);   // 共享代码（Compat/Reflect/SaveCodec）的落点
 
             // 环境版本闸门：把用户的选择喂给共享层，模块只读
@@ -119,7 +122,7 @@ namespace DDExcNet.CUmodM
             catch (Exception ex) { Log.Exception(ex, "菜单按钮拦截补丁失败"); }
             _rect = LoadRect();
 
-            _effectiveKey = Compat.ResolveHotkey(CfgToggleKey, Guid, CfgAutoFixHotkeys.Value);
+            _effectiveKey = Compat.ResolveManagerHotkey(CfgToggleKey, Guid, CfgAutoFixHotkeys.Value);
             if (CfgScanOnStart.Value)
             {
                 try { Compat.Rescan(); }
@@ -132,6 +135,8 @@ namespace DDExcNet.CUmodM
 
         private void Start()
         {
+            _effectiveKey = Compat.ResolveManagerHotkey(CfgToggleKey, Guid, CfgAutoFixHotkeys.Value);
+            CfgToggleKey.SettingChanged += (_, __) => _effectiveKey = CfgToggleKey.Value.MainKey;
             // 等所有插件 Awake 完再补扫：此时别的模组的配置/补丁都已就位
             try { DdenExternal.Scan(); }
             catch (Exception ex) { Log.Exception(ex, "扫描外部配置接入"); }
@@ -240,6 +245,7 @@ namespace DDExcNet.CUmodM
 
         private void OnDestroy()
         {
+            DDEN.Shared.Log.UnregisterSink(Guid);
             DdenHub.OpenRequested -= OnOpenRequested;
             DdenLocalization.Changed -= OnLanguageChanged;
         }
@@ -282,7 +288,7 @@ namespace DDExcNet.CUmodM
             {
                 KeyCapture.Tick();
                 float now = Time.unscaledTime;
-                if (_effectiveKey != KeyCode.None && Input.GetKeyDown(_effectiveKey) && now - _lastToggleAt > 0.25f)
+                if (_effectiveKey != KeyCode.None && CfgToggleKey.Value.IsDown() && now - _lastToggleAt > 0.25f)
                 {
                     _lastToggleAt = now;
                     Toggle();
@@ -318,10 +324,10 @@ namespace DDExcNet.CUmodM
             DrawModuleVersionWarning();
 
             if (!_visible) return;
+            Matrix4x4 old = GUI.matrix; int oldDepth = GUI.depth;
             try
             {
                 float scale = Mathf.Clamp(CfgScale.Value, 0.75f, 2f);
-                Matrix4x4 old = GUI.matrix;
                 GUI.depth = -1000;   // 画在别的模组窗口之上
                 GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1f));
 
@@ -334,13 +340,13 @@ namespace DDExcNet.CUmodM
 
                 // 用无皮肤窗口：标题栏/边框全部自己画，避免 Unity 默认窗框压住第一行文字
                 _rect = GUI.Window(WindowId, _rect, DrawWindow, GUIContent.none, GUIStyle.none);
-                GUI.matrix = old;
             }
             catch (Exception ex)
             {
                 Log.Exception(ex, "OnGUI");
                 _visible = false;
             }
+            finally { GUI.matrix = old; GUI.depth = oldDepth; }
         }
 
         /// <summary>
@@ -378,33 +384,28 @@ namespace DDExcNet.CUmodM
         }
         private void DrawEnvWarning()
         {
+            if (CfgIgnoreEnv.Value || DdenGate.VersionOk || !DdenGate.HasParticipants) return;
+            Matrix4x4 old = GUI.matrix; int oldDepth = GUI.depth;
             try
             {
-                // 没有任何模块声明参与版本核对时，主界面不挂提示（面板里照旧显示状态）
-                if (!CfgIgnoreEnv.Value && !DdenGate.VersionOk && DdenGate.HasParticipants)
-                {
-                    DdenGate.Probe();
-                    float scale = Mathf.Clamp(CfgScale.Value, 0.75f, 2f);
-                    Matrix4x4 old = GUI.matrix;
-                    GUI.depth = -1100;    // 压在所有 DDEN 窗口之上
-                    GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1f));
-
-                    float w = Screen.width / scale;
-                    var box = new Rect(w * 0.5f - 330f, 12f, 660f, 46f);
-                    DdenUI.Fill(box, new Color(0.45f, 0.05f, 0.05f, 0.94f));
-                    DdenUI.Frame(box, DdenUI.Bad);
-                    GUI.Label(new Rect(box.x + 10f, box.y + 4f, box.width - 20f, 20f),
-                        "<b>" + T("env.notice") + "</b>", DdenUI.Row);
-                    GUI.Label(new Rect(box.x + 10f, box.y + 24f, box.width - 20f, 18f),
-                        T("env.open", EnvironmentReason(), CfgToggleKey.Value.MainKey), DdenUI.Sub);
-
-                    GUI.matrix = old;
-                }
+                DdenGate.Probe();
+                float scale = Mathf.Clamp(CfgScale.Value, .75f, 2f);
+                GUI.depth = -1100;
+                GUI.matrix = Matrix4x4.identity;
+                float viewport = Screen.width / scale;
+                float width = Mathf.Min(660f, Mathf.Max(1f, viewport - 16f));
+                var logical = new Rect((viewport - width) / 2, 12, width, 46);
+                var box = ScreenNoticeStyle.Pixels(logical, scale);
+                var title = ScreenNoticeStyle.FontAt(DdenUI.Row, scale);
+                var detail = ScreenNoticeStyle.FontAt(DdenUI.Sub, scale);
+                DdenUI.Fill(box, new Color(.45f, .05f, .05f, .94f)); DdenUI.Frame(box, DdenUI.Bad);
+                var titleRect = ScreenNoticeStyle.Pixels(new Rect(logical.x + 10, logical.y + 4, width - 20, 20), scale);
+                var detailRect = ScreenNoticeStyle.Pixels(new Rect(logical.x + 10, logical.y + 24, width - 20, 18), scale);
+                GUI.Label(titleRect, "<b>" + T("env.notice") + "</b>", title);
+                GUI.Label(detailRect, DdenUI.ElideToWidth(T("env.open", EnvironmentReason(), CfgToggleKey.Value.MainKey), detailRect.width, detail), detail);
             }
-            catch (Exception ex)
-            {
-                Log.Debug("版本提示条绘制失败：" + ex.Message);
-            }
+            catch (Exception ex) { Log.Debug("版本提示条绘制失败：" + ex.Message); }
+            finally { GUI.matrix = old; GUI.depth = oldDepth; }
         }
 
         private void DrawWindow(int id)
@@ -807,7 +808,7 @@ namespace DDExcNet.CUmodM
             catch (Exception ex)
             {
                 Log.Exception(ex, "外部页面绘制失败：" + block.Title);
-                DdenUI.Label(body, T("error.external", ex.Message), DdenUI.Wrap);
+                DdenUI.Label(body, T("error.external", ""), DdenUI.Wrap);
             }
         }
 
@@ -848,7 +849,7 @@ namespace DDExcNet.CUmodM
                 bool handled = false;
                 if (!manager)
                     try { handled = module.DrawSettings(solo); }
-                    catch (Exception ex) { DdenUI.Label(solo, T("error.settings", ex.Message), DdenUI.Wrap); handled = true; }
+                    catch (Exception ex) { Log.Exception(ex, "DrawSettings(" + module.Id + ")"); DdenUI.Label(solo, T("error.settings", ""), DdenUI.Wrap); handled = true; }
                 if (handled) return;
                 var entries = (manager ? Config.Entries() : module.ConfigEntries).ToArray();
                 float height = DdenUI.ConfigListHeight(entries) + 12;
@@ -915,7 +916,7 @@ namespace DDExcNet.CUmodM
             "龙域信息交换网络标准",
             "cubstaryow",
             "DDExcNet 是「幼龙云」所属「视界」世界观下的<b>龙域信息交换网络标准</b>。\n" +
-            "本仓库是它在《Casualties Unknown》里的落地实现：一个管理器、一套联机修复、一个可选的存档编辑器。"
+            "本仓库是它在《Casualties Unknown》里的落地实现：装备、联机修复、性能分析与实用工具。"
         };
 
         private static string[] _about;
@@ -1024,7 +1025,15 @@ namespace DDExcNet.CUmodM
         }
 
         /// <summary>关于页：DDExcNet 是什么、作者、本仓库组成。</summary>
+        private Vector2 _aboutScroll;
         private void DrawAbout(Rect area)
+        {
+            float contentHeight = 280 + (ModuleVersionCatalog.KnownIds.Count + DdenHub.Modules.Count(m => ModuleVersionCatalog.Latest(m.Id) == null) + 2) * 22;
+            _aboutScroll = DdenUI.BeginScrollView(area, _aboutScroll, new Rect(0, 0, Mathf.Max(1, area.width - 20), Mathf.Max(area.height, contentHeight)));
+            try { DrawAboutContent(new Rect(0, 0, Mathf.Max(1, area.width - 20), contentHeight)); }
+            finally { DdenUI.EndScrollView(); }
+        }
+        private void DrawAboutContent(Rect area)
         {
             GUI.Label(new Rect(area.x, area.y, area.width, 20f), T("nav.about"), DdenUI.Title);
 
@@ -1054,12 +1063,18 @@ namespace DDExcNet.CUmodM
             DdenUI.Section(new Rect(area.x, ly, area.width, 18f), T("about.components"));
             ly += 26f;
 
-            (string name, string ver, string note)[] rows =
+            var rows = new List<(string name, string ver, string note)>
             {
-                (T("module.manager"), Info.Metadata.Version.ToString(), T("about.manager")),
-                (T("module.mpfix"), ModuleVersion("mpfix") ?? T("value.notInstalled"), T("about.mpfix")),
-                (T("module.saveeditor"), ModuleVersion("saveeditor") ?? T("value.notInstalled"), T("about.editor")),
+                (T("module.manager"), ModuleVersionCatalog.ManagerRelease, T("about.manager")),
+                (T("module.shared"), DdenApi.SharedVersion, T("about.shared"))
             };
+            foreach (string id in ModuleVersionCatalog.KnownIds)
+            {
+                var module = DdenHub.Find(id);
+                rows.Add((ManagerText.ModuleName(id, id), SafeModuleVersion(module), AboutModuleNote(id)));
+            }
+            foreach (var module in DdenHub.Modules)
+                if (ModuleVersionCatalog.Latest(module.Id) == null) rows.Add((VersionModuleName(module), SafeModuleVersion(module), ""));
 
             foreach ((string name, string ver, string note) in rows)
             {
@@ -1075,6 +1090,12 @@ namespace DDExcNet.CUmodM
                 T("compat.about", CompatibilityHeadline()), DdenUI.Sub);
         }
 
+        private static string SafeModuleVersion(IDdenModule module)
+        {
+            if (module == null) return T("value.notInstalled");
+            try { return module.Version; } catch { return T("value.unknown"); }
+        }
+        private static string AboutModuleNote(string id) => ManagerText.Get("about." + id);
         private static string ModuleVersion(string id)
         {
             IDdenModule module = DdenHub.Find(id);
@@ -1083,7 +1104,7 @@ namespace DDExcNet.CUmodM
 
         private void DrawModule(Rect area, IDdenModule module)
         {
-            GUI.Label(new Rect(area.x, area.y, area.width - 160f, 20f), ModuleName(module) + " <size=10>" + module.Version + (module is IDdenModuleVersion support ? " · " + T("versions.minimumPair", support.MinimumManagerVersion, support.MinimumSharedVersion) : "") + "</size>", DdenUI.Title);
+            GUI.Label(new Rect(area.x, area.y, area.width - 160f, 20f), ModuleName(module) + " <size=10>" + module.Version + "</size>", DdenUI.Title);
             DdenUI.Hover(new Rect(area.x, area.y, area.width - 160, 20), VersionText(module).Details);
             if (DdenUI.Button(new Rect(area.xMax - 150f, area.y, 70f, 22f), T("action.config")))
             {
@@ -1103,7 +1124,7 @@ namespace DDExcNet.CUmodM
             catch (Exception ex)
             {
                 Log.Exception(ex, "DrawPage(" + module.Id + ")");
-                DdenUI.Label(page, T("error.page", ex.Message), DdenUI.Wrap);
+                DdenUI.Label(page, T("error.page", ""), DdenUI.Wrap);
             }
         }
 

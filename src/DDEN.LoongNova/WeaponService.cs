@@ -51,12 +51,13 @@ namespace DDEN.LoongNova
                     {
                         if (Mp.CoreReady && Mp.IsRunning && !Mp.IsServer) PulseVisual.Play(token);
                     })) return;
+                    if (!Mp.RegisterClientHandler(WingVisualSync.Channel, WingVisualSync.Receive)) return;
                     MultiplayerCombat.InstallGuards();
                     _handler = receiver;
                     break;
                 }
             }
-            catch (Exception error) { LoongNovaPlugin.Log.LogWarning("LoongNova bridge: " + error.GetBaseException().Message); }
+            catch (Exception error) { LoongNovaPlugin.Log.Warn("LoongNova bridge: " + error.GetBaseException().Message); }
         }
 
         private JToken Receive(uint sender, JToken packet)
@@ -99,7 +100,7 @@ namespace DDEN.LoongNova
             }
             catch (Exception error)
             {
-                LoongNovaPlugin.Log.LogWarning("LoongNova request: " + error.GetBaseException().Message);
+                LoongNovaPlugin.Log.Warn("LoongNova request: " + error.GetBaseException().Message);
                 var result = Reply(gun, false);
                 result["request"] = request;
                 if (peer != null && request != null) Remember(peer, request, result);
@@ -140,7 +141,7 @@ namespace DDEN.LoongNova
                 gun.Normalize();
                 // The loose item is already committed even if inventory pickup cannot complete.
                 try { body.AutoPickUpItem(result); }
-                catch (Exception error) { LoongNovaPlugin.Log.LogWarning("LoongNova pickup: " + error.Message); }
+                catch (Exception error) { LoongNovaPlugin.Log.Warn("LoongNova pickup: " + error.Message); }
                 Sound.Play("gununloadmag", gun.transform.position);
             }
             else if (operation == "shoot")
@@ -158,7 +159,7 @@ namespace DDEN.LoongNova
                 gun.Item.condition = Mathf.Max(0, gun.Item.condition - 0.002f);
                 if (gun.Item.condition < 0.00001f) gun.Item.condition = 0;
                 gun.Normalize();
-                var fire = new FireInfo { pos = origin, dir = aim, structureDamage = 3000, animalDamage = 650, doTinnitus = false, ignoreBody = !Mp.IsRunning };
+                var fire = new FireInfo { pos = origin, dir = aim, structureDamage = 625, animalDamage = 225, doTinnitus = false, ignoreBody = !Mp.IsRunning };
                 PulseVisual.Begin(fire);
                 Vector2 end;
                 try

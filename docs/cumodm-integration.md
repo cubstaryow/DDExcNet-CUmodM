@@ -1,6 +1,6 @@
 # DDEN管理器接入约定
 
-面向模组作者，以 `DDEN.Shared/ExternalConfig.cs`、`Hub.cs`、`DdenDocs.cs`及管理器当前代码为准。管理器默认F8，冲突后以本机实际设置为准。文字、双语、实验性／性能等级及显示样式统一遵循[管理器显示接入规范 v1](manager-ui-contract.md)。
+面向模组作者，以 `DDEN.Shared/ExternalConfig.cs`、`Hub.cs`、`DdenDocs.cs`及管理器当前代码为准。管理器默认F11，冲突时从F10至F1查找，F12保留给Steam截图。文字、双语、实验性／性能等级及显示样式统一遵循[管理器显示接入规范 v1](manager-ui-contract.md)。
 
 | 模式 | 需要Shared引用 | 用途 |
 | --- | --- | --- |
@@ -59,7 +59,7 @@ public static class DdenBridge
 
 ### 可选完整说明
 
-DDEN配置提示含功能、修复的问题、解决方案、实验性、性能影响。新接入使用独立状态／等级和备注字段，管理器决定语言和格式：
+DDEN配置提示含功能、适用问题、实验性和性能影响；既有MPfix保留解决方案说明，其他模块不在面板展示开发实现。新接入使用独立状态／等级和备注字段，管理器决定语言和格式：
 
 ```csharp
 DdenDocs.AddStructured(section, key, what, fixes, how,
@@ -97,7 +97,7 @@ bool DrawSettings(UnityEngine.Rect area);
 | `IDdenConfigPresentation` | 与配置策略一起提供规范化元数据及显示翻译，供通用配置页绘制 |
 | `IDdenConfigAvailability` | 对禁用项提供原因 |
 
-参与环境核对的模块显式 `DdenGate.RegisterParticipant(id)`，自行尊重Blocked。当前VersionOk仅比较Together 5.5.4，Blocked还要求已安装Together且未选择忽略；不比较Unity版本，也不能把忽略开关当作测试通过。
+参与环境核对的模块显式 `DdenGate.RegisterParticipant(id)`，自行尊重Blocked。当前VersionOk仅比较Together 5.5.5，Blocked还要求已安装Together且未选择忽略；不比较Unity版本，也不能把忽略开关当作测试通过。
 
 ## 3. 公共能力与安全边界
 

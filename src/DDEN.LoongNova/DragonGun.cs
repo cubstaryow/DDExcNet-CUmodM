@@ -1,4 +1,5 @@
 using DDEN.Shared;
+using CUCoreLib.Helpers;
 using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 using UnityEngine;
@@ -7,7 +8,7 @@ namespace DDEN.LoongNova
 {
     public sealed class DragonGun : MonoBehaviour
     {
-        internal const float ShotInterval = 0.5f;
+        internal const float ShotInterval = 0.15f;
         internal readonly EnergyState State = new EnergyState();
         internal bool Known;
         internal double NextShot;
@@ -22,6 +23,7 @@ namespace DDEN.LoongNova
         private float _nextRead, _nextRequest, _nextAction;
         private object _connection;
         private SpriteRenderer _renderer;
+        private Sprite _visibleSprite;
 
         internal static DragonGun For(Item item)
         {
@@ -55,7 +57,7 @@ namespace DDEN.LoongNova
                 catch (System.Exception error)
                 {
                     Status = Registration.Text("rejected");
-                    LoongNovaPlugin.Log.LogWarning("LoongNova action: " + error.GetBaseException().Message);
+                    LoongNovaPlugin.Log.Warn("LoongNova action: " + error.GetBaseException().Message);
                 }
                 return;
             }
@@ -103,6 +105,7 @@ namespace DDEN.LoongNova
                 _connection = connection; _pending.Clear(); _transaction = _ejectRequested = false; _nextRead = 0;
                 if (Mp.IsRunning && !Mp.IsServer) { Known = false; State.Revision = 0; }
             }
+            RefreshSprite();
             _expired.Clear();
             foreach (var request in _pending) if (Time.unscaledTime >= request.Value) _expired.Add(request.Key);
             foreach (string request in _expired) _pending.Remove(request);
@@ -124,14 +127,33 @@ namespace DDEN.LoongNova
             }
         }
 
+        // Reads are throttled and use the existing authenticated carried-item path.
+        internal string CellHint()
+        {
+            if (Mp.IsRunning && !Mp.IsServer)
+            {
+                var body = PlayerCamera.main != null ? PlayerCamera.main.body : null;
+                if (body != null && Time.unscaledTime >= _nextRead
+                    && (body.GetItem(body.handSlot) == Item || NetworkAccess.Carries(body, Item)))
+                {
+                    _nextRead = Time.unscaledTime + 1;
+                    Request("read", body);
+                }
+                if (!Known) return Registration.Text("waiting");
+            }
+            return State.Loaded
+                ? string.Format(Registration.Text("beltSocketLoaded"), State.Energy, State.Energy / EnergyState.Capacity * 100)
+                : Registration.Text("beltSocketEmpty");
+        }
+
         internal void Normalize()
         {
             if (Gun == null) Gun = GetComponent<GunScript>();
             if (Gun == null) return;
             Gun.racked = Gun.lastRacked = false;
             Gun.firingPinStruck = false;
-            Gun.magCapacity = 20;
-            Gun.structureDamage = 3000; Gun.animalDamage = 650; Gun.knockBack = 2;
+            Gun.magCapacity = 100;
+            Gun.structureDamage = 625; Gun.animalDamage = 225; Gun.knockBack = 2;
             Gun.conditionLossPerShot = 0.2f; Gun.desiredGasTime = ShotInterval;
             if (!Mp.IsRunning || Mp.IsServer || Known)
             {
@@ -139,9 +161,18 @@ namespace DDEN.LoongNova
                 Gun.roundsInMag = State.Loaded ? Mathf.FloorToInt(State.Energy / EnergyState.ShotCost) : 0;
                 Gun.roundInChamber = GunScript.RoundInChamber.None;
             }
-            // The stock gun update is suppressed, so explicitly keep the generated held sprite.
-            if (_renderer != null && Registration.GunSprite != null && _renderer.sprite != Registration.GunSprite)
-                _renderer.sprite = Registration.GunSprite;
+            RefreshSprite();
+        }
+
+        private void RefreshSprite()
+        {
+            if (_renderer == null || Gun == null) return;
+            var sprite = GunVisualState.Select(!Mp.IsRunning || Mp.IsServer || Known, State.Loaded, Gun.hasMag,
+                Registration.GunLoadedSprite, Registration.GunSprite);
+            if (sprite == null) return;
+            // CCL inventory rendering uses an instance icon override rather than the world renderer alone.
+            if (_visibleSprite != sprite && CUCoreUtils.SetItemSprite(Item, sprite)) _visibleSprite = sprite;
+            if (_renderer.sprite != sprite) _renderer.sprite = sprite;
         }
     }
 }

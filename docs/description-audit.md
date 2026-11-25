@@ -17,8 +17,8 @@
 | 物理保险仍写HeldQuiet被动恢复、生成时扫描 | 只处理实际DropItem／DropWearable，自由物品且检查足够时补碰撞；不挪位置 | `ItemPhysicsGuard` |
 | 仍称离场广播清理能解决其他客机掉帧，或将其列为待验收功能 | 原方案实测无效，v1.7.1 已移除并放弃此项修复；原版背包流程负责处理，本包不保证解决掉帧 | `GhostItemRelay`／配置／频道已移除；仅本地 `decomp/backup-ghostitems/` 保留备份 |
 | 把物理步／帧当物理压力、等待当GPU根因 | 调度、准确计时、对象状态与观察者开销分开；等待／数量只能提供线索 | `PhysicsTiming/FrameStages/ObjectCensus/PerfAlerts` |
-| Unity 2022.3被当成游戏版本 | 引擎版本与产品版本分开；当前门槛实际只核对Together 5.5.4 | `DdenGate.VersionOk/ExpectedGame` |
-| F11被写成默认值 | 默认F8，冲突后看本机实际配置；F11只是过去测试结果 | 管理器Config.Bind与 `Compat.ResolveHotkey` |
+| Unity 2022.3被当成游戏版本 | 引擎版本与产品版本分开；当前门槛实际只核对Together 5.5.5 | `DdenGate.VersionOk/ExpectedGame` |
+| 快捷键仍沿用旧F8口径 | 默认F11；冲突向F10至F1查找，F12留给Steam截图，保留用户已有自定义键 | 管理器Config.Bind与 `ManagerHotkeyPolicy` |
 | “四个／五个／六个”组件数量不一 | DDExcNet v1.7.5 包含六个 DLL（含 Shared 和 UnitListMgr）；仓库另有ET-Fix与JDI-DDEN，二者独立版本且不在包中 | `CUmod.slnx`、发布产物映射 |
 | 编辑器默认不部署／不发布与当前脚本矛盾 | 完整构建部署默认含编辑器；`--no-saveeditor`可排除，发布包仍含它 | `scripts/build.sh`、`scripts/release.ps1` |
 | 提示所有DLL必须同目录，独立外部模组也必须装Shared | DDEN组件需要可加载的Shared；ET修复单独可用，不强制引用DDEN | 生产项目引用与L1桥 |
@@ -27,8 +27,8 @@
 | 注册返回值与发送回执混为一谈 | CCL注册方法返回void，Shared现有bool封装不能单独证明是否已注册；本轮仅核正文档，封装语义列为后续检查项 | `Mp.RegisterClientHandler/RegisterServerHandler`与底层签名 |
 | 存档取消cheatedSave被写成保证恢复成就 | 只改保存字段，不承诺游戏平台已授予或被拦截的成就状态 | 编辑器与保存边界 |
 | 根CHANGE与维护说明积累互相矛盾的“本次” | 当前CHANGE短记录；旧对话整份移入history并标为过时 | 文档目录、history，不把旧哈希当新包 |
-| v1.5.0与CageFix旧名仍写成当前 | 当前 DDExcNet 发布版本为 v1.7.5；ET-Fix和JDI-DDEN保持各自版本；旧ET目录链接改为ET-Fix，旧GUID／存档／频道保留兼容 | 项目、BepInPlugin、脚本、独立说明 |
-| 双语方案被误认为本版已有功能 | 仅方案，没有语言开关或完整英译的实现承诺 | localization-plan，本次不加UI |
+| v1.5.0与CageFix旧名仍写成当前 | 既有发布包为v1.7.5，当前源码各组件独立版本见component-versions；ET-Fix和JDI-DDEN保持各自版本；旧ET目录链接改为ET-Fix，旧GUID／存档／频道保留兼容 | 项目、BepInPlugin、脚本、独立说明 |
+| 双语仍写成完全未实现 | 管理器、MPfix和性能跟踪器已支持语言切换；其余范围见计划，不承诺游戏整体英译 | localization-plan与语言资源 |
 
 ## 本次追加核对
 

@@ -5,4 +5,4 @@
 title = DDExcNet
 subtitle = 龙域信息交换网络标准
 author = cubstaryow
-body = DDExcNet 是「幼龙云」所属「视界」世界观下的<b>龙域信息交换网络标准</b>——一套约定「不同端口、不同实现之间怎么互相认出对方、怎么交换状态」的接口规范。\n本仓库是它在《Casualties Unknown》里的落地实现：一个管理器、一套联机修复、一个可选的存档编辑器。
+body = DDExcNet 是「幼龙云」所属「视界」世界观下的<b>龙域信息交换网络标准</b>。\n在《Casualties Unknown》中，提供装备、联机修复、性能分析与实用工具。

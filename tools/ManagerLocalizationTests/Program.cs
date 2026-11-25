@@ -95,10 +95,10 @@ foreach (string suffix in new[] { "manager.zh-CN.txt", "manager.en.txt", "about.
 string hubSource = File.ReadAllText(Path.Combine(root, "src/DDExcNet.CUmodM/HubPlugin.cs"));
 foreach (Match call in Regex.Matches(hubSource, "\\bT\\(\"([^\"]+)\""))
     Check(ManagerText.Has(call.Groups[1].Value), "manager UI text ID exists: " + call.Groups[1].Value);
-Check(manager.Name.Version == new Version(2,0,0,0), "manager assembly version is 2.0.0");
+Check(manager.Name.Version == new Version(2,1,0,0), "manager assembly version is 2.1.0");
 var plugin = manager.MainModule.Types.Single(t => t.Name == "HubPlugin");
-Check((string)plugin.CustomAttributes.Single(a => a.AttributeType.Name == "BepInPlugin").ConstructorArguments[2].Value == "2.0.0", "manager plugin metadata version matches assembly");
-Check(shared.Name.Version == new Version(2,0,0,0), "Shared independent release is 2.0.0");
+Check((string)plugin.CustomAttributes.Single(a => a.AttributeType.Name == "BepInPlugin").ConstructorArguments[2].Value == "2.1.0", "manager plugin metadata version matches assembly");
+Check(shared.Name.Version == new Version(2,0,1,0), "Shared independent release is 2.0.1");
 var route = plugin.Methods.Single(m => m.Name == "DrawContent");
 foreach (var id in new[] { "overview", "compat", "config", "about", "config:", "ext:", "extconfig:" })
     Check(route.Body.Instructions.Any(i => i.Operand is string s && s == id), "native page route preserved: " + id);
@@ -229,7 +229,7 @@ Check(DdenVersionPolicy.Evaluate("1.7.3", "1.7.4", "2.0", declaration, 1).Releas
 Check(!DdenVersionPolicy.Evaluate("anything", "1.7.4", "2.0", null, 1).Checked, "undeclared legacy modules are exempt even if ID is recorded");
 Check(!DdenVersionPolicy.Evaluate("1", "1", "2", new VersionedModuleFixture(), 1).Checked, "empty optional requirements remain exempt");
 Check(DdenVersionPolicy.Evaluate("1.7.4", "1.7.4", "2.0", declaration, 2).ApiMismatch, "API generation mismatch is distinct from product version");
-declaration.MinimumManagerVersion = "2.1.0";
+declaration.MinimumManagerVersion = "2.2.0";
 Check(ModuleVersionCatalog.Check(declaration).ManagerTooOld, "manager catalog checks declared minimum");
 declaration.MinimumManagerVersion = "2.0.0";
 DdenHub.Notify();
@@ -244,16 +244,16 @@ declaration.Id = "future-module";
 Check(DdenVersionPolicy.Evaluate("3.0", null, "2.0", declaration, 1).ReleaseStatus == DdenReleaseStatus.Unrecorded, "unrecorded release is explicit");
 foreach (DdenReleaseStatus state in Enum.GetValues<DdenReleaseStatus>()) Check(ManagerText.Has("versions.release." + state), "release status translation exists: " + state);
 using (var mp = AssemblyDefinition.ReadAssembly(Path.Combine(root, "src/DDEN.MPfix/bin/Release/DDEN.MPfix.dll")))
-    Check(mp.Name.Version == new Version(1,7,5,0), "MPfix independent assembly version");
+    Check(mp.Name.Version == new Version(1,8,0,0), "MPfix independent assembly version");
 using (var perf = AssemblyDefinition.ReadAssembly(Path.Combine(root, "src/DDEN.NetPerfTracker/bin/Release/DDEN.NetPerfTracker.dll")))
-    Check(perf.Name.Version == new Version(2,1,0,0), "tracker independent assembly version");
+    Check(perf.Name.Version == new Version(2,3,1,0), "tracker independent assembly version");
 using (var editor = AssemblyDefinition.ReadAssembly(Path.Combine(root, "src/DDEN.SaveEditor/bin/Release/DDEN.SaveEditor.dll")))
 {
-    Check(editor.Name.Version == new Version(2,0,0,0), "editor numeric assembly version");
-    Check(((string)editor.CustomAttributes.Single(a => a.AttributeType.Name == "AssemblyInformationalVersionAttribute").ConstructorArguments[0].Value).StartsWith("2.0.0-alpha"), "editor preserves alpha release metadata");
+    Check(editor.Name.Version == new Version(2,0,1,0), "editor numeric assembly version");
+    Check(((string)editor.CustomAttributes.Single(a => a.AttributeType.Name == "AssemblyInformationalVersionAttribute").ConstructorArguments[0].Value).StartsWith("2.0.1-alpha"), "editor preserves alpha release metadata");
     var editorPlugin = editor.MainModule.Types.Single(t => t.Name == "SaveEditorPlugin");
-    Check((string)editorPlugin.CustomAttributes.Single(a => a.AttributeType.Name == "BepInPlugin").ConstructorArguments[2].Value == "2.0.0", "editor loader uses a valid numeric version");
-    Check((string)editorPlugin.Fields.Single(f => f.Name == "ReleaseVersion").Constant == "2.0.0-alpha", "editor module display preserves alpha");
+    Check((string)editorPlugin.CustomAttributes.Single(a => a.AttributeType.Name == "BepInPlugin").ConstructorArguments[2].Value == "2.0.1", "editor loader uses a valid numeric version");
+    Check((string)editorPlugin.Fields.Single(f => f.Name == "ReleaseVersion").Constant == "2.0.1-alpha", "editor module display preserves alpha");
 }
 Check(shared.MainModule.Types.Single(t => t.Name == "DdenApi").Fields.Single(f => f.Name == "Version").Constant.Equals(1), "Shared v2 exports API generation 1");
 foreach (string file in new[] { "src/DDEN.MPfix/bin/Release/DDEN.MPfix.dll", "src/DDEN.NetPerfTracker/bin/Release/DDEN.NetPerfTracker.dll", "src/DDEN.SaveEditor/bin/Release/DDEN.SaveEditor.dll" })
@@ -270,7 +270,7 @@ Check(ModuleVersionCatalog.Check(brokenVersion).InvalidDeclaration && ModuleVers
 Check(ModuleVersionCatalog.ManagerRelease == manager.Name.Version.ToString(3) && ModuleVersionCatalog.SupportedApi == DdenApi.CurrentVersion, "manager catalog matches its independent release and supported API");
 Check(new BepInEx.BepInPlugin("test.dden.version", "fixture", "2.0.0-alpha").Version == null && new BepInEx.BepInPlugin("test.dden.version", "fixture", "2.0.0").Version != null, "installed loader requires numeric version; alpha remains release metadata");
 Check(plugin.Methods.Single(m => m.Name == "OnGUI").Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name == "DrawModuleVersionWarning"), "module requirements warn even with the manager panel closed");
-foreach (string binary in new[] { "DDEN.MPfix", "DDEN.NetPerfTracker", "DDEN.SaveEditor" })
+foreach (string binary in new[] { "DDEN.MPfix", "DDEN.NetPerfTracker", "DDEN.SaveEditor", "DDEN.NetPerfTracker.Enhanced", "DDEN.LoongNova", "DDEN.UnitListMgr" })
 {
     using var component = AssemblyDefinition.ReadAssembly(Path.Combine(root, "src", binary, "bin/Release", binary + ".dll"));
     var moduleType = component.MainModule.Types.Single(t => t.Interfaces.Any(i => i.InterfaceType.Name == "IDdenModule"));
@@ -289,11 +289,11 @@ Check(!DdenVersionPolicy.Evaluate("1.7.4", "1.7.4", "2.0", "2.1", declaration, 1
 Check(DdenVersionPolicy.Evaluate("1.7.4", "1.7.4", "2.0", "2.0.0-alpha", declaration, 1).SharedTooOld, "Shared prerelease is below required stable release");
 declaration.MinimumSharedVersion = "invalid";
 Check(DdenVersionPolicy.Evaluate("1.7.4", "1.7.4", "2.0", "2.0", declaration, 1).InvalidDeclaration, "invalid Shared requirement is explicit");
-foreach (string binary in new[] { "DDEN.MPfix", "DDEN.NetPerfTracker", "DDEN.SaveEditor" })
+foreach (string binary in new[] { "DDEN.MPfix", "DDEN.NetPerfTracker", "DDEN.SaveEditor", "DDEN.NetPerfTracker.Enhanced", "DDEN.LoongNova", "DDEN.UnitListMgr" })
 {
     using var component = AssemblyDefinition.ReadAssembly(Path.Combine(root, "src", binary, "bin/Release", binary + ".dll"));
     var moduleType = component.MainModule.Types.Single(t => t.Interfaces.Any(i => i.InterfaceType.Name == "IDdenModule"));
-    Check(moduleType.Methods.Single(m => m.Name == "get_MinimumSharedVersion").Body.Instructions.Any(i => i.Operand is string v && v == "2.0.0"), "module independently declares Shared ≥2.0.0");
+    Check(moduleType.Methods.Single(m => m.Name == "get_MinimumSharedVersion").Body.Instructions.Any(i => i.Operand is string v && v == "2.0.1"), "module independently declares Shared ≥2.0.1");
 }
 
 Check(!ModuleVersionCatalog.Check(new EmptyVersionFixture()).Checked, "empty requirements are exempt before accessing a potentially unsupported release getter");

@@ -26,6 +26,7 @@ namespace DDEN.LoongNova
             if (item.id != Registration.GunId) return;
             var gun = DragonGun.For(item);
             gun.Known = gun.State.Restore(payload);
+            gun.Normalize();
         }
     }
 }

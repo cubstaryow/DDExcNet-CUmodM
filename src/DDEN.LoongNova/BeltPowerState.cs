@@ -3,9 +3,11 @@ using Newtonsoft.Json.Linq;
 
 namespace DDEN.LoongNova
 {
-    // Pure accounting: two seconds of actual assistance cost one unit. Idle time never enters this state.
+    // Work is measured in slow-assistance equivalent seconds (0.5 energy each); flight adds sixteen per second. Saved fields retain their original units.
     internal sealed class BeltPowerState
     {
+        internal const double FlightWorkRate = 16;
+        internal const double MaxUnconfirmedWork = FlightWorkRate * 2;
         internal readonly EnergyState Cell = new EnergyState();
         internal string Epoch = "";
         internal double WorkTotal;
@@ -14,6 +16,7 @@ namespace DDEN.LoongNova
         internal float Remaining => Cell.Loaded ? (float)Math.Max(0, Cell.Energy - PartialSeconds * 0.5) : 0;
         // Container uses a weight multiplier: 0 means 100% reduction, 0.6 means 40% reduction.
         internal float EncumbranceMultiplier => Remaining > 0 ? 0 : 0.6f;
+        internal float ChargeFraction => Remaining / EnergyState.Capacity;
 
         internal void Load(float energy, bool favourite)
         {
@@ -44,6 +47,13 @@ namespace DDEN.LoongNova
             if (Remaining <= 1e-6f) { Cell.Set(true, 0, Cell.Favourite); PartialSeconds = 0; }
             Revision++;
             return seconds;
+        }
+        // Charge before applying assistance. The return value limits thrust on the final partial tick.
+        internal double AdvanceActivity(double seconds, bool flying, double workBudget = double.PositiveInfinity)
+        {
+            if (!Finite(seconds) || seconds <= 0 || double.IsNaN(workBudget) || workBudget < 0) return 0;
+            double rate = flying ? FlightWorkRate : 1;
+            return Advance(Math.Min(seconds * rate, workBudget)) / rate;
         }
         internal JObject Capture() => new JObject
         {

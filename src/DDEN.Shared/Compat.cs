@@ -309,6 +309,20 @@ namespace DDEN.Shared
             return current;
         }
 
+        public static KeyCode ResolveManagerHotkey(ConfigEntry<KeyboardShortcut> entry, string selfGuid, bool autoFix)
+        {
+            if (entry == null) return KeyCode.None;
+            var shortcut = entry.Value;
+            var chosen = ManagerHotkeyPolicy.Choose(shortcut.MainKey, shortcut.Modifiers.Any(), autoFix,
+                key => FindHotkeyOwners(key, selfGuid).Count != 0);
+            if (chosen != shortcut.MainKey)
+            {
+                entry.Value = new KeyboardShortcut(chosen);
+                Log.Info("Manager hotkey -> " + chosen);
+            }
+            return chosen;
+        }
+
         // ===== 5. 运行时守卫 =====
 
         /// <summary>QoL 正在自动存档：此时写盘会互相踩，先别写。</summary>

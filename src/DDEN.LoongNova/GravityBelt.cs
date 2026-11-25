@@ -12,7 +12,7 @@ namespace DDEN.LoongNova
         internal Item Item { get; private set; }
         internal bool Known;
         internal string Status = "";
-        private bool _boosting, _working, _pending, _ejectQueued;
+        private bool _boosting, _pending, _ejectQueued;
         private float _nextReport, _nextRead, _deadline, _protectedUntil;
         private double _confirmedWork;
         private long _serverRevision = -1;
@@ -23,6 +23,14 @@ namespace DDEN.LoongNova
         private string _request;
         private readonly WorkReportBudget _reports = new WorkReportBudget();
         private Container _container;
+        private bool _flying, _audioTemplateTried;
+        private bool _lastWingReported, _lastWingPublished;
+        private float _nextWingPublish;
+        private long _wingSequence;
+        private readonly WingFlightLease _remoteWings = new WingFlightLease();
+        private AudioSource _flightAudio;
+        private Talker _warningTalker;
+        private readonly LowEnergyNotice _lowEnergyNotice = new LowEnergyNotice();
 
         internal static GravityBelt For(Item item) => item.GetComponent<GravityBelt>() ?? item.gameObject.AddComponent<GravityBelt>();
         internal static GravityBelt Worn(Body body)
@@ -49,8 +57,20 @@ namespace DDEN.LoongNova
         }
         internal static bool Local(Body body) => body != null && (!Mp.IsRunning || PlayerCamera.main != null && PlayerCamera.main.body == body);
         internal bool Powered => State.Remaining > 0 && (!Mp.IsRunning || LoongNovaPlugin.Service.Ready)
-            && (!Mp.IsRunning || Mp.IsServer || Known && State.WorkTotal - _confirmedWork < 2 - 1e-6);
-        internal bool CanBoost(Body body) => Owner == body && Local(body) && Powered;
+            && (!Mp.IsRunning || Mp.IsServer || Known && State.WorkTotal - _confirmedWork < BeltPowerState.MaxUnconfirmedWork - 1e-6);
+        internal bool WingsOpen
+        {
+            get
+            {
+                var owner = Owner;
+                if (owner == null) return false;
+                return Local(owner) ? _flying && Powered : _remoteWings.IsFlying(Time.unscaledTime);
+            }
+        }
+        internal long NextWingSequence() => ++_wingSequence;
+        internal void ReceiveWingPose(long sequence, bool flying) => _remoteWings.Apply(sequence, flying, Time.unscaledTime);
+        internal bool CanBoost(Body body) => Owner == body && Local(body) && Powered
+            && (!Mp.IsRunning || Mp.IsServer || State.WorkTotal - _confirmedWork < 2 - 1e-6);
         internal void Boost(Body body)
         {
             if (!CanBoost(body)) return;
@@ -67,22 +87,32 @@ namespace DDEN.LoongNova
         {
             if (container != null) _container = container;
             if (_container == null) _container = GetComponent<Container>();
+            if (Item != null) Item.condition = State.ChargeFraction;
             float multiplier = State.EncumbranceMultiplier;
             if (_container != null && _container.encumberanceMult != multiplier) _container.encumberanceMult = multiplier;
         }
 
         private void FixedUpdate()
         {
+            _flying = false;
             if (Item == null || Item.id != Registration.BeltId) return;
-            Item.condition = 1;
+            RefreshEncumbrance();
             var body = Owner;
             if (body != _lastOwner) { _lastOwner = body; _boosting = false; }
-            if (!Local(body) || !Powered) { _working = false; return; }
+            if (!Local(body) || !Powered) return;
             var rb = body.standing || _wearLimb == null ? body.rb : _wearLimb.rb;
             float cap = Mathf.Clamp(body.jumpSpeed * 0.5f, 1, 12);
             if (body.grounded || rb.velocity.y <= 0) _boosting = false;
-            bool slowing = !body.grounded && rb.velocity.y <= -cap + 0.05f;
-            if (slowing)
+            bool flying = body.conscious && !DdenHub.AnyPanelVisible && !body.forceWalk && body.currentClimbable == null
+                && Input.GetKey(KeyBinds.GetBind("up"));
+            bool slowing = !flying && !body.grounded && rb.velocity.y <= -cap + 0.05f;
+            if (!flying && !_boosting && !slowing) return;
+            double budget = Mp.IsRunning && !Mp.IsServer
+                ? Math.Max(0, (flying ? BeltPowerState.MaxUnconfirmedWork : 2) - (State.WorkTotal - _confirmedWork)) : double.PositiveInfinity;
+            float paidSeconds = (float)State.AdvanceActivity(Time.fixedDeltaTime, flying, budget);
+            if (paidSeconds <= 0) return;
+            if (flying) { _flying = true; ApplyFlight(body, paidSeconds); }
+            else if (slowing)
             {
                 Clamp(body.rb, cap);
                 if (!body.standing)
@@ -90,14 +120,17 @@ namespace DDEN.LoongNova
                 body.lastTimeStepVelocity = new Vector2(body.lastTimeStepVelocity.x, Mathf.Max(body.lastTimeStepVelocity.y, -cap));
                 _protectedUntil = Time.time + Time.fixedDeltaTime * 2;
             }
-            _working = _boosting || slowing;
-            if (_working)
-            {
-                double seconds = Time.fixedDeltaTime;
-                if (Mp.IsRunning && !Mp.IsServer) seconds = Math.Min(seconds, Math.Max(0, 2 - (State.WorkTotal - _confirmedWork)));
-                State.Advance(seconds);
-                if (State.Remaining <= 0) RefreshEncumbrance();
-            }
+            RefreshEncumbrance();
+        }
+
+        private void ApplyFlight(Body body, float seconds)
+        {
+            // Use the native jetpack's thrust and steering on the owning player's physics only.
+            var target = body.standing ? body.rb : _wearLimb.rb;
+            Vector2 upward = body.standing ? Vector2.up : (Vector2)_wearLimb.transform.up;
+            if (!body.standing)
+                target.MoveRotation(Mathf.LerpAngle(_wearLimb.transform.eulerAngles.z, 0, seconds * 15));
+            target.AddForce((upward * 198000 + Vector2.right * (60000 * body.moveDir.x)) * seconds);
         }
         private static void Clamp(Rigidbody2D rb, float cap)
         {
@@ -121,18 +154,21 @@ namespace DDEN.LoongNova
             {
                 _connection = connection; _pending = _ejectQueued = false; _request = null;
                 _nextRead = 0; _serverRevision = -1; _confirmedWork = 0;
+                _remoteWings.Reset(); _lastWingReported = _lastWingPublished = false; _nextWingPublish = 0;
                 if (Mp.IsRunning && !Mp.IsServer) Known = false;
             }
             if (_pending && Time.unscaledTime >= _deadline)
             {
                 _pending = false; _request = null; Known = false; Status = Registration.Text("rejected");
             }
+            PublishLocalWingPose();
+            UpdateFeedback();
             var body = PlayerCamera.main != null ? PlayerCamera.main.body : null;
             if (_ejectQueued && !_pending) { Request("eject", body); return; }
             if (!Mp.IsRunning || Mp.IsServer || body == null || !Known && Time.unscaledTime < _nextRead) return;
-            if (!_pending && State.WorkTotal > _confirmedWork + 1e-7 && Time.unscaledTime >= _nextReport)
+            if (!_pending && (State.WorkTotal > _confirmedWork + 1e-7 || _flying != _lastWingReported) && Time.unscaledTime >= _nextReport)
             {
-                _nextReport = Time.unscaledTime + 1;
+                _nextReport = Time.unscaledTime + 0.5f;
                 if (Owner == body || NetworkAccess.Carries(body, Item)) Request("work", body);
                 else
                 {
@@ -163,9 +199,10 @@ namespace DDEN.LoongNova
             {
                 ["request"] = request, ["operation"] = operation, ["gun"] = NetworkAccess.Id(Item),
                 ["cell"] = cell != null ? NetworkAccess.Id(cell) : 0,
-                ["epoch"] = State.Epoch, ["work"] = State.WorkTotal
+                ["epoch"] = State.Epoch, ["work"] = State.WorkTotal, ["flying"] = _flying
             };
             _pending = true; _request = request; _deadline = Time.unscaledTime + 5;
+            if (operation == "work") _lastWingReported = _flying;
             _nextReport = Time.unscaledTime + 0.5f; _nextRead = Time.unscaledTime + 5;
             var connection = NetworkAccess.Connection;
             bool sent = Mp.RequestServer(WeaponService.Channel, packet, response =>
@@ -178,6 +215,97 @@ namespace DDEN.LoongNova
             if (!sent) { _pending = false; Known = false; Status = Registration.Text("unavailable"); }
         }
 
+        private void PublishLocalWingPose()
+        {
+            if (!Mp.IsRunning || !Mp.IsServer || !LoongNovaPlugin.Service.Ready || !Local(Owner)) return;
+            bool open = WingsOpen;
+            if (Time.unscaledTime < _nextWingPublish || open == _lastWingPublished && !open) return;
+            _lastWingPublished = open;
+            _nextWingPublish = Time.unscaledTime + 0.5f;
+            WingVisualSync.Publish(this, open);
+        }
+        private void UpdateFeedback()
+        {
+            var owner = Owner;
+            bool localWearer = owner != null && PlayerCamera.main != null && PlayerCamera.main.body == owner;
+            bool active = localWearer && _flying && Powered && Time.timeScale > 0;
+            if (active && _flightAudio == null && !_audioTemplateTried)
+            {
+                _audioTemplateTried = true;
+                var prefab = Resources.Load<GameObject>("jetpack");
+                var original = prefab != null ? prefab.GetComponent<AudioSource>() : null;
+                if (original != null && original.clip != null)
+                {
+                    _flightAudio = gameObject.AddComponent<AudioSource>();
+                    _flightAudio.playOnAwake = false;
+                    _flightAudio.clip = original.clip;
+                    _flightAudio.loop = true;
+                    _flightAudio.outputAudioMixerGroup = original.outputAudioMixerGroup;
+                    _flightAudio.spatialBlend = original.spatialBlend;
+                    _flightAudio.rolloffMode = original.rolloffMode;
+                    _flightAudio.minDistance = original.minDistance;
+                    _flightAudio.maxDistance = original.maxDistance;
+                    _flightAudio.dopplerLevel = original.dopplerLevel;
+                    _flightAudio.volume = _flightAudio.pitch = 0;
+                }
+                else LoongNovaPlugin.Log.Warn("LoongNova: native jetpack audio unavailable");
+            }
+            if (_flightAudio != null)
+            {
+                float step = Time.unscaledDeltaTime * (active ? 3 : 5);
+                _flightAudio.volume = Mathf.MoveTowards(_flightAudio.volume, active ? 1 : 0, step);
+                _flightAudio.pitch = Mathf.MoveTowards(_flightAudio.pitch, active ? 1 : 0, step);
+                if (active && !_flightAudio.isPlaying) _flightAudio.Play();
+                else if (!active && _flightAudio.volume <= 0 && _flightAudio.isPlaying) _flightAudio.Stop();
+            }
+            if (localWearer && Time.timeScale > 0 && (!Mp.IsRunning || Mp.IsServer || Known)
+                && _lowEnergyNotice.ShouldWarn(State.Epoch, State.Cell.Loaded, State.Remaining, Time.time))
+                ShowLowEnergy(owner);
+        }
+
+        private void ShowLowEnergy(Body owner)
+        {
+            var head = owner.limbs != null && owner.limbs.Length > 0 ? owner.limbs[(int)Body.LimbNum.Head] : null;
+            if (head == null) return;
+            if (_warningTalker == null)
+            {
+                var watch = Resources.Load<GameObject>("watch");
+                var template = watch != null ? watch.GetComponent<Talker>() : null;
+                if (template == null || template.textPrefab == null) return;
+                var anchor = new GameObject("LoongNova wing warning");
+                _warningTalker = anchor.AddComponent<Talker>();
+                _warningTalker.textPrefab = template.textPrefab;
+                _warningTalker.talkSoundCustom = template.talkSoundCustom;
+                _warningTalker.talkTimeMult = template.talkTimeMult;
+                _warningTalker.isSoundGlobal = template.isSoundGlobal;
+                var textObject = UnityEngine.Object.Instantiate(template.textPrefab, head.transform.position, Quaternion.identity);
+                var textType = HarmonyLib.AccessTools.TypeByName("TMPro.TextMeshPro");
+                HarmonyLib.AccessTools.Field(typeof(Talker), "text").SetValue(_warningTalker, textObject.GetComponent(textType));
+            }
+            _warningTalker.transform.SetParent(head.transform, false);
+            _warningTalker.transform.localPosition = Vector3.zero;
+            // Talker.Start initializes its text on the next frame. Its native offset places text above the head.
+            _warningTalker.TalkDelayed(0, Registration.Text("beltLowEnergy"));
+        }
+
+        private void OnDestroy()
+        {
+            if (_warningTalker == null) return;
+            var text = Reflect.GetInstance(_warningTalker, "text") as Component;
+            UnityEngine.Object.Destroy(_warningTalker.gameObject);
+            // Let native Talker.OnDestroy clear the text before removing the separate text object.
+            if (text != null) UnityEngine.Object.Destroy(text.gameObject, 0.1f);
+        }
+        private void OnDisable()
+        {
+            _flying = false;
+            _remoteWings.Reset();
+            if (_flightAudio != null)
+            {
+                _flightAudio.Stop();
+                _flightAudio.volume = _flightAudio.pitch = 0;
+            }
+        }
         private void ApplyResponse(JToken response)
         {
             var payload = response?["state"];
@@ -207,7 +335,13 @@ namespace DDEN.LoongNova
                 if (!_reports.Apply(State, packet.Value<string>("epoch"), packet.Value<double?>("work") ?? double.NaN, Time.time))
                     return Reply(false);
             }
-            if (operation == "read" || operation == "work") return Reply(true);
+            if (operation == "read" || operation == "work")
+            {
+                if (packet != null && operation == "work")
+                    WingVisualSync.Publish(this, packet.Value<bool?>("flying") == true && Owner == body
+                        && body.conscious && State.Remaining > 0);
+                return Reply(true);
+            }
             if (!body.conscious) return Reply(false);
             if (operation == "load")
             {
@@ -232,10 +366,12 @@ namespace DDEN.LoongNova
                 result.favourited = State.Cell.Favourite;
                 State.Clear();
                 try { body.AutoPickUpItem(result); }
-                catch (Exception error) { LoongNovaPlugin.Log.LogWarning("LoongNova belt pickup: " + error.Message); }
+                catch (Exception error) { LoongNovaPlugin.Log.Warn("LoongNova belt pickup: " + error.Message); }
             }
             else return Reply(false);
             Known = true;
+            WingVisualSync.Publish(this, false);
+            Sound.Play("batteryinsert", transform.position);
             return Reply(true);
         }
 

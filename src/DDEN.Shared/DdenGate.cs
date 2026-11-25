@@ -15,10 +15,10 @@ namespace DDEN.Shared
     public static class DdenGate
     {
         /// <summary>本版 DDEN 核对过的联机框架版本（Together / CasualtiesMP）。</summary>
-        public const string ExpectedMp = "5.5.4";
+        public const string ExpectedMp = "5.5.5";
 
         /// <summary>本版 DDEN 核对过的游戏版本（只用于展示；判定以联机框架版本为准）。</summary>
-        public const string ExpectedGame = "0.1.0.2";
+        public const string ExpectedGame = "1.0.2";
 
         /// <summary>用户在管理器里打开「忽略核对环境版本」后置真（由管理器写入，模块只读）。</summary>
         public static bool IgnoreEnv;

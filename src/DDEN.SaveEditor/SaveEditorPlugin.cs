@@ -9,7 +9,7 @@ using UnityEngine;
 
 namespace DDEN.SaveEditor
 {
-    [BepInPlugin(Guid, "DDEN Save Editor", "2.0.0")]
+    [BepInPlugin(Guid, "DDEN Save Editor", "2.0.1")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("org.bepinex.plugins.qol_unknown", BepInDependency.DependencyFlags.SoftDependency)]
     public class SaveEditorPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleVersion
@@ -21,25 +21,19 @@ namespace DDEN.SaveEditor
         internal static ManualLogSource LogSource;
         internal static LogChannel Log;
 
-        internal static ConfigEntry<KeyboardShortcut> CfgStandaloneKey;
-        internal static ConfigEntry<float> CfgScale;
-        internal static ConfigEntry<bool> CfgVerbose;
 
         private readonly EditorView _view = new EditorView();
-        private bool _standaloneVisible;
-        private Rect _standaloneRect;
-        private KeyCode _standaloneKey = KeyCode.F9;
 
         // ===== IDdenModule =====
         public string Id => "saveeditor";
         public string DisplayName => Title;
         public string MinimumManagerVersion => "2.0.0";
-        public string TestedManagerVersion => "2.0.0";
-        public string MinimumSharedVersion => "2.0.0";
-        public string TestedSharedVersion => "2.0.0";
+        public string TestedManagerVersion => "2.1.0";
+        public string MinimumSharedVersion => "2.0.1";
+        public string TestedSharedVersion => "2.0.1";
         public int RequiredSharedApiVersion => DdenApi.Version;
         // The loader accepts numeric versions only; the release and module UI retain the alpha tag.
-        public const string ReleaseVersion = "2.0.0-alpha";
+        public const string ReleaseVersion = "2.0.1-alpha";
         public string Version => ReleaseVersion;
         public bool Ready => true;
         public string Summary
@@ -64,16 +58,9 @@ namespace DDEN.SaveEditor
             Instance = this;
             LogSource = base.Logger;
 
-            CfgStandaloneKey = Config.Bind("UI", "StandaloneKey", new KeyboardShortcut(KeyCode.F9),
-                "没有管理器时，用这个键打开存档编辑器自己的小窗口。");
-            CfgScale = Config.Bind("UI", "Scale", 1.1f,
-                new ConfigDescription("小窗口的界面缩放（从管理器里打开时跟随管理器）。", new AcceptableValueRange<float>(0.75f, 2f)));
-            CfgVerbose = Config.Bind("Debug", "Verbose", false, "输出更详细的日志（排查问题用）。");
-
-            Log = DDEN.Shared.Log.For(LogSource, "SaveEditor", CfgVerbose.Value);
-
+            Log = DDEN.Shared.Log.For(LogSource, "SaveEditor");
+            ConfigMigration.Retire(Config, "UI/StandaloneKey", "UI/Scale", "Debug/Verbose");
             DdenHub.Register(this);
-            _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
 
             TryRegisterConsoleCommand();
             Log.Info("存档编辑器就绪：只改你点的字段，不会自动改动“禁用成就”标记。");
@@ -96,8 +83,7 @@ namespace DDEN.SaveEditor
                 if (Compat.ConsoleHasCommand("saveedit")) return;
                 Action<string[]> command = args =>
                 {
-                    if (DdenHub.ManagerLoaded) DdenHub.OpenModule(Id);
-                    else _standaloneVisible = true;
+                    DdenHub.OpenModule(Id);
                 };
                 foreach (var method in registry.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static))
                 {
@@ -143,57 +129,5 @@ namespace DDEN.SaveEditor
             return false;
         }
 
-        private void Update()
-        {
-            try
-            {
-                if (DdenHub.ManagerLoaded)
-                {
-                    DdenBlocker.Hide();
-                    return;
-                }
-
-                if (_standaloneKey != KeyCode.None && Input.GetKeyDown(_standaloneKey)) _standaloneVisible = !_standaloneVisible;
-
-                if (_standaloneVisible) DdenBlocker.Show(0.12f);
-                else DdenBlocker.Hide();
-                DdenHub.SetPanelVisible("saveeditor", _standaloneVisible);
-            }
-            catch (Exception ex)
-            {
-                Log.Exception(ex, "Update");
-            }
-        }
-
-        private void OnGUI()
-        {
-            if (DdenHub.ManagerLoaded || !_standaloneVisible) return;
-            try
-            {
-                float scale = Mathf.Clamp(CfgScale.Value, 0.75f, 2f);
-                Matrix4x4 old = GUI.matrix;
-                GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1f));
-
-                var rect = new Rect(40f, 40f, Screen.width / scale - 80f, Screen.height / scale - 80f);
-                _standaloneRect = new Rect(rect.x * scale, rect.y * scale, rect.width * scale, rect.height * scale);
-                GUI.Window(0x53415645, rect, _ =>
-                {
-                    DdenUI.Fill(new Rect(0, 0, rect.width, rect.height), DdenUI.Bg);
-                    DdenUI.Fill(new Rect(0, 0, rect.width, 30f), DdenUI.Panel);
-                    DdenUI.Fill(new Rect(0, 29f, rect.width, 1f), DdenUI.AccentDim);
-                    DdenUI.Label(new Rect(10, 5, rect.width - 70f, 22), "DDEN · 存档编辑器", DdenUI.Title);
-                    if (DdenUI.Button(new Rect(rect.width - 28f, 6f, 20f, 18f), "×")) _standaloneVisible = false;
-                    _view.Draw(new Rect(8, 34, rect.width - 16, rect.height - 42));
-                    GUI.DragWindow(new Rect(0, 0, rect.width, 30f));
-                }, GUIContent.none, GUIStyle.none);
-
-                GUI.matrix = old;
-            }
-            catch (Exception ex)
-            {
-                Log.Exception(ex, "OnGUI");
-                _standaloneVisible = false;
-            }
-        }
     }
 }

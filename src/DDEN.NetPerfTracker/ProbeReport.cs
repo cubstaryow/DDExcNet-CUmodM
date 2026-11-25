@@ -16,12 +16,15 @@ namespace DDEN.NetPerfTracker
             string role = p.Running ? p.Server ? L("主机") : L("客机") : L("未联机");
             string result = LF($"Together反馈 · {role} · 本窗口错误 {p.Logs.Errors} / 警告 {p.Logs.Warnings} / baseline日志 {p.Logs.BaselineLogs} / 省略细节 {p.Logs.DetailSkipped}");
             result += "\n" + LF($"探针累计错误 {p.TotalLogs.Errors} / 警告 {p.TotalLogs.Warnings} / baseline日志 {p.TotalLogs.BaselineLogs}（日志条数，非去重故障数）");
+            result += "\n" + LF($"Unity异常日志：本窗口 {p.Logs.UnityErrors} / 累计 {p.TotalLogs.UnityErrors}；包含其它模组，堆栈提及Together／LES／CPU优化时也计入上方相关错误数，不能据此认定责任。");
             result += "\n" + LF($"LES tick {I(p.Tick)}，增量 {I(p.TickDelta)}；待处理请求 {I(p.Queue)}，变化实体 {I(p.ChangedEntities)}，区块队列 {I(p.QueuedChunks)}");
             result += "\n" + LF($"LES连接 {I(p.LesPlayers)}，已检查 {p.InspectedPeers}；待baseline {I(p.PendingBaseline)}，最长确认间隔 {N(p.AckAgeSeconds)}秒");
             if (!p.CompletePeers && p.Server) result += L("（连接状态可能不完整）");
             result += "\n" + LF($"主线程CPU {N(p.MainCpuPct)}%（单线程口径）；近10秒1%低帧估算 {N(p.LowOnePercent)}fps / {p.TailFrames}帧");
             result += "\n" + LF($"Job等待均值/峰值 {N(p.JobWaitMs)}/{N(p.JobWaitPeakMs)}ms；GC标记均值/峰值 {N(p.GcMs)}/{N(p.GcPeakMs)}ms");
-            if (p.Logs.Errors > 0 && sample.LongFrames > 0)
+            result += "\n" + LF($"原生阶段均值：2D固定更新 {N(sample.Stages.Physics2DLoop.Frames > 0 ? sample.Stages.Physics2DLoop.Mean : -1)}ms；脚本固定更新 {N(sample.Stages.ScriptFixed.Frames > 0 ? sample.Stages.ScriptFixed.Mean : -1)}ms；脚本更新 {N(sample.Stages.ScriptUpdate.Frames > 0 ? sample.Stages.ScriptUpdate.Mean : -1)}ms；脚本后更新 {N(sample.Stages.ScriptLate.Frames > 0 ? sample.Stages.ScriptLate.Mean : -1)}ms。");
+            result += "\n" + L("这些阶段可能互相包含；2D固定更新不等于精确物理模拟耗时，缺失计时不按零处理。");
+            if ((p.Logs.Errors > 0 || p.Logs.UnityErrors > 0) && sample.LongFrames > 0)
                 result += "\n" + L("本窗口同时观察到报错和长帧，仅表示区间相关，不能确定报错先后或认定因果。");
             if (p.NoTickSeconds >= 2 && p.Logs.Errors > 0)
                 result += "\n" + LF($"同步tick连续约{p.NoTickSeconds:0.0}秒未观察到推进，并伴随报错；请结合堆栈排查，不等同死锁证明。");

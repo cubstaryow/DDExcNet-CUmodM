@@ -14,7 +14,7 @@ namespace DDEN.NetPerfTracker
 
     internal struct ProbeLogCounts
     {
-        internal long Errors, Warnings, BaselineLogs, DetailSkipped;
+        internal long Errors, Warnings, BaselineLogs, DetailSkipped, UnityErrors;
     }
 
     // Background log callbacks never access Unity, reflect into Together or emit another log.
@@ -33,21 +33,44 @@ namespace DDEN.NetPerfTracker
             lock (_gate) { _messages.Clear(); _window = _total = default; _second = -1; _details = 0; _firstError = null; }
         }
         private static bool Has(string text, string value) => text != null
-            && text.IndexOf(value, 0, Math.Min(1024, text.Length), StringComparison.OrdinalIgnoreCase) >= 0;
+            && text.IndexOf(value, 0, Math.Min(4096, text.Length), StringComparison.OrdinalIgnoreCase) >= 0;
+        private static bool Related(string text) => Has(text, "Together.") || Has(text, "KrokV5Optimization.")
+            || Has(text, "LiteEntitySystem") || Has(text, "Net.DoUpdate:") || Has(text, "CpuOptimizationAdv.");
+        private static bool BepMirror(string text)
+        {
+            if (string.IsNullOrEmpty(text) || text[0] != '[') return false;
+            int colon = text.IndexOf(':', 0, Math.Min(14, text.Length));
+            int close = text.IndexOf(']', 0, Math.Min(100, text.Length));
+            if (colon < 0 || close < colon) return false;
+            return text.StartsWith("[Error", StringComparison.Ordinal) || text.StartsWith("[Fatal", StringComparison.Ordinal)
+                || text.StartsWith("[Warning", StringComparison.Ordinal) || text.StartsWith("[Info", StringComparison.Ordinal)
+                || text.StartsWith("[Message", StringComparison.Ordinal) || text.StartsWith("[Debug", StringComparison.Ordinal);
+        }
         internal void Add(string source, bool error, bool warning, object data, float t)
         {
             string text = data as string;
             bool relevant = string.Equals(source, "Together", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(source, "LES", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(source, "CasualtiesMP", StringComparison.OrdinalIgnoreCase);
-            if (!relevant && !(error && (Has(text, "LiteEntitySystem") || Has(text, "Net.DoUpdate:")))) return;
+            if (!relevant && !(error && Related(text))) return;
             bool baseline = !error && !warning && (Has(text, "Request baseline") || Has(text, "[SEM] SendWorld") || Has(text, "full baseline player"));
             if (!error && !warning && !baseline) return;
+            AddCore(source, error, warning, baseline, data, null, t, false, true);
+        }
+        internal void AddUnity(string message, string stack, float t)
+        {
+            // BepInEx mirrors carry their rendered source prefix and are already counted by the Bep listener.
+            if (BepMirror(message)) return;
+            AddCore("Unity Log", true, false, false, message ?? "", stack ?? "", t, true, Related(message) || Related(stack));
+        }
+        private void AddCore(string source, bool error, bool warning, bool baseline, object data, string stack, float t, bool unity, bool attributed)
+        {
             if (float.IsNaN(t) || float.IsInfinity(t) || t < 0) return;
             lock (_gate)
             {
                 if (!_enabled) return;
-                if (error) { _window.Errors++; _total.Errors++; }
+                if (unity) { _window.UnityErrors++; _total.UnityErrors++; }
+                if (error && attributed) { _window.Errors++; _total.Errors++; }
                 else if (warning) { _window.Warnings++; _total.Warnings++; }
                 if (baseline) { _window.BaselineLogs++; _total.BaselineLogs++; }
                 long second = (long)t;
@@ -55,10 +78,19 @@ namespace DDEN.NetPerfTracker
                 if (second > _second) { _second = second; _details = 0; }
                 if (_details >= 8 && (!error || _firstError != null)) { _window.DetailSkipped++; _total.DetailSkipped++; return; }
                 _details++;
+                string text = data as string;
                 // Do not invoke arbitrary user-defined ToString methods from a logger callback.
                 if (text == null) text = data is Exception exception ? exception.GetType().FullName + ": " + exception.Message + "\n" + exception.StackTrace
                     : data == null ? "(null)" : data.GetType().FullName;
-                if (text.Length > 2048) text = text.Substring(0, 2048) + " [truncated]";
+                bool truncated = text.Length > 2048;
+                if (truncated) text = text.Substring(0, 2048);
+                if (stack != null)
+                {
+                    int room = Math.Max(0, 2048 - text.Length - 1);
+                    truncated |= stack.Length > room;
+                    if (room > 0 && stack.Length > 0) text += "\n" + stack.Substring(0, Math.Min(room, stack.Length));
+                }
+                if (truncated) text += " [truncated]";
                 if (source != null && source.Length > 80) source = source.Substring(0, 80);
                 var message = new ProbeMessage { T = t, Source = source ?? "", Text = text, Error = error };
                 if (error && _firstError == null) _firstError = message;
@@ -153,6 +185,7 @@ namespace DDEN.NetPerfTracker
                 + " gcMarkerAvgMs=" + GcMs.ToString("0.000", c) + " gcMarkerPeakMs=" + GcPeakMs.ToString("0.000", c)
                 + " mpErrors=" + Logs.Errors + " mpWarnings=" + Logs.Warnings + " baselineLogs=" + Logs.BaselineLogs
                 + " mpErrorsTotal=" + TotalLogs.Errors + " mpWarningsTotal=" + TotalLogs.Warnings + " baselineLogsTotal=" + TotalLogs.BaselineLogs
+                + " unityErrors=" + Logs.UnityErrors + " unityErrorsTotal=" + TotalLogs.UnityErrors
                 + " detailSkipped=" + Logs.DetailSkipped + " playerX=" + X.ToString("0.00", c) + " playerY=" + Y.ToString("0.00", c)
                 + " normalizedHeight=" + Height.ToString("0.000", c);
         }

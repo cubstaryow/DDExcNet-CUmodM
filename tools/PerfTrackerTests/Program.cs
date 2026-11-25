@@ -129,6 +129,7 @@ internal static class Program
         Check(text.IndexOf("SAMPLE t=1.000", StringComparison.Ordinal) < text.IndexOf("EVENT t=2.000", StringComparison.Ordinal) && text.IndexOf("EVENT t=2.000", StringComparison.Ordinal) < text.IndexOf("SAMPLE t=3.000", StringComparison.Ordinal), "event records merge with corresponding sample time");
         Check(text.IndexOf("SAMPLE t=3.000", StringComparison.Ordinal) < text.IndexOf("EVENT t=4.000", StringComparison.Ordinal), "sub-second event after last sample is not lost");
         ProbeChecks();
+        UnityReplayChecks();
         Console.WriteLine("PASS " + _checks + " checks");
     }
 
@@ -220,7 +221,7 @@ internal static class Program
 
         string root = Path.GetFullPath(".");
         using var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(root, "src/DDEN.NetPerfTracker/bin/Release/DDEN.NetPerfTracker.dll"));
-        Check(assembly.Name.Version == new Version(2, 1, 0, 0), "probe feature has an independent 2.1.0 component version");
+        Check(assembly.Name.Version == new Version(2, 3, 1, 0), "probe feature has an independent 2.3.1 component version");
         Check(!assembly.MainModule.AssemblyReferences.Any(reference => reference.Name == "CasualtiesMP" || reference.Name == "LiteEntitySystem" || reference.Name == "LiteNetLib"), "optional probe never hard-references Together or its network libraries");
         foreach (var type in AllTypes(assembly.MainModule.Types))
         foreach (var method in type.Methods)
@@ -251,5 +252,47 @@ internal static class Program
     {
         foreach (var type in types)
         { yield return type; foreach (var nested in AllTypes(type.NestedTypes)) yield return nested; }
+    }
+    private static void UnityReplayChecks()
+    {
+        var inbox = new ProbeInbox(); inbox.Enable(true);
+        // Sanitized stack shapes from the AMD and Intel logs. Unity supplies stack as a separate argument.
+        const string decay = "at Together.Item_HandleDecay_MultiplayerPatch.Prefix (Item __instance)\n at Item.DMD<Item::Update>(Item)";
+        const string talker = "at UnityEngine.Component.GetComponentFastPath\n at TMPro.TMP_Text.get_rectTransform ()\n at Talker.DMD<Talker::LateUpdate>(Talker)";
+        const string wearable = "at Wearable.Awake ()\n UnityEngine.GameObject:SetActive\n CpuOptimizationAdv.CullWorld:RestoreAndClear()";
+        inbox.AddUnity("NullReferenceException", decay, 1);
+        inbox.AddUnity("NullReferenceException", talker, 1);
+        inbox.AddUnity("NullReferenceException", wearable, 1);
+        var counts = inbox.Drain(out var total);
+        Check(counts.UnityErrors == 3 && counts.Errors == 2 && total.UnityErrors == 3, "Unity replay captures all three dominant stack shapes and keeps attributed counts separate");
+        Check(inbox.Messages().Length == 3 && inbox.Messages()[0].Text.Contains("Together.Item_HandleDecay"), "Unity samples preserve the separately supplied original stack");
+        inbox.Add("Together", true, false, "original Bep error", 2);
+        inbox.AddUnity("[Error  :  Together] original Bep error", "", 2);
+        counts = inbox.Drain();
+        Check(counts.Errors == 1 && counts.UnityErrors == 0, "Bep-to-Unity mirrors are not counted twice");
+        inbox.AddUnity("[Error] a real engine error", "SomeOtherMod.Update", 3);
+        counts = inbox.Drain();
+        Check(counts.UnityErrors == 1 && counts.Errors == 0, "unattributed engine errors remain visible without blaming Together");
+        inbox.Clear();
+        inbox.AddUnity("NullReferenceException", new string('x', 9000), 4);
+        Check(inbox.Messages()[0].Text.Length < 2100 && inbox.Messages()[0].Text.EndsWith("[truncated]"), "Unity stack storage is bounded before concatenation");
+        inbox.Clear();
+        for (int i = 0; i < 10000; i++) inbox.AddUnity("NullReferenceException", decay, 5);
+        counts = inbox.Drain();
+        Check(counts.UnityErrors == 10000 && counts.Errors == 10000 && counts.DetailSkipped == 9992
+            && inbox.Messages().Length == 8, "Unity error storms preserve totals with the same bounded detail budget");
+        inbox.Enable(false); inbox.AddUnity("NullReferenceException", decay, 6);
+        Check(inbox.Totals.UnityErrors == 10000, "Unity capture stops when the probe is disabled");
+        var data = new DDEN.Diagnostics.DeepWindow { Active = true, Status = "active", Frames = 120, Patched = 12, Expected = 12 };
+        Check(DeepTimingReport.Header(data).Contains("互相包含") && DeepTimingReport.Header(data).Contains("完整帧 120"), "deep feedback explains overlapping scopes and completed-frame counts");
+        Check(DeepTimingReport.Row(new DDEN.Diagnostics.DeepRow { Name = "<size=999>bad", Available = false }).IndexOf('<') < 0, "method labels cannot inject UI markup");
+        DDEN.Shared.DdenLocalization.Language = DDEN.Shared.DdenLanguage.English;
+        Check(DeepTimingReport.Header(data).Contains("Completed frames"), "deep diagnostics UI is localized");
+        DDEN.Shared.DdenLocalization.Language = DDEN.Shared.DdenLanguage.Chinese;
+        using var binary = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetFullPath("."), "src/DDEN.NetPerfTracker/bin/Release/DDEN.NetPerfTracker.dll"));
+        var probe = binary.MainModule.Types.Single(type => type.Name == "TogetherProbe");
+        Check(probe.Methods.Single(method => method.Name == "Start").Body.Instructions.Any(instruction => instruction.Operand is Mono.Cecil.MethodReference method && method.Name == "add_logMessageReceivedThreaded")
+            && probe.Methods.Single(method => method.Name == "Stop").Body.Instructions.Any(instruction => instruction.Operand is Mono.Cecil.MethodReference method && method.Name == "remove_logMessageReceivedThreaded"), "Unity callback lifetime follows explicit probe start and stop");
+        Check(probe.Methods.Single(method => method.Name == "UnityLog").Body.Instructions.Any(instruction => instruction.Operand is Mono.Cecil.MethodReference method && method.Name == "AddUnity"), "Unity callback routes full separate stacks to the bounded inbox");
     }
 }

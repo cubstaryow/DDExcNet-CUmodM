@@ -1,8 +1,10 @@
-# 性能分析的读数与排查方法（v2.1.0）
+# 性能分析的读数与排查方法（v2.3.1）
 
 本文描述当前指标口径；旧记录中0.83／3.72是步／帧实例，不能当作毫秒或物理压力。验证阶段与本轮实际检查见 [CHANGE.md](../CHANGE.md)。
 
 旧版把物理步／帧放在「物理压力」图里，容易把掉帧后的补步误认为物理耗时上升。新版将调度、真实计时、对象状态与跟踪器自身开销分开；仍然零 Harmony 补丁，正常采样不写入游戏对象。
+
+采样主开关默认关闭；CPU与GPU阶段计时默认开启，但只有实际采样时运行。增强、Together探针与波动告警各自默认关闭。全部配置由管理器提供入口，日志详细程度由管理器统一控制；有跟踪器时DDEN日志使用跟踪器通道，这不要求采样开启。
 
 ## 先看哪些读数
 
@@ -37,7 +39,7 @@
 
 ## CPU／GPU阶段计时与明显标记
 
-「阶段计时」默认关闭，按需连接7个准确的纳秒计时器：`CPU Total Frame Time`、`CPU Main Thread Frame Time`、`CPU Render Thread Frame Time`、`GPU Frame Time`、`Gfx.WaitForPresentOnGfxThread`、`WaitForTargetFPS`、`PlayerLoop`。不替换PlayerLoop，不启用深度分析，不改游戏帧率。计时器可用不代表已经返回数据；前8次读取预热，缺失显示「不可用」，窗口失焦时不评估渲染/GPU，避免把保留值当作当前负载。
+「阶段计时」默认开启，仅在采样运行时采集，按需连接7个准确的纳秒计时器：`CPU Total Frame Time`、`CPU Main Thread Frame Time`、`CPU Render Thread Frame Time`、`GPU Frame Time`、`Gfx.WaitForPresentOnGfxThread`、`WaitForTargetFPS`、`PlayerLoop`。不替换PlayerLoop，不启用深度分析，不改游戏帧率。计时器可用不代表已经返回数据；前8次读取预热，缺失显示「不可用」，窗口失焦时不评估渲染/GPU，避免把保留值当作当前负载。
 
 Unity支持按计时器收集阶段数据，并提示计时可能延迟数帧、采集自身有成本；不能用同一时刻显示的CPU/GPU读数还原精确调用顺序。参见 [Unity 2022.3 FrameTimingManager](https://docs.unity3d.com/2022.3/Documentation/Manual/frame-timing-manager.html)。正常采样不直接调用全量CaptureFrameTimings，只读启用的计时器；引擎内部采集成本未必出现在跟踪器自身CPU中。
 
@@ -56,11 +58,15 @@ Unity支持按计时器收集阶段数据，并提示计时可能延迟数帧、
 
 ## Together探针与联机反馈
 
-在“告警与联机反馈”页开启“Together探针”，也可在配置的“诊断”分组修改。它独立于波动告警和阶段计时，只读观察，不安装Harmony补丁、不发送网络消息、不修改Together／LES状态。暂停、停止或关闭采样时撤下日志监听并释放计时器，保留已有证据；“清空”会清除历史。内部字段不兼容时保留其余读数，缺失显示不可用。
+在“告警与联机反馈”页开启“Together探针”，也可在配置的“诊断”分组修改。
+
+2.2.0直接订阅Unity错误／异常／Assert回调，接收完整的独立堆栈参数，跳过Bep的Unity桥和Bep转Unity镜像以避免重复。所有Unity错误单独累计，包含其他模组；堆栈提及Together、LES、Krok或CPU优化的同时计入联机诊断相关错误。不能把Unity总数全部归责于Together。日志正文与堆栈只在细节额度内拼接、限长保留，关闭探针立即撤下回调。
+
+它独立于波动告警和阶段计时，只读观察，不安装Harmony补丁、不发送网络消息、不修改Together／LES状态。暂停、停止或关闭采样时撤下日志监听并释放计时器，保留已有证据；“清空”会清除历史。内部字段不兼容时保留其余读数，缺失显示不可用。
 
 | 反馈 | 口径与限制 |
 | --- | --- |
-| 错误／警告／baseline日志 | 统计探针开启期间收到的Together／LES相关日志消息，非去重异常次数；警告与baseline信息受原模组日志设置影响，未看到baseline日志不等于没有重同步 |
+| 错误／警告／baseline日志 | 统计探针开启期间收到的Together／LES来源及相关堆栈日志消息，非去重异常次数；警告与baseline信息受原模组日志设置影响，未看到baseline日志不等于没有重同步 |
 | 首个错误与近期日志样本 | 每秒最多保留8条细节，首个错误可额外占1条；保留最近96条及首个错误，正文截取前2048字符；总数仍逐条累计，不为每条错误重复写盘，也不屏蔽原日志 |
 | LES tick及增量、待处理请求、变化实体、区块队列 | 默认每秒读一次；不逐个遍历实体，不计量具体网络函数耗时；tick为16位循环值，增量不代表完整模拟耗时 |
 | 待baseline连接、最长确认间隔 | 每次最多检查32个连接；这是瞬时状态，不能累计成完整重同步次数，也可能漏掉两次采样之间的短暂状态；检查不全会明确标注 |
@@ -73,9 +79,30 @@ Unity支持按计时器收集阶段数据，并提示计时可能延迟数帧、
 
 额外工作限制在每帧固定直方图更新、可用计时器读取、每个采样点的有限字段读取，以及限量日志细节；不创建后台采样线程、不扫描全世界。日志回调与引擎采集自身的成本未必出现在页面“自身CPU”中，不能承诺零开销。
 
+## 独立增强模块与逐函数计时（2.3.1）
+
+`DDEN.NetPerfTracker.Enhanced`为独立可选组件0.2.1-alpha，不加入现有六组件包。将增强DLL与基础跟踪器2.3.1及Shared放入插件目录后，在“告警与联机反馈”页开启“Together探针”和“深层计时”；增强页与配置“诊断／启用深层计时”控制同一个持久开关，默认关闭。每端只观察本机，不通过网络获取另一端数据。所有页面通过管理器打开，无独立面板按键。
+
+基础跟踪器继续零Harmony；增强模块仅在基础采样、Together探针与深层开关同时有效时安装自身的计时前缀及finalizer。前缀不跳过原方法，finalizer不替换异常；不改实参、返回值、世界、物品或网络。暂停、停用任一开关或禁用模块时，最迟在下一次模块Update按自身owner撤下钩子，不卸载其他模组补丁。首次安装和撤下可能卡顿，先等几秒再取对照；挂接失败或字段不兼容会保留未知，不伪装为零。
+
+| 调用组 | 逐项入口 |
+| --- | --- |
+| chunks | `Together.ChunkSleep.Tick`、`Together.BagSleep.Tick`、`Together.HeaterMultiplayerRewrite.Tick` |
+| fixed | `Together.BagSleep.WriteHost`、`Together.FallCatch.Tick` |
+| opt | `KrokV5Optimization.SafetyNet.Tick`、`KrokV5Optimization.SlowStamp.Tick`、`Together.BodyViewParticles.Tick`、`Together.WallholeZones.Tick`、`KrokV5Optimization.BagPlace.Tick`、`KrokV5Optimization.FixInvSync.Tick` |
+| opt总项 | `KrokV5Optimization.OptimizerMain.Tick`，含上述子项，不能与子项相加；此项不等同外部CpuOptimizationAdv模组 |
+
+窗口仅提交已完成的渲染帧；未完成帧的调用进入下一窗口，避免分子与帧数跨窗错位。每项显示平均／峰值每渲染帧耗时、调用次数、平均／峰值每次耗时与异常结束次数。固定更新可以在一个渲染帧发生多次，逐次峰值与该帧累计峰值不同。父项与子项都是包含式墙钟时间，可能包含其他模组补丁、JIT和线程等待；不是纯CPU执行时间，异常结束次数也不等同原始异常的去重根因数。非主线程调用跳过并计数，不能据此推断它在哪个CPU核心执行。
+
+额外读取8项Count：ChunkSleep.Entries、BagSleep.Rows、SlowStamp.Jobs、WallholeZones.Holes、BagPlace.Waiting／Announcing、FixInvSync.Pending／Exhausted；不遍历集合内容。基础跟踪器与增强通过schema=1的有限JSON快照通信，无相互程序集硬引用。世界／连接上下文切换清除计时窗口；已有导出及基础采样历史保留。插桩及日志回调成本不完整包含于基础跟踪器“自身CPU”中，不承诺零开销，也不能把启用后FPS变化直接当成优化效果。
+
+导出schema=5保留旧记录，额外写`DEEP_WINDOW t=... payload={...}`；窗口保存独立引擎起止时间、完整帧数、Together版本／MVID、挂接覆盖、安装耗时、各项计时及Count。它与`PROBE_MESSAGE`一样独立列出，按时间字段与样本对齐，不保证在文件中与SAMPLE／EVENT交错排列。关闭深层计时保留此前样本；“清空”同时清除增强计时窗。
+
+离线检查分为`PerfEnhancerTests`的账本／桥协议／签名与安全IL检查，以及`PerfEnhancerHookTests/run-netfx.ps1`的真实Harmony假方法检查。后者使用Windows .NET Framework和游戏同版HarmonyX，验证正常调用、嵌套、原异常对象、其它补丁跳过决定、非主线程略过、仅撤下自身钩子与重启用；不加载真实游戏程序集，不运行Unity。当前HarmonyX依赖CoreCLR缺少的Exception.PrepForRemoting／FixRemotingException，不能改用普通`dotnet run`冒充同等验证。两类检查均不能替代真实多人和Unity Mono验收。
+
 ## 日志与验证
 
-日志位于 `BepInEx/config/DDEN/perf-<UTC时间>.log`，`schema=4`；缺失数值通常为-1，未知玩家坐标／高度为NaN；先按相应可用标记判断。`t` 相对本轮记录起点，清点起止为引擎实时秒；文件头的 `engineTimeAtStart` 可将两者对齐。每条记录保存当时的帧率限制、垂直同步、窗口焦点、时间缩放、物理间隔、诊断阈值、清点状态及其成本。阶段的ValidReads表示成功读取次数，不声称是不同原生帧数。计时源在停止或换场景时可能释放，文件头只报告导出时状态；每条记录的-1才决定该时段是否有计时数据。
+日志位于 `BepInEx/config/DDEN/perf-<UTC时间>.log`，`schema=5`；缺失数值通常为-1，未知玩家坐标／高度为NaN；先按相应可用标记判断。`t` 相对本轮记录起点，清点起止为引擎实时秒；文件头的 `engineTimeAtStart` 可将两者对齐。每条记录保存当时的帧率限制、垂直同步、窗口焦点、时间缩放、物理间隔、诊断阈值、清点状态及其成本。阶段的ValidReads表示成功读取次数，不声称是不同原生帧数。计时源在停止或换场景时可能释放，文件头只报告导出时状态；每条记录的-1才决定该时段是否有计时数据。
 
 手动导出会将 `EVENT` 与性能记录按时间合并；即使较旧的清点结果较晚才被发现，也按其清点结束时间排列。事件含before/after、baselineT、lastT、peak、repeats及当时阈值，不用导出时的配置覆盖历史。探针细节另列为带相同相对时间`t`的`PROBE_MESSAGE`，头部保存硬件、Unity、Together版本／MVID、日志累计数和采样限制；性能行追加探针状态及相关读数，保留原字段。默认不持续写盘，也不为每个突变输出BepInEx日志；事件写入内存，统一手动导出。
 
@@ -86,3 +113,19 @@ Unity支持按计时器收集阶段数据，并提示计时可能延迟数帧、
 **历史验证（v1.5.0阶段，2026-11-21）**：当时Release构建与164,808项离线断言通过；记录过游戏内临时对象分类、菜单场景清点及界面轮播。主线程约1.8ms、主动限帧等待约14.8ms是当时后台菜单试读值，不能当作本版性能基准；当时GPU／渲染和准确2D计时未取得有效数据。
 
 **历史验证（v1.7.1文档整理阶段）**仅构建与离线回归，未启动游戏。三人联机掉线前后及可见世界GPU计时仍待实测，不宣称已经定位具体卡顿根因；实际记录见根CHANGE。
+
+## 2026-11-24 · 2.3.0／增强0.2.1-alpha
+
+基础模块保持零Harmony；增强模块需基础跟踪器2.3.1的64行容量声明才激活，旧基础不会被喂入过长窗口。新增FixInvSync.Sweep、Net.DoUpdate、Steam轮询／LiteNetLib传输、LES基础／客机更新与主客机逻辑tick、SyncInfo更新／写包／应用、Together插件与ServerMain循环、Item.Update／HandleDecay、Body.Update／FixedUpdate／HandlePhysics、CpuOptimizationAdv.CullWorld.Tick，共45个固定槽。均只钩已存在的无参托管void方法，缺失明确不可用，实例汇总到方法槽，非主线程排除。父子含时不可相加，函数异常计数不包含函数自己已捕获的异常。
+
+高频物体逐函数插桩可能显著增加观测开销；只在复现时临时启用增强模块，关闭后按自身owner撤钩，再比较无插桩基线。基础分阶段采样另尝试Physics2D固定更新阶段及脚本Update／FixedUpdate／LateUpdate原生marker，导出实际来源和有效读取数；标记缺失保持-1。物理固定更新阶段不等于精确Physics2D.Simulate，旧physics2dAvgMs口径不变。
+
+MPfix 1.8.0已移除客机重试修复；增强模块只观察。玩家分段退出与服务器关闭前后需同时记录位置、活动物品、清醒刚体和功能开关；不能把位置变化的两段当严格原地对照。
+
+## 2026-11-25 · 主机issue #78与客机模组交互线索
+
+[Together issue #78](https://github.com/creaturefeaturelarry/casualties-together/issues/78)报告主机物理补步中重复执行物体同步；维护者表示已尝试修复，并另行处理LiquidAffect与IKHandle。不能把issue中的测试数字套用于本机，当前5.5.5源码及安装DLL已核对包含逐帧FlushFrameSamples入口；实际多人收益尚未测定。增强模块据此追加SyncInfoGameObjectTracker.FixedUpdate／TickSync、LiquidAffect.FixedUpdate、IKHandle.Update／UpdateIK，以及Item.Awake／OnDestroy、Wearable.Awake、SyncInfo.DestroyTrackedGameObject生命周期计时，总计45槽；不复制issue的跳过物理步原型。
+
+“纯Together疑似不掉帧”是模组交互线索，不推翻FixInvSync已经测得的耗时热点，也不证明某个模组有责任。新增导出时的PLUGIN_EVIDENCE（最多128插件的GUID／版本／MVID，DDEN与CPU优化最多64项本机布尔配置，不读取密码等字符串设置）和DEEP_EVIDENCE（当前相关函数的各类Harmony owner／优先级，每类最多16项，标记截断）。这两类记录反映导出时状态，不能冒充卡顿当时的补丁快照；关闭或重挂探针后也不能用其证明历史归属。计时行不重复存放补丁表。建议相同世界／位置／退场顺序下比较Together最小组合、加入CPU优化、加入其余模组，并分别记录主客机开关和版本。
+
+旧版重试修复及其专用计数已移除。CPU优化重激活Wearable引发的异常在旧客机日志中早于持续卡顿出现，只有交互候选意义，尚未证明其造成FixInvSync积压。

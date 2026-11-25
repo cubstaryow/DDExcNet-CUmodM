@@ -1,29 +1,36 @@
-# DDExcNet 1.7.5 — 安装 / Installation
+# DDExcNet 1.8.0 — 安装 / Installation
 
-本包为六个DDExcNet组件：公共层、管理器、MPfix、可选存档编辑器、可选性能跟踪器与可选物品工具（UnitListMgr）。现有DLL/GUID/配置仍使用DDEN名称。ET-Fix与JDI-DDEN独立发布，不含在本包中。
+本包为八个 DDExcNet 组件：公共层、管理器、MPfix、性能跟踪器、可选深层诊断、可选存档编辑器、可选单位清单管理器与龙灼线束。
+现有 DLL / GUID / 配置仍使用 DDEN 名称。ET-Fix、JDI-DDEN、DS Tool Extension 是独立外部模组，不含在本包中。
 
 ## 中文
 
-1. 已安装BepInEx 5（Windows Mono）。关闭游戏后，将普通ZIP中的DLL放入BepInEx/plugins/DDEN/。Nexus版则将BepInEx文件夹合并到游戏根目录，两种布局二选一，不重复安装。
-2. 多人修复目标Together / CasualtiesMP 5.5.4，相关同步功能还需兼容CUCoreLib。缺少前置的功能停用；管理器、编辑器、跟踪器可不使用多人功能。
-3. 主机与各客机使用同版。默认F8打开管理器，冲突后看实际配置；控制台输入dden也可打开。
-4. 更新替换同名自有文件，保留DDEN.Shared.dll；编辑器、跟踪器和物品工具按需选装。不需要清空配置，不删除用户存档。
+1. 先装好 **BepInEx 5（win_x64）**，启动一次游戏再关掉，让它生成 `BepInEx/` 目录。
+2. 把包里的 dll **一起**放进 `<游戏目录>\BepInEx\plugins\DDEN\`，替换同名文件；不要旧的一份、新的一份同时留着。
+3. `DDEN.Shared.dll` 是其它组件的依赖，必须保留。深层诊断、存档编辑器、单位清单管理器、性能跟踪器可按需删掉，其余功能不受影响。
+4. 启动游戏，按管理器快捷键（默认 **F11**）打开面板，或在控制台输入 `dden`。与其他模组撞键时管理器会自动换键并保存，以界面显示为准。
+5. 联机：主机与每一位客机装同一版本。多人修复需要 Together / CasualtiesMP **5.5.5**；无芯片同步、合成补救、商人快照、主机权威配置还需要 CUCoreLib。
+6. 卸载：删掉 `BepInEx/plugins/DDEN/` 里的 dll 即可，不写注册表、不留后台服务。存档编辑器会在你改过的存档旁留 `.cumod.bak` 备份。
 
-v1.7.1已移除并放弃玩家离场物品剔除广播。原方案实测不能解决其他客机掉帧，旧RelayGhostItems配置不再生效；退出背包处理交由原版Together流程，本包不再提供此项修复。
+## 实验性模块 / Experimental
 
-无芯片修复针对主机启用后客机仍有芯片的实际规则差异。当前工作树只保留主机漏算世界倍率的三分支补算，激进上报及穿戴兜底已移除，仍有覆盖边界；名称修复只用游戏字体，缺字显示?。管理器、MPfix 和性能跟踪器支持中英文切换。构建和离线检查不等于真实多人验收。
-
-卸载只移除本包安装的准确DLL，不删除其他模组或存档。
+存档编辑器（DDEN.SaveEditor）、单位清单管理器（DDEN.UnitListMgr）为实验性模块：**主动使用导致存档损坏概不负责**，用前请自行备份存档。
+深层诊断（DDEN.NetPerfTracker.Enhanced）同为实验性、默认关闭，只用于排查掉帧，不建议长期开启。
 
 ## English
 
-Install BepInEx 5 for Windows Mono. Close the game and copy the six DLLs from the standard archive into BepInEx/plugins/DDEN/. For the Nexus archive, merge its BepInEx folder into the game root. Use one archive layout only. Existing DDEN configuration identities remain usable.
+1. Install **BepInEx 5 (win_x64)**, launch the game once and close it so the `BepInEx` folder is created.
+2. Put all DLLs into `<game folder>\BepInEx\plugins\DDEN\` and replace same-named files. Do not keep an old copy next to a new one.
+3. `DDEN.Shared.dll` is required by the other components. The deep-diagnostics, save editor, unit list manager and performance tracker DLLs are optional; removing them leaves everything else working.
+4. Launch the game and press the manager hotkey (default **F11**), or type `dden` in the console. If the key clashes with another mod the manager picks a free one and saves it — use what the compatibility page shows.
+5. Multiplayer: host and every client must run the same build. The multiplayer fixes need Together / CasualtiesMP **5.5.5**; chip-rule sync, craft-spawn recovery, trader snapshots and host authority config also need CUCoreLib.
+6. Uninstalling: delete the DLLs from `BepInEx/plugins/DDEN/`. No registry entries, no background services. The save editor keeps `.cumod.bak` copies next to saves you edited.
 
-MPfix targets Together / CasualtiesMP 5.5.4. Synchronization-dependent features require compatible CUCoreLib. Use matching DDExcNet versions across peers. Keep DDEN.Shared.dll; the editor, tracker, and UnitListMgr are optional. Open with F8 unless conflict resolution selected another key, or enter dden in the console.
+Experimental modules: the save editor and the unit list manager are experimental — using them is at your own risk and we are not responsible for corrupted saves. The deep-diagnostics plugin is experimental and off by default; it only measures, and is not meant to stay enabled.
 
-Version 1.7.1 removes and abandons the disconnected-player item-removal broadcast repair after user testing found it ineffective. RelayGhostItems is no longer used. Inventory handling on exit/reconnect is left to Together. This package does not fix the remaining disconnect-related frame drops.
+## 校验 / Verification
 
-The manager, MPfix, and performance tracker support Chinese and English. The current working tree retains basic host-side world-multiplier repairs only; aggressive reporting and wearable recovery have been removed. Coverage limits remain. Game fonts are used for name repair; missing glyphs appear as ?. Local builds and offline checks are not real multiplayer validation.
-
-Source, documentation and issues: https://github.com/cubstaryow/DDExcNet-CUmodM
-Code: MPL-2.0 (LICENSE). Branding/artwork: separate LICENSE-ASSETS terms. Third-party attribution: NOTICE. No game files, external dependencies, ET-Fix, JDI-DDEN, configurations, saves or decompilation backups are bundled.
+```
+SHA256(DDExcNet-v1.8.0.zip) = 4f74216dea6a2018554a4d30f24595fba9530f186c39cd674fc991b8cb7975c8
+大小 = 7256.3 KB
+```

@@ -190,7 +190,7 @@ internal static class Program
             && (m.Name == "Invoke" || m.Name == "GetValue" || m.Name == "Display" || m.Name == "GetComponent"
                 || m.DeclaringType.Name == "PlayerNameFonts" && m.Name == "Tick")),
             "lifecycle never polls players, redraws labels or invokes native name refresh");
-        Check(name.Methods.Single(m => m.Name == "RefreshNametag").Body.Instructions.Any(i => i.Operand is MethodReference m
+        Check(name.Methods.Single(m => m.Name == "RefreshLabel").Body.Instructions.Any(i => i.Operand is MethodReference m
             && m.DeclaringType.Name == "PlayerNameRepair" && m.Name == "Display")
             && name.Methods.Single(m => m.Name == "Install").Body.Instructions.Any(i => i.Operand is string s && s == "LateUpdate"),
             "native visual refresh reads unified display names without invoking native name/color refresh");
@@ -208,6 +208,17 @@ internal static class Program
         var direction = nativeTypes["Together.UIInGame"].Methods.Single(m => m.Name == "_GUI__DrawPlayerDirection");
         Check(direction.Body.Instructions.Any(i => i.OpCode == OpCodes.Callvirt && i.Operand is MethodReference m
             && m.Name == "get_playerName" && m.DeclaringType.FullName == "Together.NetBody"), "installed Shift pointer uses the property getter regression case");
+        foreach (var target in new[] {
+            ("Together.NetBody", "DoMouseHoverTooltip"),
+            ("Together.UIInGame", "_UpdateCheckInteractKeybinds"),
+            ("Together.PlayerCamera_ToggleWoundView_MultiplayerPatch", "WoundView_SetTargetBody"),
+            ("Together.PlayerCamera_ToggleWoundView_MultiplayerPatch", "WoundViewName"),
+            ("Together.WoundView_UpdateView_MultiplayerPatch", "GeneratePlayerList"),
+            ("Together.CharStatusVisuals", "TryMakeNametagFancy"),
+            ("Together.UIManager", "SetUITooltip"), ("Together.UIBullshit", "DoFontThings") })
+            Check(nativeTypes.TryGetValue(target.Item1, out var targetType) && targetType.Methods.Any(m => m.Name == target.Item2), "Together 5.5.5 Chinese presentation contract: " + target.Item1 + "." + target.Item2);
+        var localeGet = nativeTypes["Together.Lang"].Methods.Single(m=>m.Name=="Get");
+        Check(localeGet.Parameters.Count==2 && localeGet.Parameters.All(p=>p.ParameterType.IsByReference), "Together 5.5.5 language parameters remain readonly references");
         var template = all.Single(t => t.Name == "ModItemTemplateRepair");
         Check(!Types(new[] { template }).SelectMany(t => t.Methods).Where(m => m.HasBody).SelectMany(m => m.Body.Instructions)
             .Any(i => i.Operand is MethodReference m && (m.Name == "Instantiate" || m.Name == "InstantiateReturn" || m.Name == "SetActive" || m.Name == "Destroy")),

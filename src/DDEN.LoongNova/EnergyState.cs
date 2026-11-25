@@ -6,7 +6,7 @@ namespace DDEN.LoongNova
     internal sealed class EnergyState
     {
         internal const float Capacity = 1000;
-        internal const float ShotCost = 50;
+        internal const float ShotCost = 10;
         internal bool Loaded;
         internal float Energy;
         internal bool Favourite;

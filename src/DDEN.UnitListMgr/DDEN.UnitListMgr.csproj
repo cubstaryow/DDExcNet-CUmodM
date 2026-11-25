@@ -2,7 +2,7 @@
   <PropertyGroup>
     <AssemblyName>DDEN.UnitListMgr</AssemblyName>
     <RootNamespace>DDEN.UnitListMgr</RootNamespace>
-    <Version>0.1.0-alpha</Version>
+    <Version>0.1.2-alpha</Version>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\DDEN.Shared\DDEN.Shared.csproj" />

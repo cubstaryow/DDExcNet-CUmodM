@@ -74,16 +74,18 @@ namespace DDExcNet.CUmodM
             try
             {
                 GUI.depth = -1100;
-                GUI.matrix = Matrix4x4.TRS(Vector3.zero, Quaternion.identity, new Vector3(scale, scale, 1));
+                GUI.matrix = Matrix4x4.identity;
                 float width = Math.Min(760, Screen.width / scale - 16);
                 float y = !CfgIgnoreEnv.Value && !DdenGate.VersionOk && DdenGate.HasParticipants ? 64 : 12;
-                var box = new Rect((Screen.width / scale - width) / 2, y, width, 50);
+                var box = ScreenNoticeStyle.Pixels(new Rect((Screen.width / scale - width) / 2, y, width, 50), scale);
+                var titleStyle = ScreenNoticeStyle.FontAt(DdenUI.Row, scale);
+                var detailStyle = ScreenNoticeStyle.FontAt(DdenUI.Sub, scale);
                 DdenUI.Fill(box, new Color(.4f, .07f, .03f, .94f)); DdenUI.Frame(box, DdenUI.Bad);
-                GUI.Label(new Rect(box.x + 8, box.y + 4, box.width - 16, 18), T("versions.notice"), DdenUI.Row);
+                GUI.Label(new Rect(box.x + 8 * scale, box.y + 4 * scale, box.width - 16 * scale, 18 * scale), T("versions.notice"), titleStyle);
                 string reason = apiMismatch ? T("versions.apiMismatch", ModuleVersionCatalog.SupportedApi, DdenApi.CurrentVersion)
                     : VersionModuleName(first) + ": " + VersionText(first).Caption;
                 string detail = T("versions.open", reason, CfgToggleKey.Value.MainKey);
-                GUI.Label(new Rect(box.x + 8, box.y + 25, box.width - 16, 18), DdenUI.ElideToWidth(detail, box.width - 16, DdenUI.Sub), DdenUI.Sub);
+                GUI.Label(new Rect(box.x + 8 * scale, box.y + 25 * scale, box.width - 16 * scale, 18 * scale), DdenUI.ElideToWidth(detail, box.width - 16 * scale, detailStyle), detailStyle);
             }
             finally { GUI.matrix = old; GUI.depth = oldDepth; }
         }

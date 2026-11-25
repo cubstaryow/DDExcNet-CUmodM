@@ -18,14 +18,55 @@ namespace DDEN.LoongNova
             if (__instance.TryGetComponent<GravityBelt>(out var belt)) belt.RefreshEncumbrance(__instance);
         }
 
+        [HarmonyPatch(typeof(Item), "get_fullName"), HarmonyPrefix]
+        private static void BeltChargeName(Item __instance)
+        {
+            if (__instance.id == Registration.BeltId) GravityBelt.For(__instance).RefreshEncumbrance();
+        }
+
+        [HarmonyPatch(typeof(PlayerCamera), nameof(PlayerCamera.ItemHoverDescription)), HarmonyPostfix]
+        private static void ItemEnergyHint(Item item, ref (string, string) __result)
+        {
+            if (item == null || !item.Stats.rec.recognizable) return;
+            string hint;
+            bool loaded;
+            if (item.id == Registration.BeltId)
+            {
+                var state = GravityBelt.For(item).State;
+                loaded = state.Cell.Loaded;
+                hint = loaded
+                    ? string.Format(Registration.Text("beltSocketLoaded"), state.Remaining, state.ChargeFraction * 100)
+                    : Registration.Text("beltSocketEmpty");
+            }
+            else if (item.id == Registration.GunId)
+            {
+                var gun = DragonGun.For(item);
+                hint = gun.CellHint();
+                loaded = gun.State.Loaded;
+            }
+            else if (item.id == Registration.CellId)
+            {
+                // A loose cell's native condition is its charge; the gun's condition is weapon wear.
+                float charge = Mathf.Clamp01(item.condition);
+                hint = string.Format(Registration.Text("cellEnergy"), charge * EnergyState.Capacity, charge * 100);
+                loaded = true;
+            }
+            else return;
+            __result.Item2 = "<color=#5eff00><sprite index=" + (loaded ? "15" : "16") + " tint=1>" + hint + "</color>\n\n" + __result.Item2;
+        }
+
         [HarmonyPatch(typeof(Body), nameof(Body.Jump)), HarmonyPrefix]
         private static void BeforeJump(float ___jumpCooldown, out float __state) => __state = ___jumpCooldown;
 
         [HarmonyPatch(typeof(Body), nameof(Body.Jump)), HarmonyPostfix]
-        private static void AfterJump(Body __instance, float ___jumpCooldown, float __state)
+        private static void AfterJump(Body __instance, float ___jumpCooldown, float __state, ref bool ___firstWallJump)
         {
-            if (___jumpCooldown > __state && __instance.rb.velocity.y > 0 && GravityBelt.Local(__instance))
-                GravityBelt.Worn(__instance)?.Boost(__instance);
+            if (___jumpCooldown <= __state || !GravityBelt.Local(__instance)) return;
+            var belt = GravityBelt.Worn(__instance);
+            if (belt == null) return;
+            // Climbing claws re-arm consecutive wall jumps. This passive ability needs no cell.
+            ___firstWallJump = true;
+            if (__instance.rb.velocity.y > 0) belt.Boost(__instance);
         }
 
         [HarmonyPatch(typeof(Body), "OnCollisionEnter2D"), HarmonyPrefix]
@@ -50,28 +91,18 @@ namespace DDEN.LoongNova
             && recipe.items != null && recipe.items.Any(item => item.specificId == Registration.CellId && item.noMaxCondition);
     }
 
-    // Match the vanilla wrench's weight inside tool draws only, without widening other loot sources.
+    // Keep CCL's ordinary draw intact unless this matching category wins the explicit rare-item roll.
     [HarmonyPatch]
-    internal static class MerchantPatches
+    internal static class LootPoolPatches
     {
-        private static readonly System.Type Registry = AccessTools.TypeByName("CUCoreLib.Registries.DropPoolRegistry");
-        private static readonly FieldInfo Pools = AccessTools.Field(Registry, "ExplicitPools");
-        private static MethodBase TargetMethod() => AccessTools.Method(Registry, "TryGetRandomItemId");
+        private static MethodBase TargetMethod() => AccessTools.Method(
+            AccessTools.TypeByName("CUCoreLib.Registries.DropPoolRegistry"), "TryGetRandomItemId");
         private static void Postfix(DropPool source, string fallbackCategory, ref string itemId, ref bool __result)
         {
-            if (fallbackCategory != "tool" || source != DropPool.Trader1 && source != DropPool.Trader2 && source != DropPool.Trader3
-                || Mp.IsRunning && !Mp.IsServer || ItemLootPool.pool == null
-                || !ItemLootPool.pool.TryGetValue("tool", out var tools)) return;
-            var pools = Pools?.GetValue(null) as Dictionary<DropPool, List<string>>;
-            List<string> extras = null;
-            pools?.TryGetValue(source, out extras);
-            int weight = tools.Count(id => id == "wrench") + (extras?.Count(id => id == "wrench") ?? 0);
-            if (weight <= 0) return;
-            int count = tools.Count + (extras?.Count ?? 0);
-            int choice = Random.Range(0, count + weight * 2);
-            if (choice < count) return;
-            itemId = choice < count + weight ? Registration.DragonId : Registration.WrenchId;
-            __result = true;
+            if (!__result || string.IsNullOrWhiteSpace(itemId) || Mp.IsRunning && !Mp.IsServer
+                || !LootRules.Eligible((int)source, fallbackCategory)) return;
+            string rare = LootRules.Select((int)source, fallbackCategory, Random.value);
+            if (rare != null) itemId = rare;
         }
     }
 }

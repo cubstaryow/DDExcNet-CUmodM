@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>DDEN.NetPerfTracker.Enhanced</AssemblyName>
+    <RootNamespace>DDEN.NetPerfTracker.Enhanced</RootNamespace>
+    <Version>0.2.1-alpha</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../DDEN.Shared/DDEN.Shared.csproj"><Private>true</Private></ProjectReference>
+    <Compile Include="../DDEN.NetPerfTracker/DeepTimingData.cs" Link="DeepTimingData.cs" />
+    <EmbeddedResource Include="Resources/localization.en.json"><WithCulture>false</WithCulture></EmbeddedResource>
+  </ItemGroup>
+  <Target Name="DeployPlugin" AfterTargets="Build" Condition="'$(DeployOnBuild)' == 'true'">
+    <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(DdenPluginsDir)" />
+  </Target>
+</Project>

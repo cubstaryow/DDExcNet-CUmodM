@@ -79,6 +79,7 @@ namespace DDEN.NetPerfTracker
         internal StageTimings Stages;
         internal bool FluctuationAlerts;
         internal TogetherSnapshot Probe;
+        internal DDEN.Diagnostics.DeepWindow Deep;
     }
     internal struct TimingValue
     {
@@ -88,7 +89,7 @@ namespace DDEN.NetPerfTracker
     }
     internal struct StageTimings
     {
-        internal TimingValue Total, Main, Render, Gpu, Present, Limit, Loop;
+        internal TimingValue Total, Main, Render, Gpu, Present, Limit, Loop, Physics2DLoop, ScriptFixed, ScriptUpdate, ScriptLate;
         internal bool Enabled, Warming;
     }
 }

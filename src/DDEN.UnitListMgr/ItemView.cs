@@ -49,12 +49,7 @@ namespace DDEN.UnitListMgr
             }
             if (_languageRevision != DdenLocalization.Revision) { _languageRevision = DdenLocalization.Revision; _lastSearch = null; }
             if (DdenUI.Button(new Rect(area.x, area.y, 102, 28), T("物品", "Items"), !_showJournal)) _showJournal = false;
-            bool wasEnabled = GUI.enabled;
-            GUI.enabled = false;
-            DdenUI.Button(new Rect(area.x + 108, area.y, 122, 28), T("生物 · 预留", "Creatures · Later"));
-            DdenUI.Button(new Rect(area.x + 236, area.y, 122, 28), T("单位 · 预留", "Units · Later"));
-            GUI.enabled = wasEnabled;
-            if (DdenUI.Button(new Rect(area.x + 364, area.y, 112, 28), T("生成记录", "Spawn history"), _showJournal)) _showJournal = true;
+            if (DdenUI.Button(new Rect(area.x + 108, area.y, 112, 28), T("生成记录", "Spawn history"), _showJournal)) _showJournal = true;
             area = new Rect(area.x, area.y + 38, area.width, Mathf.Max(40, area.height - 38));
             if (!string.IsNullOrEmpty(_service.Status))
             {
@@ -283,7 +278,6 @@ namespace DDEN.UnitListMgr
                 if (DdenUI.Button(new Rect(width - 28, y, 28, 25), "×")) { _slots[i] = ""; _saveSlots(); }
                 y += 31;
             }
-            Label(T("玩家状态编辑：接口预留", "Player-state editing: reserved interface"), DdenUI.Sub);
             _detailHeight = y + 10;
         }
         private void DrawPicker(float width, ref float y)

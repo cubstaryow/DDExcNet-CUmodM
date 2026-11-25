@@ -25,14 +25,17 @@ namespace DDEN.NetPerfTracker
             private readonly float _origin;
             private readonly long _clock = Stopwatch.GetTimestamp();
             internal Listener(ProbeInbox inbox, float origin) { _inbox = inbox; _origin = origin; }
+            internal float Now => _origin + (float)((Stopwatch.GetTimestamp() - _clock) / (double)Stopwatch.Frequency);
             public void LogEvent(object sender, LogEventArgs args)
             {
                 try
                 {
+                    // Unity is observed directly with its separate stack argument; do not double count its Bep bridge.
+                    if (string.Equals(args.Source?.SourceName, "Unity Log", StringComparison.Ordinal)) return;
                     bool error = (args.Level & (LogLevel.Error | LogLevel.Fatal)) != 0;
                     bool warning = (args.Level & LogLevel.Warning) != 0;
                     _inbox.Add(args.Source?.SourceName, error, warning, args.Data,
-                        _origin + (float)((Stopwatch.GetTimestamp() - _clock) / (double)Stopwatch.Frequency));
+                        Now);
                 }
                 catch { /* A diagnostic listener must never recurse through the logger. */ }
             }
@@ -76,8 +79,12 @@ namespace DDEN.NetPerfTracker
             _inbox.Drain();
             _inbox.Enable(true);
             var listener = new Listener(_inbox, t);
-            try { BepInEx.Logging.Logger.Listeners.Add(listener); _listener = listener; }
-            catch { _inbox.Enable(false); throw; }
+            try
+            {
+                BepInEx.Logging.Logger.Listeners.Add(listener); _listener = listener;
+                Application.logMessageReceivedThreaded += UnityLog;
+            }
+            catch { Stop(); throw; }
             try
             {
                 var available = new List<ProfilerRecorderHandle>();
@@ -96,8 +103,15 @@ namespace DDEN.NetPerfTracker
         internal void Stop()
         {
             _inbox.Enable(false);
+            Application.logMessageReceivedThreaded -= UnityLog;
             if (_listener != null) BepInEx.Logging.Logger.Listeners.Remove(_listener);
             _listener = null; StopCounters(); _lastCpu = -1; _lastTick = -1;
+        }
+        private void UnityLog(string message, string stack, LogType type)
+        {
+            if (type != LogType.Error && type != LogType.Exception && type != LogType.Assert) return;
+            try { var listener = _listener; if (listener != null) _inbox.AddUnity(message, stack, listener.Now); }
+            catch { /* Never log from a logging callback. */ }
         }
         private void StopCounters()
         {
@@ -249,7 +263,10 @@ namespace DDEN.NetPerfTracker
             writer.WriteLine("# cpu=" + JsonConvert.SerializeObject(SystemInfo.processorType) + " logicalProcessors=" + Environment.ProcessorCount
                 + " gpu=" + JsonConvert.SerializeObject(SystemInfo.graphicsDeviceName) + " unity=" + Application.unityVersion + " togetherVersionMvid=" + Identity);
             writer.WriteLine("# probeErrorsTotal=" + totals.Errors + " warningsTotal=" + totals.Warnings + " observedBaselineLogs=" + totals.BaselineLogs
+                + " unityErrorsTotal=" + totals.UnityErrors
                 + " skippedDetailTotal=" + totals.DetailSkipped + "; log counts are observed messages, not unique causes; absent verbose baseline logs do not prove no resync");
+            writer.WriteLine("# Unity errors are observed directly once (Bep Unity bridge/mirrors excluded); all Unity errors are counted separately, including other mods; mpErrors includes attributed Unity stacks and Together/LES source messages.");
+            writer.WriteLine("# attributed stack tags=Together.,KrokV5Optimization.,LiteEntitySystem,Net.DoUpdate:,CpuOptimizationAdv.; attribution is bounded string matching, not proof of responsibility or causation.");
             writer.WriteLine("# mainThreadCpuPct uses Windows thread CPU time / observed wall interval, not per-core utilization; it cannot distinguish Ready/Waiting. Job/GC markers are main-thread-only, may be unavailable or delayed. Low1 is a histogram estimate; normalizedHeight is unbounded.");
             foreach (var message in Messages())
                 writer.WriteLine("PROBE_MESSAGE t=" + message.T.ToString("0.000", CultureInfo.InvariantCulture) + " error=" + (message.Error ? 1 : 0)

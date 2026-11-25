@@ -7,38 +7,38 @@ using UnityEngine;
 
 namespace DDEN.UnitListMgr
 {
-    [BepInPlugin(Guid, "DDEN Unit List Manager", "0.1.0")]
+    [BepInPlugin(Guid, "DDEN Unit List Manager", "0.1.2")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     public sealed class UnitListPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleVersion, IDdenModuleActivity, IDdenConfigPolicy, IDdenConfigPresentation, IDdenConfigAvailability
     {
         public const string Guid = "com.dden.unitlistmgr";
         internal static LogChannel Log;
         internal static string T(string chinese, string english) => DdenLocalization.Language == DdenLanguage.English ? english : chinese;
-        private ConfigEntry<KeyboardShortcut> _openKey, _radialKey;
+        private ConfigEntry<KeyboardShortcut> _radialKey;
         private ConfigEntry<string> _favorites;
         private static ConfigEntry<bool> _allowGuests, _disableAchievements;
         internal static bool AllowGuestSpawn => _allowGuests?.Value ?? true;
         internal static bool DisableAchievementsOnSpawn => _disableAchievements?.Value ?? true;
         private readonly SpawnService _service = new SpawnService();
         private ItemView _view;
-        private bool _standalone, _radial;
+        private bool _radial;
         private bool _ownsBlocker;
         private Vector2 _radialOrigin;
         private readonly string[] _slots = new string[8];
-        private KeyCode _key, _quick;
+        private KeyCode _quick;
         private bool _resolvingKeys;
         internal static string QuickKeyLabel { get; private set; } = "F8";
 
         public string Id => "unitlistmgr";
         public string DisplayName => T("物品工具", "Item tools");
-        public string Version => "0.1.0-alpha";
+        public string Version => "0.1.2-alpha";
         public string Summary => T("物品列表、属性与生成 · 实验性", "Item catalog, properties and spawning · Experimental");
         public bool Ready => true;
-        public bool IsRunning => _radial || _standalone || _service.Busy;
+        public bool IsRunning => _radial || _service.Busy;
         public string MinimumManagerVersion => "2.0.0";
-        public string TestedManagerVersion => "2.0.0";
-        public string MinimumSharedVersion => "2.0.0";
-        public string TestedSharedVersion => "2.0.0";
+        public string TestedManagerVersion => "2.1.0";
+        public string MinimumSharedVersion => "2.0.1";
+        public string TestedSharedVersion => "2.0.1";
         public int RequiredSharedApiVersion => DdenApi.Version;
         public IEnumerable<ConfigEntryBase> ConfigEntries => Config.Entries();
         public bool CanEditConfig(ConfigEntryBase entry, bool normallyInteractive) => normallyInteractive && ConfigUnavailableReason(entry) == null;
@@ -67,16 +67,16 @@ namespace DDEN.UnitListMgr
                 DisplayName = key == "OpenKey" ? T("打开物品工具", "Open item tools") : key == "QuickMenuKey" ? T("快捷轮盘", "Quick menu") : T("轮盘槽位", "Quick slots"),
                 Description = key == "OpenKey" ? T("打开管理器中的物品页；没有管理器时打开独立窗口。", "Open the item page, or a standalone window without the manager.")
                     : key == "QuickMenuKey" ? T("按住滑动，松开在鼠标处生成；中心、右键或 Esc 取消。只使用默认属性。", "Hold and slide; release to spawn a default item at the cursor. Center, right-click or Esc cancels.")
-                    : T("八个物品 ID，以 | 分隔；也可在物品页分配。", "Eight item IDs separated by |; assign them on the item page."),
+                    : T("八个快捷物品，也可在物品页分配。", "Eight quick items; assign them on the item page."),
                 IsExperimental = true, PerformanceImpact = DdenPerformanceImpact.Low,
-                ExperimentalNote = T("尚未进行真实联机验收。", "Live multiplayer validation is pending.")
+                ExperimentalNote = null
             };
         }
 
         private void Awake()
         {
-            Log = DDEN.Shared.Log.For(Logger, "UnitListMgr", false);
-            _openKey = Config.Bind("UI", "OpenKey", new KeyboardShortcut(KeyCode.F7), "打开物品工具 / Open item tools");
+            Log = DDEN.Shared.Log.For(Logger, "UnitListMgr");
+            ConfigMigration.Retire(Config, "UI/OpenKey");
             _radialKey = Config.Bind("UI", "QuickMenuKey", new KeyboardShortcut(KeyCode.F8), "按住并滑动鼠标，松开后在鼠标处生成默认物品；中心或 Esc 取消。 / Hold and slide; release to spawn a default item at the cursor. Center or Esc cancels.");
             _favorites = Config.Bind("UI", "QuickSlots", "", "八个快捷物品 ID，以 | 分隔；只记录种类，不记录主面板属性。 / Eight item IDs separated by |. Property overrides are never stored.");
             _allowGuests = Config.Bind("Host", "AllowGuestSpawn", true, "是否允许客机生成物品；仅主机设置生效，仍须满足 MP 作弊规则。 / Allow guest spawning, in addition to MP cheat permissions. Host setting only.");
@@ -85,7 +85,6 @@ namespace DDEN.UnitListMgr
             _view = new ItemView(_service, _slots, SaveSlots);
             DdenHub.Register(this);
             KeysChanged(null, EventArgs.Empty);
-            _openKey.SettingChanged += KeysChanged;
             _radialKey.SettingChanged += KeysChanged;
             _favorites.SettingChanged += SlotsChanged;
         }
@@ -95,13 +94,7 @@ namespace DDEN.UnitListMgr
             _resolvingKeys = true;
             try
             {
-                _key = Compat.ResolveHotkey(_openKey, Guid, true);
                 _quick = Compat.ResolveHotkey(_radialKey, Guid, true);
-                if (_quick == _key && _quick != KeyCode.None)
-                {
-                    _quick = KeyCode.None;
-                    Log.Warn("OpenKey and QuickMenuKey must be different; quick menu disabled until changed.");
-                }
                 QuickKeyLabel = _quick == KeyCode.None ? T("未绑定", "Unbound") : _radialKey.Value.ToString();
             }
             finally { _resolvingKeys = false; }
@@ -122,12 +115,7 @@ namespace DDEN.UnitListMgr
             _service.Tick();
             if (!Application.isFocused)
             {
-                _radial = false; _standalone = false; UpdateBlocker(); return;
-            }
-            if (_key != KeyCode.None && _openKey.Value.IsDown())
-            {
-                if (DdenHub.ManagerLoaded) DdenHub.OpenModule(Id);
-                else _standalone = !_standalone;
+                _radial = false; UpdateBlocker(); return;
             }
             if (_quick != KeyCode.None && _radialKey.Value.IsDown() && !DdenHub.AnyPanelVisible && SpawnService.LocalBody != null)
             {
@@ -157,7 +145,7 @@ namespace DDEN.UnitListMgr
         }
         private void UpdateBlocker()
         {
-            bool visible = _standalone || _radial;
+            bool visible = _radial;
             DdenHub.SetPanelVisible(Id, visible);
             if (visible) { DdenBlocker.Show(0.06f); _ownsBlocker = true; }
             else if (_ownsBlocker)
@@ -167,36 +155,37 @@ namespace DDEN.UnitListMgr
             }
         }
         private void OnEnable() { _service.Enabled = true; }
-        private void OnDisable() { _service.Enabled = false; _standalone = _radial = false; UpdateBlocker(); }
+        private void OnDisable() { _service.Enabled = false; _radial = false; UpdateBlocker(); }
         private void OnDestroy()
         {
-            _openKey.SettingChanged -= KeysChanged; _radialKey.SettingChanged -= KeysChanged; _favorites.SettingChanged -= SlotsChanged;
+            _radialKey.SettingChanged -= KeysChanged; _favorites.SettingChanged -= SlotsChanged;
             DdenHub.SetPanelVisible(Id, false);
+        }
+        private ConfigEntry<float> _managerScale;
+        private float ToastScale()
+        {
+            if (!BepInEx.Bootstrap.Chainloader.PluginInfos.TryGetValue("com.dden.cumodm", out var manager) || manager.Instance == null) return 1;
+            var config = manager.Instance.Config;
+            if (_managerScale == null || !ReferenceEquals(_managerScale.ConfigFile, config))
+                config.TryGetEntry("UI", "Scale", out _managerScale);
+            float value = _managerScale?.Value ?? 1;
+            return float.IsNaN(value) || float.IsInfinity(value) ? 1 : Mathf.Clamp(value, .75f, 2f);
         }
         private void OnGUI()
         {
-            if (_standalone && !DdenHub.ManagerLoaded)
-            {
-                var rect = new Rect(35, 35, Mathf.Max(450, Screen.width - 70), Mathf.Max(300, Screen.height - 70));
-                GUI.Window(0x554e4954, rect, _ =>
-                {
-                    DdenUI.Fill(new Rect(0, 0, rect.width, rect.height), DdenUI.Bg);
-                    DdenUI.Label(new Rect(12, 7, rect.width - 64, 24), "DDEN · " + DisplayName, DdenUI.Title);
-                    if (DdenUI.Button(new Rect(rect.width - 35, 7, 24, 22), "×")) _standalone = false;
-                    _view.Draw(new Rect(12, 38, rect.width - 24, rect.height - 50));
-                }, GUIContent.none, GUIStyle.none);
-            }
             if (_radial) DrawRadial();
             if (_service.ShowToast)
             {
-                int depth = GUI.depth;
+                int depth = GUI.depth; Matrix4x4 matrix = GUI.matrix;
                 GUI.depth = -10000;
                 try
                 {
-                    float width = Mathf.Min(_service.QuickFeedback ? 380 : 560, Screen.width - 32);
-                    ResultNotice.Draw(new Rect((Screen.width - width) / 2, 56, width, 30), _service.ToastText, _service.Notice, true);
+                    float scale = ToastScale();
+                    GUI.matrix = Matrix4x4.identity;
+                    float width = Mathf.Min((_service.QuickFeedback ? 380 : 560) * scale, Screen.width - 32 * scale);
+                    ResultNotice.Draw(new Rect((Screen.width - width) / 2, 56 * scale, width, 30 * scale), _service.ToastText, _service.Notice, true, scale);
                 }
-                finally { GUI.depth = depth; }
+                finally { GUI.matrix = matrix; GUI.depth = depth; }
             }
         }
         private void DrawRadial()
