@@ -195,11 +195,13 @@ try {
         $lines.Add('')
     }
 
-    # 校验
+    # 校验：以磁盘上的实际产物为准重算，避免与打包阶段变量不同步
+    $finalHash = (Get-FileHash (Join-Path $dist "DDExcNet-$Tag.zip") -Algorithm SHA256).Hash.ToLower()
+    $finalSize = [math]::Round((Get-Item (Join-Path $dist "DDExcNet-$Tag.zip")).Length / 1KB, 1)
     $lines.Add('### 校验')
     $lines.Add('```')
-    $lines.Add("SHA256(DDExcNet-$Tag.zip) = $hash")
-    $lines.Add("大小 = $size KB")
+    $lines.Add("SHA256(DDExcNet-$Tag.zip) = $finalHash")
+    $lines.Add("大小 = $finalSize KB")
     $lines.Add('```')
     $lines.Add('')
 

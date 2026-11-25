@@ -11,7 +11,7 @@
 | 存档编辑器 | 2.0.1-alpha | 声明管理器≥2.0.0、Shared≥2.0.1、API v1 |
 | UnitListMgr | 0.1.2-alpha | 声明管理器≥2.0.0、Shared≥2.0.1、API v1 |
 | 性能跟踪器增强 | 0.2.1-alpha | 独立可选诊断组件，不加入六组件包；需要基础跟踪器2.3.1与Together，Shared≥2.0.1、API v1 |
-| LoongNova | 1.0.1 | 龙域装备库（龙灼线束、龙翼腰带与龙化工具）；独立于六组件发布包，声明管理器≥2.0.0、Shared≥2.0.1、API v1 |
+| LoongNova | 1.0.1 | 龙域武库（龙化装备包：龙灼线束、龙翼腰带与龙化工具）；独立于六组件发布包，声明管理器≥2.0.0、Shared≥2.0.1、API v1 |
 
 版本由各组件自己的csproj和插件声明维护。程序集数字版本采用四段数字，例如`2.0.0.0`。当前BepInEx加载器不接受`2.0.0-alpha`作为BepInPlugin版本，其Version会为空；因此当前编辑器插件加载声明使用`2.0.1`，csproj发行版本、AssemblyInformationalVersion和IDdenModule.Version保留`2.0.1-alpha`。管理器总览及模块页展示含alpha的发行版本，不能仅根据加载器的数字版号称其为正式版。
 
