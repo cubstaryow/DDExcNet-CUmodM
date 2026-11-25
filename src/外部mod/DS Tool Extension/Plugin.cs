@@ -19,7 +19,7 @@ namespace DsToolExtension
     /// 第二件：实验性等离子束发射器（Experimentalplasmaemitter）——等离子切割器升级版。
     /// CCL 前置、多人兼容、DDEN L1 软接入（实验性 + 中英双语）。
     /// </summary>
-    [BepInPlugin(Guid, "DS Tool Extension", "1.2.11")]
+    [BepInPlugin(Guid, "DS Tool Extension", "1.2.12")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.HardDependency)]
     [BepInDependency("com.a4kk.enhancedtools", BepInDependency.DependencyFlags.SoftDependency)]
     public class Plugin : BaseUnityPlugin
@@ -40,7 +40,6 @@ namespace DsToolExtension
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> Enabled;
         internal static ConfigEntry<bool> DebugLog;
-        internal static ConfigEntry<bool> CorpseSpawn;
         internal static ConfigEntry<int> SpawnFrequency;
 
         internal static void LogInfo(string message) => Log?.LogInfo(message);
@@ -61,7 +60,6 @@ namespace DsToolExtension
             {
                 Enabled = Config.Bind("DS Tool Extension", "Enabled", true, "启用 DS 工具扩展。");
                 DebugLog = Config.Bind("DS Tool Extension", "DebugLog", false, "输出循环音效等调试日志（默认关闭）。");
-                CorpseSpawn = Config.Bind("DS Tool Extension", "CorpseSpawn", false, "允许三件物品从尸体上低概率刷新。");
                 SpawnFrequency = Config.Bind("DS Tool Extension", "SpawnFrequency", 1, new ConfigDescription("战利品池中的份数（1 最稀有，越大越常见）。", new AcceptableValueRange<int>(1, 20)));
                 bool hasET = Chainloader.PluginInfos.ContainsKey("com.a4kk.enhancedtools");
                 if (Enabled.Value)
@@ -89,13 +87,6 @@ namespace DsToolExtension
             if (UnityEngine.Time.unscaledTime < _nextSweep) return;
             _nextSweep = UnityEngine.Time.unscaledTime + 1f;
             DrillLoopSound.SweepAll();
-        }
-
-        private static DropPool BuildDropPool()
-        {
-            var pool = DropPool.AllTraders | DropPool.ContainerCrate | DropPool.DropCapsule | DropPool.CapsuleContainer;
-            if (CorpseSpawn != null && CorpseSpawn.Value) pool |= DropPool.Corpse;
-            return pool;
         }
 
         private static int SpawnFrequencyValue()
@@ -133,7 +124,6 @@ namespace DsToolExtension
                     SpawnWithBattery = true
                 },
                 SpriteScale = 1f,
-                DropPool = BuildDropPool(),
                 SpawnFrequency = SpawnFrequencyValue(),
                 useAction = delegate (Body body, Item item)
                 {
@@ -194,7 +184,6 @@ namespace DsToolExtension
                     SpawnWithBattery = true
                 },
                 SpriteScale = 1f,
-                DropPool = BuildDropPool(),
                 SpawnFrequency = SpawnFrequencyValue(),
                 useAction = delegate (Body body, Item item)
                 {
@@ -277,7 +266,6 @@ namespace DsToolExtension
                 wearableHitDurabilityLossMultiplier = 0.15f,
                 wearableVisualOffset = 5,
                 SpriteScale = 0.45f,
-                DropPool = BuildDropPool(),
                 SpawnFrequency = SpawnFrequencyValue(),
                 InventoryIconScale = 1.5f
             };
@@ -507,10 +495,6 @@ namespace DsToolExtension
                     fields["label"] = "日志";
                     fields["experimental"] = "false";
                     break;
-                case "CorpseSpawn":
-                    fields["label"] = "尸体刷新";
-                    fields["experimental"] = "true";
-                    break;
                 case "SpawnFrequency":
                     fields["label"] = "稀有度";
                     fields["experimental"] = "true";
@@ -544,12 +528,6 @@ namespace DsToolExtension
                         how = "仅影响日志输出，不影响功能。";
                         restart = false;
                         break;
-                    case "CorpseSpawn":
-                        what = "在尸体战利品池中加入三件物品。";
-                        fixes = "关闭时尸体不会刷出这三件物品。";
-                        how = "把物品的 DropPool 扩展为包含尸体池。";
-                        restart = true;
-                        break;
                     case "SpawnFrequency":
                         what = "调整三件物品在战利品池中的份数（越高越常见，1 为最稀有）。";
                         fixes = "1 份时最难刷出。";
@@ -579,7 +557,6 @@ namespace DsToolExtension
             {
                 case "启用 DS 工具扩展。": return "Enable DS Tool Extension.";
                 case "输出循环音效等调试日志（默认关闭）。": return "Output debug logs such as the loop sound (off by default).";
-                case "允许三件物品从尸体上低概率刷新。": return "Allow the three items to spawn on corpses at a low chance.";
                 case "战利品池中的份数（1 最稀有，越大越常见）。": return "Entries in the loot pool (1 = rarest, higher = more common).";
                 case "启用": return "Enable";
                 case "日志": return "Log";
@@ -593,9 +570,6 @@ namespace DsToolExtension
                 case "输出循环音效等调试日志。": return "Output debug logs such as the loop sound.";
                 case "排查音效问题时开启。": return "Enable when troubleshooting sound issues.";
                 case "仅影响日志输出，不影响功能。": return "Only affects log output, not functionality.";
-                case "在尸体战利品池中加入三件物品。": return "Add the three items to the corpse loot pool.";
-                case "关闭时尸体不会刷出这三件物品。": return "When disabled, corpses will not spawn these three items.";
-                case "把物品的 DropPool 扩展为包含尸体池。": return "Extends the items' DropPool with the corpse pool.";
                 case "调整三件物品在战利品池中的份数（越高越常见，1 为最稀有）。": return "Adjust how many entries the three items occupy in loot pools (higher = more common, 1 = rarest).";
                 case "1 份时最难刷出。": return "1 entry is the rarest setting.";
                 case "注册时写入 SpawnFrequency，改完需要重启游戏。": return "Written as SpawnFrequency at registration; restart the game after changing.";
