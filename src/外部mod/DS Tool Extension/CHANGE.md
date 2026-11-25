@@ -1,5 +1,9 @@
 # DS Tool Extension 变更记录
 
+## v1.2.9 · 2026-11-25
+
+- 稀有度定稿：三件物品去掉世界散布（WorldSpawnPerChunk 移除），改为仅从 ContainerCrate/DropCapsule/CapsuleContainer 与三个商人池低概率获得（SpawnFrequency=1，最稀档）；不含医疗箱/食品箱/尸体。
+
 ## v1.2.8 · 2026-11-25
 
 - 三件物品设置低概率世界生成（WorldSpawnPerChunk=0.001，不再注入随机战利品池），降低刷新率。
