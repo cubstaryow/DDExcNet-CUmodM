@@ -493,6 +493,34 @@ namespace DsToolExtension
             return DdenText.En(original);
         }
 
+        public static IDictionary<string, string> DdenConfigMetadata(ConfigEntryBase entry)
+        {
+            if (entry == null) return null;
+            var fields = new Dictionary<string, string>();
+            switch (entry.Definition.Key)
+            {
+                case "Enabled":
+                    fields["label"] = "启用";
+                    fields["experimental"] = "false";
+                    break;
+                case "DebugLog":
+                    fields["label"] = "日志";
+                    fields["experimental"] = "false";
+                    break;
+                case "CorpseSpawn":
+                    fields["label"] = "尸体刷新";
+                    fields["experimental"] = "true";
+                    break;
+                case "SpawnFrequency":
+                    fields["label"] = "稀有度";
+                    fields["experimental"] = "true";
+                    break;
+                default:
+                    return null;
+            }
+            return fields;
+        }
+
         public static void DdenDocs()
         {
             var type = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "DDEN.Shared")?.GetType("DDEN.Shared.DdenDocs");
@@ -553,6 +581,10 @@ namespace DsToolExtension
                 case "输出循环音效等调试日志（默认关闭）。": return "Output debug logs such as the loop sound (off by default).";
                 case "允许三件物品从尸体上低概率刷新。": return "Allow the three items to spawn on corpses at a low chance.";
                 case "稀有度：战利品池中的份数（1 最稀有，越大越常见）。": return "Rarity: entries in the loot pool (1 = rarest, higher = more common).";
+                case "启用": return "Enable";
+                case "日志": return "Log";
+                case "尸体刷新": return "Corpse spawn";
+                case "稀有度": return "Rarity";
                 case "未加载": return "Not loaded";
                 case "运行中": return "Running";
                 case "启用后注册实验性钛合金钻机、等离子束发射器与实验性特种腿包，并注入箱子/商人战利品池。": return "Registers the Experimental Ti-alloy drill, the Experimental plasma emitter and the Experimental special leg pack, and injects them into container/trader loot pools.";
