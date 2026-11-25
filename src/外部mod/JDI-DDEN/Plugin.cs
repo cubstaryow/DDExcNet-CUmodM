@@ -12,7 +12,7 @@ using UnityEngine.EventSystems;
 
 namespace JustDragAToolOnIt
 {
-    [BepInPlugin("com.dden.jdi", "JDI-DDEN", "1.5.1")]
+    [BepInPlugin("com.dden.jdi", "JDI-DDEN", "1.5.2")]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
     public class Plugin : BaseUnityPlugin
     {
@@ -162,6 +162,26 @@ namespace JustDragAToolOnIt
         }
 
 
+        public static IDictionary<string, string> DdenConfigMetadata(ConfigEntryBase entry)
+        {
+            if (entry == null) return null;
+            var fields = new Dictionary<string, string>();
+            switch (entry.Definition.Key)
+            {
+                case "Enabled":
+                    fields["label"] = "启用";
+                    fields["experimental"] = "false";
+                    break;
+                case "AllowClients":
+                    fields["label"] = "客机撬石果";
+                    fields["experimental"] = "false";
+                    break;
+                default:
+                    return null;
+            }
+            return fields;
+        }
+
         public static void DdenDocs()
         {
             System.Reflection.Assembly shared = null;
@@ -198,6 +218,8 @@ namespace JustDragAToolOnIt
             if (zh == null) return null;
             switch (zh)
             {
+                case "启用": return "Enable";
+                case "客机撬石果": return "Client stonefruit opening";
                 case "JDI-DDEN（工具撬石果）": return "JDI-DDEN (Tool-opens-Stonefruit)";
                 case "启用工具撬石果功能。": return "Enable the tool-opens-stonefruit feature.";
                 case "允许客机通过主机完成撬石果（需要主机也装本插件）。": return "Allow clients to crack stonefruit through the host (host must install this too).";
