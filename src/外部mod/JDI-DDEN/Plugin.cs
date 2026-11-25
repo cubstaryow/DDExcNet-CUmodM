@@ -12,7 +12,7 @@ using UnityEngine.EventSystems;
 
 namespace JustDragAToolOnIt
 {
-    [BepInPlugin("com.dden.jdi", "JDI-DDEN", "1.5.0")]
+    [BepInPlugin("com.dden.jdi", "JDI-DDEN", "1.5.1")]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
     public class Plugin : BaseUnityPlugin
     {
@@ -39,6 +39,7 @@ namespace JustDragAToolOnIt
                 Log.LogWarning("[JDI-DDEN] register receiver failed: " + ex.Message);
             }
             new Harmony("com.dden.jdi").PatchAll(typeof(Plugin));
+            DdenBridge.DdenDocs();
             Log.LogInfo("[JDI-DDEN] loaded (v1.3, DDEN-aware).");
         }
 
@@ -160,6 +161,32 @@ namespace JustDragAToolOnIt
             return DdenText.En(original);
         }
 
+
+        public static void DdenDocs()
+        {
+            System.Reflection.Assembly shared = null;
+            foreach (var a in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (a.GetName().Name == "DDEN.Shared") { shared = a; break; }
+            }
+            var type = shared?.GetType("DDEN.Shared.DdenDocs");
+            var method = type?.GetMethod("Add", new[] { typeof(string), typeof(string), typeof(string), typeof(string), typeof(string), typeof(string), typeof(string), typeof(bool) });
+            if (method == null || DdenConfig == null) return;
+            foreach (var pair in DdenConfig)
+            {
+                bool clients = pair.Key.Key == "AllowClients";
+                method.Invoke(null, new object[]
+                {
+                    pair.Key.Section, pair.Key.Key,
+                    clients ? "允许客机通过主机完成撬石果（需要主机也装本插件）。" : "启用工具撬石果功能。",
+                    clients ? "客机无法撬开石头果实。" : "无法用工具撬开石头果实。",
+                    clients ? "客机拖拽工具到石头果实上时由主机代为完成。" : "拖拽任意带 tool 标签的工具到石头果实上即可撬开。",
+                    "否",
+                    "无",
+                    false
+                });
+            }
+        }
 
         public static string DdenSummary =>
             Plugin.Enabled != null && !Plugin.Enabled.Value ? "已禁用" : "运行中";

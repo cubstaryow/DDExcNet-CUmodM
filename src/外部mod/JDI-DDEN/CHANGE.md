@@ -1,5 +1,10 @@
 # JDI-DDEN 变更记录
 
+## v1.5.1 · 2026-11-25
+
+- DDEN 配置页选项从「实验性」改为正常颜色：新增 `DdenDocs()`（反射登记两项配置，experimental=否），Awake 中调用；
+- 版本号升 1.5.1，功能/cfg 键/协议不变。
+
 ## v1.5.0 · 2026-11-22
 
 - 跟随 DDEN 管理器中英双语切换：新增 `DdenSetLanguage` / `DdenLocalize`，翻译配置说明、禁用原因、模块标题与状态；
