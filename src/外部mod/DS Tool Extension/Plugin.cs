@@ -62,7 +62,7 @@ namespace DsToolExtension
                 Enabled = Config.Bind("DS Tool Extension", "Enabled", true, "启用 DS 工具扩展。");
                 DebugLog = Config.Bind("DS Tool Extension", "DebugLog", false, "输出循环音效等调试日志（默认关闭）。");
                 CorpseSpawn = Config.Bind("DS Tool Extension", "CorpseSpawn", false, "允许三件物品从尸体上低概率刷新。");
-                SpawnFrequency = Config.Bind("DS Tool Extension", "SpawnFrequency", 1, new ConfigDescription("稀有度：战利品池中的份数（1 最稀有，越大越常见）。", new AcceptableValueRange<int>(1, 20)));
+                SpawnFrequency = Config.Bind("DS Tool Extension", "SpawnFrequency", 1, new ConfigDescription("战利品池中的份数（1 最稀有，越大越常见）。", new AcceptableValueRange<int>(1, 20)));
                 bool hasET = Chainloader.PluginInfos.ContainsKey("com.a4kk.enhancedtools");
                 if (Enabled.Value)
                 {
@@ -580,7 +580,7 @@ namespace DsToolExtension
                 case "启用 DS 工具扩展。": return "Enable DS Tool Extension.";
                 case "输出循环音效等调试日志（默认关闭）。": return "Output debug logs such as the loop sound (off by default).";
                 case "允许三件物品从尸体上低概率刷新。": return "Allow the three items to spawn on corpses at a low chance.";
-                case "稀有度：战利品池中的份数（1 最稀有，越大越常见）。": return "Rarity: entries in the loot pool (1 = rarest, higher = more common).";
+                case "战利品池中的份数（1 最稀有，越大越常见）。": return "Entries in the loot pool (1 = rarest, higher = more common).";
                 case "启用": return "Enable";
                 case "日志": return "Log";
                 case "尸体刷新": return "Corpse spawn";
