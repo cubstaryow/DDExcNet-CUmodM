@@ -1,5 +1,10 @@
 # DS Tool Extension 变更记录
 
+## v1.2.10 · 2026-11-25
+
+- 修复与 JDI-DDEN 的 DDEN 配置键冲突：cfg section 由 General 改为 DS Tool Extension（DdenDocs 全局以 section/key 为键，General/Enabled 冲突导致 JDI 的条目被覆盖为实验性）。
+- 旧 cfg（General/Enabled、General/DebugLog）回到默认值（Enabled=true、DebugLog=false），功能无影响。
+
 ## v1.2.9 · 2026-11-25
 
 - 稀有度定稿：三件物品去掉世界散布（WorldSpawnPerChunk 移除），改为仅从 ContainerCrate/DropCapsule/CapsuleContainer 与三个商人池低概率获得（SpawnFrequency=1，最稀档）；不含医疗箱/食品箱/尸体。

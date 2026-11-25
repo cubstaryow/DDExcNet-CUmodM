@@ -19,7 +19,7 @@ namespace DsToolExtension
     /// 第二件：实验性等离子束发射器（Experimentalplasmaemitter）——等离子切割器升级版。
     /// CCL 前置、多人兼容、DDEN L1 软接入（实验性 + 中英双语）。
     /// </summary>
-    [BepInPlugin(Guid, "DS Tool Extension", "1.2.9")]
+    [BepInPlugin(Guid, "DS Tool Extension", "1.2.10")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.HardDependency)]
     [BepInDependency("com.a4kk.enhancedtools", BepInDependency.DependencyFlags.SoftDependency)]
     public class Plugin : BaseUnityPlugin
@@ -57,8 +57,8 @@ namespace DsToolExtension
             Log = Logger;
             try
             {
-                Enabled = Config.Bind("General", "Enabled", true, "启用 DS 工具扩展。");
-                DebugLog = Config.Bind("General", "DebugLog", false, "输出循环音效等调试日志（默认关闭）。");
+                Enabled = Config.Bind("DS Tool Extension", "Enabled", true, "启用 DS 工具扩展。");
+                DebugLog = Config.Bind("DS Tool Extension", "DebugLog", false, "输出循环音效等调试日志（默认关闭）。");
                 bool hasET = Chainloader.PluginInfos.ContainsKey("com.a4kk.enhancedtools");
                 if (Enabled.Value)
                 {
