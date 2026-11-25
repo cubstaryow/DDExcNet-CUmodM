@@ -1,5 +1,9 @@
 # DS Tool Extension 变更记录
 
+## v1.2.8 · 2026-11-25
+
+- 三件物品设置低概率世界生成（WorldSpawnPerChunk=0.001，不再注入随机战利品池），降低刷新率。
+
 ## v1.2.7 · 2026-11-24
 
 - 性能：DrillLoopSound 静态缓存 drillLoop clip；Update 在静默时早退；物品不在玩家槽位时禁用组件，Plugin 每 1 秒兜底重新检查（Parent 变化未触发也能恢复）。
