@@ -2,7 +2,7 @@
   <PropertyGroup>
     <AssemblyName>DS Tool Extension</AssemblyName>
     <RootNamespace>DsToolExtension</RootNamespace>
-    <Version>1.2.10</Version>
+    <Version>1.2.11</Version>
     <Company>MornJor</Company>
   </PropertyGroup>
   <ItemGroup>

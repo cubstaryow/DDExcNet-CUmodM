@@ -1,5 +1,11 @@
 # DS Tool Extension 变更记录
 
+## v1.2.11 · 2026-11-25
+
+- DDEN 配置页新增两项：CorpseSpawn（是否从尸体低概率刷新，默认关）、SpawnFrequency（战利品池份数，1-20，默认 1=最稀有），注册时生效（改完需重启）。
+- 全部配置项在 DDEN 显示正常颜色（不再实验性），DdenDocs 逐项提供 功能/问题/方案 说明；
+- 补全中英双语覆盖（配置描述 + DdenDocs 文本 + 标题/状态）。
+
 ## v1.2.10 · 2026-11-25
 
 - 修复与 JDI-DDEN 的 DDEN 配置键冲突：cfg section 由 General 改为 DS Tool Extension（DdenDocs 全局以 section/key 为键，General/Enabled 冲突导致 JDI 的条目被覆盖为实验性）。
