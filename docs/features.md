@@ -1,4 +1,4 @@
-# 当前功能、证据与限制 · v1.7.5
+# 当前功能、证据与限制
 
 面向维护者。玩家入口见 [README](../README.md)，检查方法见 [development.md](development.md)。以下以当前源码为准；Together反编译用于理解上游行为，不复制其实现，也不随源码分发。
 
@@ -10,9 +10,9 @@
 
 外部插件用public static L1桥交配置，无需Shared引用；`DdenUnavailable(ConfigEntryBase)`可返回禁用原因，`DdenSummary`最多每秒刷新一次。协议见 [接入文档](cumodm-integration.md)。
 
-控件由 `DdenUI` 自绘；滚动、裁剪与输入隔离共用Shared实现。`UiGuardPatch`拦截游戏菜单的直接鼠标点击，`DdenBlocker`处理其它界面遮罩。默认快捷键F8，冲突后实际键可变化；F11是已有环境中的一次结果，不是固定默认值。
+控件由 `DdenUI` 自绘；滚动、裁剪与输入隔离共用Shared实现。`UiGuardPatch`拦截游戏菜单的直接鼠标点击，`DdenBlocker`处理其它界面遮罩。默认快捷键F11，冲突时从F10至F1向前查找，F12留给Steam截图；全部功能页由管理器打开，保留物品生成轮盘操作键。
 
-`DdenGate.ExpectedMp`当前为5.5.4。`VersionOk`实际只比较联机组件版本；`ExpectedGame`为展示参考，Unity 2022.3.62f3是引擎版本。忽略检查只允许继续尝试，不是兼容性证明。
+`DdenGate.ExpectedMp`当前为5.5.5。`VersionOk`实际只比较联机组件版本；`ExpectedGame`为展示参考，Unity 2022.3.62f3是引擎版本。忽略检查只允许继续尝试，不是兼容性证明。
 
 ## 2. 无芯片规则同步
 
@@ -37,7 +37,7 @@
 
 客机有本地命中预测，随后以主机结算为准，因此先减血再回升可能是两端伤害值不一致后的覆盖，不能仅凭跳字判定实际扣了多少。
 
-Together 5.5.4的 `ServerReceiver_PlayerBodyAttack`通过发送者ID取得 `plr/pb`，对 **plr.body/pb.body，即该客机在主机上的角色副本** 运行 `BetterUseItem`或空手Attack，并调用 `CalculateAttackPower(pb.body, ...)`。不是使用主机本人的种族／力量。
+Together 5.5.5的 `ServerReceiver_PlayerBodyAttack`通过发送者ID取得 `plr/pb`，对 **plr.body/pb.body，即该客机在主机上的角色副本** 运行 `BetterUseItem`或空手Attack，并调用 `CalculateAttackPower(pb.body, ...)`。不是使用主机本人的种族／力量。
 
 远端重跑设置 `ForceOnlyRetrieveAttackInfo`，攻击被提前截取，没有跑完原版 `Body.Attack`给 `damage/structuralDamage`乘 `attackdamage`的步骤。故主机少了世界伤害倍率；补这个遗漏不代表两端种族、力量、装备和身体状态的副本已经完全一致。
 
@@ -82,7 +82,7 @@ Together主机的原合成结果经 `Utils.Create`生成；CCL已有正常模组
 
 `PlayerNameRepair`只改本机显示，默认开；不写逻辑玩家名、SteamID、握手或存档身份。`PlayerNameFonts`只借用游戏字体／可用源字体，缺字按Unicode标量替换 `?`，不调用系统字体兜底；局部字体副本停用时恢复，游戏字体资源不销毁。
 
-名称解析统一经过`NameDisplayCache`：按Steam身份共享昵称查询缓存，临时取名失败时保留已恢复的名称，自定义别名按原规则保留。Steam名称事件只使缓存失效；名牌、协作手部名牌、方向提示、玩家列表和聊天在各自原MP显示流程中读取统一结果。名牌在原生LateUpdate／Update内处理已绑定的文字组件，聊天在原MeasureChatLine布局前按需更新编译缓存；稳定时每个组件／消息最多0.25秒检查一次，缓存版本变化时提前检查，Steam查询同身份共享且通常间隔5秒。没有独立名称队列、全玩家轮询或主动MP姓名／颜色刷新，不改地点标记透明度、目标或计时。
+名称解析统一经过`NameDisplayCache`：按Steam身份共享昵称查询缓存，临时取名失败时保留已恢复的名称，自定义别名按原规则保留。Steam名称事件只使缓存失效；名牌、协作手部名牌、方向提示、玩家列表和聊天在各自原MP显示流程中读取统一结果。名牌在原生LateUpdate／Update内处理已绑定的文字组件，聊天在原MeasureChatLine布局前按需更新编译缓存；稳定时每个组件／消息最多0.25秒检查一次，缓存版本变化时提前检查，Steam查询同身份共享且通常间隔5秒。没有独立名称队列、全玩家轮询或主动MP姓名／颜色刷新；医疗文字仅检查已绑定标签，不改地点标记透明度、目标或计时。
 
 聊天历史保存发送者身份与原始名称快照，昵称后来恢复时可更新显示；玩家离场后保留已恢复的历史名称与原自定义别名。无明确玩家身份的系统／纯文字消息不按数字猜测发送者；原MP若之后提供明确玩家引用，再接入统一解析。停用时恢复本机原显示，字体仍只使用游戏字库，缺字显示?；不处理LES实体／RPC异常。真实联机显示仍待验收，离线通过不代表已在游戏中验证。
 
@@ -96,10 +96,18 @@ Together主机的原合成结果经 `Utils.Create`生成；CCL已有正常模组
 
 `SaveCodec.Write`按原子方式写盘并生成 `.cumod.bak`，同步QoL元数据，先检查自动存档忙及文件被外部修改。`cheatedSave`仅用户在进度页明确改动时写入；不能把取消该字段写成平台成就必定恢复。实时“同步到角色”只改内存，不等同保存。
 
-性能跟踪器不安装Harmony补丁，只观察；详细场景统计默认关，手动导出才写日志。物理步数是调度，真实计时不可用时标不可用；CPU／GPU／呈现等待提供线索，不给具体调用栈或断言唯一根因。详见 [指标定义](perf-tracker.md)。
+性能跟踪器不安装Harmony补丁，只观察；详细场景统计默认关，手动导出才写日志。物理步数是调度，真实计时不可用时标不可用；CPU／GPU／呈现等待提供线索，不提供性能调用栈或断言唯一根因。“告警与联机反馈”页分别控制波动告警与Together探针，均默认关闭；探针限量保留原有Together／LES报错堆栈，并观察同步状态、主线程CPU与近10秒1%低帧估算，不发包、不改联机状态。2.2.0直接观察Unity异常及独立堆栈，Unity全部错误与联机相关错误分开计数；可选增强模块用独立Harmony计时细分调用组，基础跟踪器保持零补丁。增强默认关闭，不修改原逻辑、异常或网络。详见 [指标定义](perf-tracker.md)。
 
 ## 8. 独立ET加热笼修复与验证边界
 
 [ET-Fix](../src/外部mod/ET-Fix/README.md)独立于DDEN公共层，ET／CCL／Together通过延迟反射，缺少对应接口停用相应功能。具体腐坏、热源过滤、保存与查询协议见 [专属细节](../src/外部mod/ET-Fix/docs/features.md)。
 
 本轮文档核对与改名的验证记录以 [CHANGE.md](../CHANGE.md) 为准。离线检查模拟Unity／传输边界；菜单绘制成功不等于真实多人伤害、名字或加热笼行为已验收。
+
+## Together 5.5.5适配（MPfix 1.8.0）
+
+客机背包同步重试补丁及其配置、统计字段已移除，保持Together原重试流程；旧配置项在加载自有模块时清理。性能增强仍可只读统计Together的FixInvSync耗时及待处理数量。
+
+名称显示补齐NetBody.bodyName的悬停、医疗请求提示、医疗标题与查看者列表。保留独立的原生playerName/bodyName回退，关闭时不改变空字符串或网络编号。医疗标签按既有绑定限频刷新，返回自身时释放旧玩家绑定；不改SteamID、逻辑名称、网络身份或存档。Together中文选择沿用其预览设置，优先读取本版内置中文，补齐布娃娃冲击的两条漏译；字体只借用游戏已有资源。
+
+性能采样、增强、波动告警、Together探针默认关闭；CPU与GPU阶段计时默认开启，仅在采样有效时工作。日志详细程度统一由管理器控制；已安装性能跟踪器时，DDEN日志汇入其通道并保留模块前缀及级别，采样关闭不关闭错误日志。45个可选深层计时入口包含5.5.5新增的逐帧FlushFrameSamples，不改变原方法。

@@ -35,15 +35,17 @@ namespace DDEN.MPfix
             internal GUISkin Skin;
             internal Font Label, Box, Button;
         }
+        private static readonly HashSet<string> ObservedText = new HashSet<string>(StringComparer.Ordinal);
         private static readonly NameDisplayCache Names = new NameDisplayCache(LookupPersona);
         private static ConditionalWeakTable<object, LabelState> _labels = new ConditionalWeakTable<object, LabelState>();
         private static readonly List<WeakReference<LabelState>> LabelStates = new List<WeakReference<LabelState>>();
         private static ConditionalWeakTable<object, ChatState> _chat = new ConditionalWeakTable<object, ChatState>();
         private static Type _player;
         private static FieldInfo _nativeName, _steam, _gameFont;
-        private static MethodInfo _persona, _netApply, _bodyNameGetter, _chatCompile;
-        private static bool _wasEnabled, _installed, _needsUnicode;
-        internal static bool Enabled => _installed && MPfixPlugin.Active && MPfixPlugin.CfgFixPlayerNames.Value && Mp.IsRunning;
+        private static MethodInfo _persona, _netApply, _bodyNameGetter, _tooltipNameGetter, _chatCompile;
+        private static bool _wasEnabled, _wasRunning, _installed, _needsUnicode;
+        internal static bool FontEnabled => _installed && MPfixPlugin.Active && MPfixPlugin.CfgFixPlayerNames.Value;
+        internal static bool Enabled => FontEnabled && Mp.IsRunning;
 
         internal static bool Install(Harmony harmony)
         {
@@ -57,6 +59,7 @@ namespace DDEN.MPfix
                 var apply = AccessTools.Method(_player, "ApplyNameAndColor");
                 _netApply = AccessTools.Method(Reflect.Type("Together.NetBody"), "ApplyNameAndColor", new[] { typeof(string), typeof(Color) });
                 _bodyNameGetter = AccessTools.PropertyGetter(Reflect.Type("Together.NetBody"), "playerName");
+                _tooltipNameGetter = AccessTools.PropertyGetter(Reflect.Type("Together.NetBody"), "bodyName");
                 var visual = AccessTools.Method(Reflect.Type("Together.CharStatusVisuals"), "ApplyNameAndColor", Type.EmptyTypes);
                 if (_nativeName == null || _steam == null
                     || apply == null || _netApply == null || _bodyNameGetter == null || visual == null) return false;
@@ -75,6 +78,9 @@ namespace DDEN.MPfix
                     ("Together.UIInGame", "_GUI__DrawPlayerDirection"),
                     ("Together.UIInGame", "_GUI_DoGeneralMPGui"),
                     ("Together.UIInGame", "_GUI_PlayerInteractionGui"),
+                    ("Together.UIInGame", "_UpdateCheckInteractKeybinds"),
+                    ("Together.NetBody", "DoMouseHoverTooltip"),
+                    ("Together.PlayerCamera_ToggleWoundView_MultiplayerPatch", "WoundView_SetTargetBody"),
                     ("Together.UI.TeammateList.Roster", "Touch"),
                     ("Together.UI.TeammateList.Roster", "ReadBlood"),
                     ("Together.MinigameMPManager+MinigameRemotePeerHand", "Start"),
@@ -85,8 +91,10 @@ namespace DDEN.MPfix
                     if (method != null)
                     {
                         bool hand = spec.Item1.Contains("MinigameRemotePeerHand");
-                        if (!hand) harmony.Patch(method, transpiler: new HarmonyMethod(typeof(PlayerNameRepair), nameof(DisplayReads)));
-                        if (spec.Item1 == "Together.UIMainMenu" || spec.Item2 == "_GUI_DrawChat")
+                        if (!hand && spec.Item2 != "WoundView_SetTargetBody") harmony.Patch(method, transpiler: new HarmonyMethod(typeof(PlayerNameRepair), nameof(DisplayReads)));
+                        if (spec.Item2 == "WoundView_SetTargetBody")
+                            harmony.Patch(method, postfix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(PrepareMedicalTitle)));
+                        if (spec.Item1 == "Together.UIMainMenu" || spec.Item2 == "_GUI_DrawChat" || spec.Item2 == "_GUI_DoGeneralMPGui" || spec.Item2 == "_GUI_PlayerInteractionGui")
                             harmony.Patch(method, prefix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(BeginGui)),
                                 finalizer: new HarmonyMethod(typeof(PlayerNameRepair), nameof(EndGui)));
                         if (spec.Item2 == "_GUI__DrawPlayerDirection")
@@ -130,6 +138,9 @@ namespace DDEN.MPfix
                 if (gameFont != null) harmony.Patch(gameFont, postfix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(GameFont)));
                 var chatFont = AccessTools.Method(Reflect.Type("Together.UIBullshit"), "FocusedChatFont");
                 if (chatFont != null) harmony.Patch(chatFont, postfix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(GameFont)));
+                var fancy = AccessTools.Method(Reflect.Type("Together.CharStatusVisuals"), "TryMakeNametagFancy");
+                if (fancy != null) harmony.Patch(fancy, postfix: new HarmonyMethod(typeof(PlayerNameRepair), nameof(PrepareViewerName)));
+                TogetherChineseRepair.Install(harmony);
                 _installed = true;
                 return true;
             }
@@ -163,7 +174,16 @@ namespace DDEN.MPfix
         {
             try
             {
-                if (!_labels.TryGetValue(__instance, out var state) || state.Label == null) return;
+                if (!_labels.TryGetValue(__instance, out var state)) return;
+                RefreshLabel(state);
+            }
+            catch (Exception ex) { MPfixPlugin.Log.Debug("[名称显示] 更新名牌显示失败：" + ex.Message); }
+        }
+        private static void RefreshLabel(LabelState state)
+        {
+            try
+            {
+                if (state.Label == null) return;
                 if (!Enabled)
                 {
                     RestoreLabel(state);
@@ -292,7 +312,7 @@ namespace DDEN.MPfix
             __state = default;
             try
             {
-                if (!Enabled || GUI.skin == null) return;
+                if (!FontEnabled || GUI.skin == null) return;
                 var skin = GUI.skin;
                 __state = new GuiFonts { Skin = skin, Label = skin.label.font, Box = skin.box.font, Button = skin.button.font };
                 if (!_needsUnicode) return;
@@ -331,12 +351,59 @@ namespace DDEN.MPfix
             }
             catch (Exception ex) { MPfixPlugin.Log.Debug("[名称显示] 检查方向提示字形失败：" + ex.Message); return name; }
         }
+        private static string BodyDisplay(object body, bool tooltip, bool gui)
+        {
+            string native = Reflect.GetInstance(body, tooltip ? "bodyName" : "playerName") as string ?? "";
+            if (!Enabled) return native;
+            object player = Reflect.GetInstance(body, "plr");
+            if (!Live(player)) return native;
+            return gui ? GuiDisplay(player) : Display(player);
+        }
+        private static string TooltipDisplay(object body) => BodyDisplay(body, true, false);
+        private static string TmpBodyDisplay(object body) => BodyDisplay(body, false, false);
+        private static string GuiTooltipDisplay(object body) => BodyDisplay(body, true, true);
+        internal static void ObserveText(string text)
+        {
+            if (!FontEnabled || string.IsNullOrEmpty(text) || ObservedText.Contains(text)) return;
+            if (ObservedText.Count >= 512) ObservedText.Clear();
+            ObservedText.Add(text); Track(text);
+        }
+        internal static void PrepareGuiStyle(GUIStyle style)
+        {
+            if (style != null && FontEnabled && _needsUnicode) style.font = PlayerNameFonts.GuiFont(style.font);
+        }
+        private static void PrepareViewerName(TMP_Text tmp, object plr)
+        {
+            if (Enabled && tmp != null && Live(plr)) BindLabel(tmp, plr, tmp);
+        }
+        private static void PrepareMedicalTitle(object b)
+        {
+            try
+            {
+                if (!Enabled || !(b is Component body)) return;
+                var netBody = body.GetComponent(Reflect.Type("Together.NetBody"));
+                object player = Reflect.GetInstance(netBody, "plr");
+                bool local = Reflect.GetInstance(netBody, "IsLocal") is bool isLocal && isLocal;
+                var view = AccessTools.Field(Reflect.Type("WoundView"), "view")?.GetValue(null);
+                foreach (string name in new[] { "nameText", "bodyStatText" })
+                    if (Reflect.GetInstance(view, name) is TMP_Text label)
+                    {
+                        if (!local && Live(player)) BindLabel(label, player, label);
+                        else if (_labels.TryGetValue(label, out var old))
+                        { old.Player = null; old.Label = null; _labels.Remove(label); }
+                    }
+            }
+            catch (Exception ex) { MPfixPlugin.Log.Debug("[名称显示] 更新医疗名称失败：" + ex.Message); }
+        }
         private static IEnumerable<CodeInstruction> DisplayReads(IEnumerable<CodeInstruction> instructions, MethodBase __originalMethod)
         {
-            bool gui = !(__originalMethod.DeclaringType?.FullName?.Contains("MinigameRemotePeerHand") ?? false);
+            string type = __originalMethod.DeclaringType?.FullName ?? "";
+            bool gui = type == "Together.UIMainMenu" || type == "Together.Chat" || type == "Together.UIInGame" && __originalMethod.Name.StartsWith("_GUI", StringComparison.Ordinal)
+                || type == "Together.UI.TeammateList.Roster";
             const BindingFlags ownMethods = BindingFlags.Static | BindingFlags.NonPublic;
-            var display = typeof(PlayerNameRepair).GetMethod(gui ? nameof(GuiDisplay) : nameof(Display), ownMethods);
-            var bodyName = typeof(PlayerNameRepair).GetMethod(nameof(GuiBodyName), ownMethods);
+            var display = typeof(PlayerNameRepair).GetMethod(gui ? nameof(GuiDisplay) : nameof(Display), BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic);
+            var bodyName = typeof(PlayerNameRepair).GetMethod(gui ? nameof(GuiBodyName) : nameof(TmpBodyDisplay), ownMethods);
+            var tooltipName = typeof(PlayerNameRepair).GetMethod(gui ? nameof(GuiTooltipDisplay) : nameof(TooltipDisplay), ownMethods);
             var guiFont = typeof(PlayerNameRepair).GetMethod(nameof(GuiFont), ownMethods);
             foreach (var instruction in instructions)
             {
@@ -344,8 +411,10 @@ namespace DDEN.MPfix
                 { instruction.opcode = OpCodes.Call; instruction.operand = display; }
                 else if (gui && instruction.opcode == OpCodes.Ldfld && instruction.operand is FieldInfo f && f.Name == "playerName" && f.DeclaringType == _netApply.DeclaringType)
                 { instruction.opcode = OpCodes.Call; instruction.operand = bodyName; }
-                else if (gui && _bodyNameGetter != null && instruction.Calls(_bodyNameGetter))
+                else if (_bodyNameGetter != null && instruction.Calls(_bodyNameGetter))
                 { instruction.opcode = OpCodes.Call; instruction.operand = bodyName; }
+                else if (_tooltipNameGetter != null && instruction.Calls(_tooltipNameGetter))
+                { instruction.opcode = OpCodes.Call; instruction.operand = tooltipName; }
                 yield return instruction;
                 if (instruction.opcode == OpCodes.Ldsfld && instruction.operand is FieldInfo field
                     && field.FieldType == typeof(Font) && field.Name == "gamefont") yield return new CodeInstruction(OpCodes.Call, guiFont);
@@ -354,7 +423,10 @@ namespace DDEN.MPfix
         private static IEnumerable<CodeInstruction> AnnouncementReads(IEnumerable<CodeInstruction> instructions, MethodBase __originalMethod)
         {
             var code = new List<CodeInstruction>(instructions);
-            var display = typeof(PlayerNameRepair).GetMethod(nameof(GuiDisplay), BindingFlags.NonPublic | BindingFlags.Static);
+            bool languageTag = __originalMethod.DeclaringType?.FullName == "Together.Lang";
+            var display = typeof(PlayerNameRepair).GetMethod(languageTag ? nameof(Display) : nameof(GuiDisplay), BindingFlags.NonPublic | BindingFlags.Public | BindingFlags.Static);
+            var tooltip = typeof(PlayerNameRepair).GetMethod(nameof(TooltipDisplay), BindingFlags.NonPublic | BindingFlags.Static);
+            var bodyName = typeof(PlayerNameRepair).GetMethod(nameof(TmpBodyDisplay), BindingFlags.NonPublic | BindingFlags.Static);
             bool join = __originalMethod.DeclaringType == _player
                 && (__originalMethod.Name == "Start" || __originalMethod.Name == "OnDestroy");
             for (int i = 0; i < code.Count; i++)
@@ -370,6 +442,10 @@ namespace DDEN.MPfix
                         && call.DeclaringType?.FullName == "Together.Chat" && call.Name == "AddColorTags";
                     if (displaySite) { instruction.opcode = OpCodes.Call; instruction.operand = display; }
                 }
+                else if (languageTag && _tooltipNameGetter != null && instruction.Calls(_tooltipNameGetter))
+                { instruction.opcode = OpCodes.Call; instruction.operand = tooltip; }
+                else if (languageTag && _bodyNameGetter != null && instruction.Calls(_bodyNameGetter))
+                { instruction.opcode = OpCodes.Call; instruction.operand = bodyName; }
                 yield return instruction;
             }
         }
@@ -381,7 +457,7 @@ namespace DDEN.MPfix
         }
         private static Font GuiFont(Font original)
         {
-            try { return Enabled && _needsUnicode ? PlayerNameFonts.GuiFont(original) : original; }
+            try { return FontEnabled && _needsUnicode ? PlayerNameFonts.GuiFont(original) : original; }
             catch (Exception ex) { MPfixPlugin.Log.Debug("[名称显示] 名单字体不可用：" + ex.Message); return original; }
         }
         private static void GameFont(ref Font __result) { __result = GuiFont(__result); }
@@ -392,19 +468,30 @@ namespace DDEN.MPfix
         // This only releases local font/cache resources. Name updates belong to MP's own callbacks.
         internal static void UpdateLifecycle()
         {
-            bool enabled = Enabled;
-            if (!enabled && _wasEnabled)
+            bool enabled = FontEnabled, running = Mp.IsRunning;
+            if (!enabled && _wasEnabled || !running && _wasRunning)
             {
                 PlayerNameFonts.Clear();
                 RestoreLabels();
-                Names.Clear();
+                Names.Clear(); ObservedText.Clear();
                 _needsUnicode = false;
             }
-            _wasEnabled = enabled;
+            if (Enabled)
+                for (int i = LabelStates.Count - 1; i >= 0; i--)
+                {
+                    if (!LabelStates[i].TryGetTarget(out var state) || state.Label == null) { LabelStates.RemoveAt(i); continue; }
+                    RefreshLabel(state);
+                }
+            if (!running && _wasRunning)
+            {
+                LabelStates.Clear();
+                _labels = new ConditionalWeakTable<object, LabelState>();
+            }
+            _wasEnabled = enabled; _wasRunning = running;
         }
         internal static void Stop()
         {
-            _wasEnabled = _needsUnicode = false; Names.Clear();
+            _wasEnabled = _wasRunning = _needsUnicode = false; Names.Clear(); ObservedText.Clear();
             PlayerNameFonts.Dispose(); RestoreLabels(); LabelStates.Clear();
             _labels = new ConditionalWeakTable<object, LabelState>();
             _chat = new ConditionalWeakTable<object, ChatState>();

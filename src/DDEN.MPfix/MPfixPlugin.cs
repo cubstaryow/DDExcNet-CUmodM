@@ -22,7 +22,7 @@ namespace DDEN.MPfix
     ///  ⑦ 娱乐：道生一 一生二（商人购买多给一份，只在主机生效）。
     /// 界面与配置统一交给 DDExcNet-CUmodM 显示（模块 id = mpfix）。
     /// </summary>
-    [BepInPlugin(Guid, "DDEN MP Fix", "1.7.5")]
+    [BepInPlugin(Guid, "DDEN MP Fix", "1.8.0")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
     public class MPfixPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleVersion, IDdenModuleActivity, IDdenModuleGate, IDdenModuleHealth, IDdenConfigPolicy, IDdenConfigAvailability
@@ -64,8 +64,6 @@ namespace DDEN.MPfix
         internal static AuthoritySetting<bool> CfgDoublePurchase;
 
         // ===== 其它 =====
-        internal static AuthoritySetting<KeyboardShortcut> CfgStandaloneKey;
-        internal static AuthoritySetting<bool> CfgVerbose;
         private AuthorityOverlay _configOverlay;
         private HostConfigSync _authority;
         private FeatureDependencies _dependencies;
@@ -85,10 +83,6 @@ namespace DDEN.MPfix
         private string _lastReason = "-";
         private bool _coreSessionRunning;
 
-        private KeyCode _standaloneKey = KeyCode.F10;
-        private bool _standaloneVisible;
-        private Rect _standaloneRect;
-        private Vector2 _standaloneScroll;
 
         // ===== IDdenModule =====
         public string Id => "mpfix";
@@ -140,11 +134,6 @@ namespace DDEN.MPfix
 
         private static void ApplyEffectiveSettingChange(ConfigEntryBase entry)
         {
-            if (ReferenceEquals(entry, CfgStandaloneKey.Local))
-            {
-                if (Instance != null) Instance._standaloneKey = CfgStandaloneKey.Value.MainKey;
-                return; // A temporary host key or restoring it must never rewrite local key preferences.
-            }
             ApplySettingChange(entry);
         }
 
@@ -332,25 +321,13 @@ namespace DDEN.MPfix
                 "不需要修什么，纯玩法开关。",
                 "购买后补一件给买家；造物时按概率多生成一件。",
                 isExperimental: false, performanceImpact: DdenPerformanceImpact.Low, experimentalNote: "玩法", performanceNote: "多一件物品");
-            DdenDocs.AddStructured("界面",
-                "独立面板热键（StandaloneKey）",
-                "没有管理器时，用它打开修复面板。",
-                "只装了本模块没装管理器时没有界面。",
-                "按下这个键打开独立小面板。",
-                isExperimental: false, performanceImpact: DdenPerformanceImpact.None);
-            DdenDocs.AddStructured("调试",
-                "详细日志（Verbose）",
-                "输出更详细的日志。",
-                "排查问题需要更多现场信息。",
-                "把调试级日志也写进 BepInEx 日志。",
-                isExperimental: false, performanceImpact: DdenPerformanceImpact.Low, performanceNote: "只在开日志时");
         }
 
         public string DisplayName => L(Title);
         public string MinimumManagerVersion => "2.0.0";
-        public string TestedManagerVersion => "2.0.0";
-        public string MinimumSharedVersion => "2.0.0";
-        public string TestedSharedVersion => "2.0.0";
+        public string TestedManagerVersion => "2.1.0";
+        public string MinimumSharedVersion => "2.0.1";
+        public string TestedSharedVersion => "2.0.1";
         public int RequiredSharedApiVersion => DdenApi.Version;
         public string Version => Info.Metadata.Version.ToString();
         public bool IsRunning => Active && Ready && Mp.IsRunning;
@@ -410,11 +387,8 @@ namespace DDEN.MPfix
                 "商人界面自检不再对模组物品报错。");
             CfgDoublePurchase = Config.Bind("娱乐", "道生一 一生二（DoublePurchase）", false,
                 "商人购买必定给两个；其它造物品行为有 20% 概率多一件。");
-            CfgStandaloneKey = Config.Bind("界面", "独立面板热键（StandaloneKey）", new KeyboardShortcut(KeyCode.F10),
-                "没有管理器时，用它打开修复面板。");
-            CfgVerbose = Config.Bind("调试", "详细日志（Verbose）", false, "输出更详细的日志。");
-
-            Log = DDEN.Shared.Log.For(LogSource, "MPfix", CfgVerbose.Value);
+            Log = DDEN.Shared.Log.For(LogSource, "MPfix");
+            ConfigMigration.Retire(Config, "联机修正/客机背包同步分帧（BudgetInventoryRetry）", "界面/独立面板热键（StandaloneKey）", "调试/详细日志（Verbose）");
             RegisterDocs();
             _dependencies = new FeatureDependencies(Config.Entries(), Compat.PluginLoaded, () => Mp.TogetherReady, () => Mp.CoreReady);
             foreach (var setting in AuthoritySettings.All)
@@ -445,16 +419,13 @@ namespace DDEN.MPfix
             }
 
             // 用户口径（2026-11）：改完配置立即生效，不要重启游戏。
-            // 绝大多数开关本来就在“每次用到时读配置”，这里只额外处理两件必须在改动瞬间重算的事：
-            //   ① 详细日志（Log 通道的 verbose 是缓存值）；② 独立面板热键（缓存在 _standaloneKey）。
             // 另外把“无芯片”那组改动直接触发一次同步，免得等下一个 watchdog 周期。
             try { Config.SettingChanged += (sender, args) => OnSettingChanged(args.ChangedSetting); }
-            catch (Exception ex) { Logger.LogWarning("订阅配置变更失败（改配置后需重启才生效）：" + ex.Message); }
+            catch (Exception ex) { Log.Warn("订阅配置变更失败（改配置后需重启才生效）：" + ex.Message); }
 
             InstallRuntimeSupport();
             _warmupUntil = Time.realtimeSinceStartup + 6f;      // 巡检耗时统计跳过冷启动
             DdenHub.Register(this);
-            _standaloneKey = Compat.ResolveHotkey(CfgStandaloneKey, Guid, !DdenHub.ManagerLoaded);
 
             Log.Info("已加载：无芯片同步 + 联机物品/合成 + 物品物理 + 伤害重算 + 商人快照 + 名称显示 + 娱乐开关。");
             LogMpCompatReport();
@@ -477,7 +448,7 @@ namespace DDEN.MPfix
 
             Log.Info($"[MPCOMPAT] Together/CasualtiesMP = {ver}");
 
-            bool verified = ver == "5.5.3" || ver == "5.5.4" || ver.StartsWith("5.5.");
+            bool verified = ver == DdenGate.ExpectedMp;
             if (!verified)
             {
                 Log.Warn("[MPCOMPAT] 未校对过这个 Together 版本：三项修复仍然生效，但请留意日志里是否出现 declines/craft spawn 警告。");
@@ -957,22 +928,6 @@ namespace DDEN.MPfix
                 if (ReferenceEquals(entry, CfgMasterEnabled) || ReferenceEquals(entry, CfgTraderSnapshot.Local))
                     TraderSnapshotFix.Reset();
 
-                if (ReferenceEquals(entry, CfgVerbose.Local))
-                {
-                    Log.Verbose = CfgVerbose.Value;
-                    Log.Info($"详细日志已{(CfgVerbose.Value ? "打开" : "关闭")}（立即生效）。");
-                    return;
-                }
-
-                if (ReferenceEquals(entry, CfgStandaloneKey.Local))
-                {
-                    MPfixPlugin p = Instance;
-                    if (p != null) p._standaloneKey = p._configOverlay?.Locked == true
-                        ? CfgStandaloneKey.Value.MainKey : Compat.ResolveHotkey(CfgStandaloneKey, Guid, false);
-                    Log.Info($"独立面板热键已改为 {CfgStandaloneKey.Value.MainKey}（立即生效）。");
-                    return;
-                }
-
                 // 无芯片那组：立刻推一次，不用等 watchdog
                 if (entry.Definition != null && entry.Definition.Section == "无芯片同步")
                 {
@@ -1053,18 +1008,6 @@ namespace DDEN.MPfix
                         CfgMasterEnabled.Value = true;
                         Log.Info("[版本核对] 已自动恢复本模块总开关。");
                     }
-                }
-
-                if (!DdenHub.ManagerLoaded && Input.GetKeyDown(_standaloneKey))
-                {
-                    _standaloneVisible = !_standaloneVisible;
-                }
-
-                if (!DdenHub.ManagerLoaded)
-                {
-                    if (_standaloneVisible) DdenBlocker.Show(0.12f);
-                    else DdenBlocker.Hide();
-                    DdenHub.SetPanelVisible("mpfix", _standaloneVisible);
                 }
 
                 // 周期处理：这里只量"本模块每帧吃了多少"，
@@ -1196,24 +1139,7 @@ namespace DDEN.MPfix
             }
         }
 
-        private void OnGUI()
-        {
-            if (DdenHub.ManagerLoaded || !_standaloneVisible) return;
-            try
-            {
-                var rect = new Rect(120f, 120f, 520f, 420f);
-                _standaloneRect = rect;
-                GUI.Window(0x4D504658, rect, _ =>
-                {
-                    DdenUI.DrawStandalone(new Rect(0, 0, rect.width, rect.height), this, ref _standaloneScroll, false);
-                    GUI.DragWindow(new Rect(0, 0, rect.width, 30f));
-                }, GUIContent.none, GUIStyle.none);
-            }
-            catch (Exception ex)
-            {
-                Log.Exception(ex, "OnGUI");
-            }
-        }
+
 
         private void OnDestroy()
         {

@@ -19,7 +19,7 @@ namespace DsToolExtension
     /// 第二件：实验性等离子束发射器（Experimentalplasmaemitter）——等离子切割器升级版。
     /// CCL 前置、多人兼容、DDEN L1 软接入（实验性 + 中英双语）。
     /// </summary>
-    [BepInPlugin(Guid, "DS Tool Extension", "1.2.6")]
+    [BepInPlugin(Guid, "DS Tool Extension", "1.2.11")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.HardDependency)]
     [BepInDependency("com.a4kk.enhancedtools", BepInDependency.DependencyFlags.SoftDependency)]
     public class Plugin : BaseUnityPlugin
@@ -40,6 +40,8 @@ namespace DsToolExtension
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> Enabled;
         internal static ConfigEntry<bool> DebugLog;
+        internal static ConfigEntry<bool> CorpseSpawn;
+        internal static ConfigEntry<int> SpawnFrequency;
 
         internal static void LogInfo(string message) => Log?.LogInfo(message);
         internal static void LogWarning(string message) => Log?.LogWarning(message);
@@ -49,14 +51,18 @@ namespace DsToolExtension
         private const float DrillRotateAmount = 6f;
         private const float DrillVolume = 0.8f;
 
+        private float _nextSweep;
+
         private void Awake()
         {
             Instance = this;
             Log = Logger;
             try
             {
-                Enabled = Config.Bind("General", "Enabled", true, "启用 DS 工具扩展。");
-                DebugLog = Config.Bind("General", "DebugLog", false, "输出循环音效等调试日志（默认关闭）。");
+                Enabled = Config.Bind("DS Tool Extension", "Enabled", true, "启用 DS 工具扩展。");
+                DebugLog = Config.Bind("DS Tool Extension", "DebugLog", false, "输出循环音效等调试日志（默认关闭）。");
+                CorpseSpawn = Config.Bind("DS Tool Extension", "CorpseSpawn", false, "允许三件物品从尸体上低概率刷新。");
+                SpawnFrequency = Config.Bind("DS Tool Extension", "SpawnFrequency", 1, new ConfigDescription("战利品池中的份数（1 最稀有，越大越常见）。", new AcceptableValueRange<int>(1, 20)));
                 bool hasET = Chainloader.PluginInfos.ContainsKey("com.a4kk.enhancedtools");
                 if (Enabled.Value)
                 {
@@ -75,6 +81,26 @@ namespace DsToolExtension
             {
                 Logger.LogError("[DS Tool Extension] 初始化失败：" + ex);
             }
+        }
+
+        private void Update()
+        {
+            // 兜底：物品 Parent 变化未触发时，每 1 秒重新检查不在槽位里的钻机音效组件。
+            if (UnityEngine.Time.unscaledTime < _nextSweep) return;
+            _nextSweep = UnityEngine.Time.unscaledTime + 1f;
+            DrillLoopSound.SweepAll();
+        }
+
+        private static DropPool BuildDropPool()
+        {
+            var pool = DropPool.AllTraders | DropPool.ContainerCrate | DropPool.DropCapsule | DropPool.CapsuleContainer;
+            if (CorpseSpawn != null && CorpseSpawn.Value) pool |= DropPool.Corpse;
+            return pool;
+        }
+
+        private static int SpawnFrequencyValue()
+        {
+            return SpawnFrequency != null ? Math.Max(1, SpawnFrequency.Value) : 1;
         }
 
         private void RegisterDrill()
@@ -107,6 +133,8 @@ namespace DsToolExtension
                     SpawnWithBattery = true
                 },
                 SpriteScale = 1f,
+                DropPool = BuildDropPool(),
+                SpawnFrequency = SpawnFrequencyValue(),
                 useAction = delegate (Body body, Item item)
                 {
                     if (item.condition > 0f && body.Attack(new AttackInfo
@@ -166,6 +194,8 @@ namespace DsToolExtension
                     SpawnWithBattery = true
                 },
                 SpriteScale = 1f,
+                DropPool = BuildDropPool(),
+                SpawnFrequency = SpawnFrequencyValue(),
                 useAction = delegate (Body body, Item item)
                 {
                     if (item.condition > 0f && body.Attack(new AttackInfo
@@ -247,6 +277,8 @@ namespace DsToolExtension
                 wearableHitDurabilityLossMultiplier = 0.15f,
                 wearableVisualOffset = 5,
                 SpriteScale = 0.45f,
+                DropPool = BuildDropPool(),
+                SpawnFrequency = SpawnFrequencyValue(),
                 InventoryIconScale = 1.5f
             };
 
@@ -461,20 +493,78 @@ namespace DsToolExtension
             return DdenText.En(original);
         }
 
+        public static IDictionary<string, string> DdenConfigMetadata(ConfigEntryBase entry)
+        {
+            if (entry == null) return null;
+            var fields = new Dictionary<string, string>();
+            switch (entry.Definition.Key)
+            {
+                case "Enabled":
+                    fields["label"] = "启用";
+                    fields["experimental"] = "false";
+                    break;
+                case "DebugLog":
+                    fields["label"] = "日志";
+                    fields["experimental"] = "false";
+                    break;
+                case "CorpseSpawn":
+                    fields["label"] = "尸体刷新";
+                    fields["experimental"] = "true";
+                    break;
+                case "SpawnFrequency":
+                    fields["label"] = "稀有度";
+                    fields["experimental"] = "true";
+                    break;
+                default:
+                    return null;
+            }
+            return fields;
+        }
+
         public static void DdenDocs()
         {
             var type = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(a => a.GetName().Name == "DDEN.Shared")?.GetType("DDEN.Shared.DdenDocs");
             var method = type?.GetMethod("Add", new[] { typeof(string), typeof(string), typeof(string), typeof(string), typeof(string), typeof(string), typeof(string), typeof(bool) });
             if (method == null || DdenConfig == null) return;
             foreach (var pair in DdenConfig)
-                method.Invoke(null, new object[]
+            {
+                string what, fixes, how;
+                bool restart;
+                switch (pair.Key.Key)
                 {
-                    pair.Key.Section, pair.Key.Key, pair.Value.Description.Description,
-                    "启用后新增实验性钛合金钻机与实验性等离子束发射器。",
-                    "装好后在物品/合成里出现。",
-                    "是 · 尚需游戏内验证",
-                    "只注册两个物品与一个配方，开销可忽略。", false
-                });
+                    case "Enabled":
+                        what = "启用后注册实验性钛合金钻机、等离子束发射器与实验性特种腿包，并注入箱子/商人战利品池。";
+                        fixes = "关闭后三件物品与配方不再出现。";
+                        how = "通过 CCL 注册物品，并在指定战利品池中低概率生成。";
+                        restart = true;
+                        break;
+                    case "DebugLog":
+                        what = "输出循环音效等调试日志。";
+                        fixes = "排查音效问题时开启。";
+                        how = "仅影响日志输出，不影响功能。";
+                        restart = false;
+                        break;
+                    case "CorpseSpawn":
+                        what = "在尸体战利品池中加入三件物品。";
+                        fixes = "关闭时尸体不会刷出这三件物品。";
+                        how = "把物品的 DropPool 扩展为包含尸体池。";
+                        restart = true;
+                        break;
+                    case "SpawnFrequency":
+                        what = "调整三件物品在战利品池中的份数（越高越常见，1 为最稀有）。";
+                        fixes = "1 份时最难刷出。";
+                        how = "注册时写入 SpawnFrequency，改完需要重启游戏。";
+                        restart = true;
+                        break;
+                    default:
+                        what = pair.Value.Description.Description;
+                        fixes = "";
+                        how = "";
+                        restart = false;
+                        break;
+                }
+                method.Invoke(null, new object[] { pair.Key.Section, pair.Key.Key, what, fixes, how, "否", "无", restart });
+            }
         }
 
         private static string Ts(string zh, string en) => _language == "en" ? en : zh;
@@ -488,12 +578,27 @@ namespace DsToolExtension
             switch (zh)
             {
                 case "启用 DS 工具扩展。": return "Enable DS Tool Extension.";
+                case "输出循环音效等调试日志（默认关闭）。": return "Output debug logs such as the loop sound (off by default).";
+                case "允许三件物品从尸体上低概率刷新。": return "Allow the three items to spawn on corpses at a low chance.";
+                case "战利品池中的份数（1 最稀有，越大越常见）。": return "Entries in the loot pool (1 = rarest, higher = more common).";
+                case "启用": return "Enable";
+                case "日志": return "Log";
+                case "尸体刷新": return "Corpse spawn";
+                case "稀有度": return "Rarity";
                 case "未加载": return "Not loaded";
                 case "运行中": return "Running";
-                case "启用后新增实验性钛合金钻机与实验性等离子束发射器。": return "Adds the Experimental Ti-alloy drill and the Experimental plasma emitter when enabled.";
-                case "装好后在物品/合成里出现。": return "Appears in items/crafting once installed.";
-                case "是 · 尚需游戏内验证": return "Yes · needs in-game verification";
-                case "只注册两个物品与一个配方，开销可忽略。": return "Registers two items and one recipe; negligible cost.";
+                case "启用后注册实验性钛合金钻机、等离子束发射器与实验性特种腿包，并注入箱子/商人战利品池。": return "Registers the Experimental Ti-alloy drill, the Experimental plasma emitter and the Experimental special leg pack, and injects them into container/trader loot pools.";
+                case "关闭后三件物品与配方不再出现。": return "When disabled, the three items and their recipes no longer appear.";
+                case "通过 CCL 注册物品，并在指定战利品池中低概率生成。": return "Items are registered through CCL and spawned at a low chance in the selected loot pools.";
+                case "输出循环音效等调试日志。": return "Output debug logs such as the loop sound.";
+                case "排查音效问题时开启。": return "Enable when troubleshooting sound issues.";
+                case "仅影响日志输出，不影响功能。": return "Only affects log output, not functionality.";
+                case "在尸体战利品池中加入三件物品。": return "Add the three items to the corpse loot pool.";
+                case "关闭时尸体不会刷出这三件物品。": return "When disabled, corpses will not spawn these three items.";
+                case "把物品的 DropPool 扩展为包含尸体池。": return "Extends the items' DropPool with the corpse pool.";
+                case "调整三件物品在战利品池中的份数（越高越常见，1 为最稀有）。": return "Adjust how many entries the three items occupy in loot pools (higher = more common, 1 = rarest).";
+                case "1 份时最难刷出。": return "1 entry is the rarest setting.";
+                case "注册时写入 SpawnFrequency，改完需要重启游戏。": return "Written as SpawnFrequency at registration; restart the game after changing.";
                 default: return zh;
             }
         }

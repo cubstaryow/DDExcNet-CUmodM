@@ -4,14 +4,16 @@
 
 | 组件 | 当前产品版本 | 说明 |
 | --- | --- | --- |
-| DDEN.Shared | 2.0.0 | 公共API代际为v1；`DdenApi.CurrentVersion`及程序集`DDEN.ApiVersion`元数据均为1 |
-| DDExcNet管理器 | 2.0.0 | 内置本次已知模块最新版本目录，支持API v1 |
-| MPfix | 1.7.5 | 声明管理器≥2.0.0、Shared≥2.0.0、API v1 |
-| 性能跟踪器 | 2.0.0 | 声明管理器≥2.0.0、Shared≥2.0.0、API v1 |
-| 存档编辑器 | 2.0.0-alpha | 声明管理器≥2.0.0、Shared≥2.0.0、API v1 |
-| UnitListMgr | 0.1.0-alpha | 声明管理器≥2.0.0、Shared≥2.0.0、API v1 |
+| DDEN.Shared | 2.0.1 | 公共API代际为v1；`DdenApi.CurrentVersion`及程序集`DDEN.ApiVersion`元数据均为1 |
+| DDExcNet管理器 | 2.1.0 | 内置本次已知模块最新版本目录，支持API v1 |
+| MPfix | 1.8.0 | 声明管理器≥2.0.0、Shared≥2.0.1、API v1 |
+| 性能跟踪器 | 2.3.1 | 声明管理器≥2.0.0、Shared≥2.0.1、API v1 |
+| 存档编辑器 | 2.0.1-alpha | 声明管理器≥2.0.0、Shared≥2.0.1、API v1 |
+| UnitListMgr | 0.1.2-alpha | 声明管理器≥2.0.0、Shared≥2.0.1、API v1 |
+| 性能跟踪器增强 | 0.2.1-alpha | 独立可选诊断组件，不加入六组件包；需要基础跟踪器2.3.1与Together，Shared≥2.0.1、API v1 |
+| LoongNova | 1.0.1 | 龙灼线束、龙翼腰带与龙化工具；独立于六组件发布包，声明管理器≥2.0.0、Shared≥2.0.1、API v1 |
 
-版本由各组件自己的csproj和插件声明维护。程序集数字版本采用四段数字，例如`2.0.0.0`。当前BepInEx加载器不接受`2.0.0-alpha`作为BepInPlugin版本，其Version会为空；因此编辑器插件加载声明使用`2.0.0`，csproj发行版本、AssemblyInformationalVersion和IDdenModule.Version保留`2.0.0-alpha`。管理器总览及模块页展示含alpha的发行版本，不能仅根据加载器的数字版号称其为正式版。
+版本由各组件自己的csproj和插件声明维护。程序集数字版本采用四段数字，例如`2.0.0.0`。当前BepInEx加载器不接受`2.0.0-alpha`作为BepInPlugin版本，其Version会为空；因此当前编辑器插件加载声明使用`2.0.1`，csproj发行版本、AssemblyInformationalVersion和IDdenModule.Version保留`2.0.1-alpha`。管理器总览及模块页展示含alpha的发行版本，不能仅根据加载器的数字版号称其为正式版。
 
 ## 模块分别声明管理器和Shared要求
 
@@ -19,9 +21,9 @@
 
 ```csharp
 public string MinimumManagerVersion => "2.0.0";
-public string TestedManagerVersion => "2.0.0";
-public string MinimumSharedVersion => "2.0.0";
-public string TestedSharedVersion => "2.0.0";
+public string TestedManagerVersion => "2.1.0";
+public string MinimumSharedVersion => "2.0.1";
+public string TestedSharedVersion => "2.0.1";
 public int RequiredSharedApiVersion => 1;
 ```
 
@@ -33,11 +35,11 @@ public int RequiredSharedApiVersion => 1;
 
 未提供的字符串可返回null／空，未声明API返回0。未实现接口，或全部要求均为空／0时免检，不从插件名称或已知模块ID猜测要求。外置L1配置块不经过此版本检查，不新增强制Shared引用，也不把其DdenConfigMetadata显示标记当作版本声明。
 
-例如管理器2.0.0、Shared1.9.9、API v1，仍不满足上述模块的Shared≥2.0.0要求；管理器1.9.9、Shared2.0.0则只提示管理器过旧。Shared2.1.0／API v1不会仅因产品版本比已校对版本新而被判为不兼容；API代际不同会单独提示。两者同时发放也始终分别读取运行版本与校对。
+例如管理器2.0.0、Shared1.9.9、API v1，仍不满足上述模块的Shared≥2.0.1要求；管理器1.9.9、Shared2.0.0则只提示管理器过旧。Shared2.1.0／API v1不会仅因产品版本比已校对版本新而被判为不兼容；API代际不同会单独提示。两者同时发放也始终分别读取运行版本与校对。
 
 ## 管理器如何显示
 
-管理器自身的`ModuleVersionCatalog`记录当前已知最新版本：mpfix=1.7.5、perf=2.0.0、saveeditor=2.0.0-alpha，Shared记录版本为2.0.0。目录随管理器源码／发布更新，不联网查询，也不会把安装中的未知新版本反过来写成“已知最新”。
+管理器自身的`ModuleVersionCatalog`记录当前已知最新版本：mpfix=1.8.0、perf=2.3.1、perfdeep=0.2.1-alpha、saveeditor=2.0.1-alpha、unitlistmgr=0.1.2-alpha、loongnova=1.0.1，Shared记录版本为2.0.1。目录随管理器源码／发布更新，不联网查询，也不会把安装中的未知新版本反过来写成“已知最新”。
 
 | 结果 | 显示 |
 | --- | --- |
@@ -48,7 +50,7 @@ public int RequiredSharedApiVersion => 1;
 | 版本格式不能识别 | 无法校对；不显示为最新 |
 | 无版本要求／L1外置配置 | 免检，不产生适配警告 |
 
-总览恢复原两行卡片（内置模块56px，管理器及外置配置50px），发行版本保留在标题旁；记录版本比较、两组最低／已校对版本及API统一放入整卡悬停详情，不增加第三行。左侧全高竖线：版本与记录不一致、要求未满足或运行问题为红；正常加载／待用为蓝；明确正在工作为绿。高于记录版本也标为待核对，详情明确说明是新版，不称其为过旧。模块页面标题及独立窗口说明适配范围，单独配置页显示要求。低于最低管理器／Shared版本、API代际不符或要求格式错误时有醒目提示；管理器关闭时也会提示打开面板核对。管理器自身卡片分开显示管理器、实际Shared版本与API代际。
+总览恢复原两行卡片（内置模块56px，管理器及外置配置50px），发行版本保留在标题旁；记录版本比较、最低组件版本统一放入整卡悬停详情，不增加第三行。左侧全高竖线：版本与记录不一致、要求未满足或运行问题为红；正常加载／待用为蓝；明确正在工作为绿。高于记录版本也标为待核对，详情明确说明是新版，不称其为过旧。各模块功能页统一由管理器打开，无独立窗口或独立面板按键；仅物品生成轮盘保留操作快捷键。关于页列出公共层、管理器及全部六个子模块，包含未安装的可选模块；后续注册的额外模块也会追加。低于最低管理器／Shared版本、API代际不符或要求格式错误时有醒目提示；管理器关闭时也会提示打开面板核对。管理器自身卡片显示管理器与公共组件版本；内部仍单独校验API代际，界面只提示需要更新的组件。
 
 这些提示不修改配置、停用模块、覆盖主机设置或借用“忽略环境版本”开关。原游戏／MP环境版本闸门维持原行为。模块过旧与管理器／Shared不适配是两项独立结果：模块可以是记录中的最新版，同时要求更高的管理器或Shared版本。
 

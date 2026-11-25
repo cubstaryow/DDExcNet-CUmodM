@@ -5,6 +5,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Remove="@(Reference)" />
+    <Compile Include="$(NameSourceDir)/TogetherChineseRepair.cs" Link="TogetherChineseRepair.cs" />
     <Compile Include="$(NameSourceDir)/PlayerNameRepair.cs" Link="PlayerNameRepair.cs" />
     <Compile Include="$(NameSourceDir)/NameDisplayCache.cs" Link="NameDisplayCache.cs" />
     <Compile Include="$(NameSourceDir)/NameDisplayRules.cs" Link="NameDisplayRules.cs" />

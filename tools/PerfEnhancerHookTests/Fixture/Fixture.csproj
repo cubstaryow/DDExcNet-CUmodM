@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><AssemblyName>CasualtiesMP</AssemblyName><Version>0.0.0</Version><TargetFramework>netstandard2.1</TargetFramework></PropertyGroup>
+  <ItemGroup><Reference Remove="@(Reference)" /></ItemGroup>
+</Project>

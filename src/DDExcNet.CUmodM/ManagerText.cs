@@ -69,6 +69,7 @@ namespace DDExcNet.CUmodM
         {
             switch (id)
             {
+                case "perfdeep": case "unitlistmgr": case "loongnova": return Get("module." + id);
                 case "mpfix": return Get("module.mpfix");
                 case "saveeditor": return Get("module.saveeditor");
                 case "netperf": case "perf": case "netperftracker": return Get("module.perf");

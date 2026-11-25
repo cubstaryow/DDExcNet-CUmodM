@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
+  <ItemGroup>
+    <Reference Remove="@(Reference)" />
+    <Reference Include="Newtonsoft.Json"><HintPath>$(ManagedDir)/Newtonsoft.Json.dll</HintPath><Private>true</Private></Reference>
+    <Reference Include="Mono.Cecil"><HintPath>$(BepInExCoreDir)/Mono.Cecil.dll</HintPath><Private>true</Private></Reference>
+    <Compile Include="../../src/DDEN.LoongNova/BeltInteractionPatches.cs" Link="BeltInteractionPatches.cs" />
+    <Compile Include="../../src/DDEN.LoongNova/EnergyState.cs" Link="EnergyState.cs" />
+    <Compile Include="../../src/DDEN.LoongNova/BeltPowerState.cs" Link="BeltPowerState.cs" />
+    <Compile Include="../../src/DDEN.LoongNova/ItemCardLayout.cs" Link="ItemCardLayout.cs" />
+    <Compile Include="../../src/DDEN.LoongNova/LowEnergyNotice.cs" Link="LowEnergyNotice.cs" />
+    <Compile Include="../../src/DDEN.LoongNova/LootRules.cs" Link="LootRules.cs" />
+    <Compile Include="../../src/DDEN.LoongNova/BeltWingVisual.cs" Link="BeltWingVisual.cs" />
+    <Compile Include="../../src/DDEN.LoongNova/WingFlightLease.cs" Link="WingFlightLease.cs" />
+    <Compile Include="../../src/DDEN.LoongNova/DragonizationPatches.cs" Link="DragonizationPatches.cs" />
+    <Compile Include="../../src/DDEN.LoongNova/DragonizationRules.cs" Link="DragonizationRules.cs" />
+    <Compile Include="../../src/DDEN.LoongNova/GunVisualState.cs" Link="GunVisualState.cs" />
+    <Compile Include="../../src/DDEN.LoongNova/WorkReportBudget.cs" Link="WorkReportBudget.cs" />
+  </ItemGroup>
+</Project>

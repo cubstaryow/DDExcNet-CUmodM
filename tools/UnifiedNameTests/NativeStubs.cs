@@ -15,6 +15,7 @@ namespace UnityEngine
     public class Component : Object
     {
         public GameObject gameObject;
+        public Component GetComponent(Type type) => gameObject.Components.OfType<Component>().FirstOrDefault(type.IsInstanceOfType);
         public T[] GetComponentsInChildren<T>(bool inactive) where T : class => gameObject.GetComponentsInChildren<T>();
     }
     public class GameObject : Object
@@ -96,10 +97,14 @@ namespace Together
         public static void OnPersonaStateChange() { }
     }
     public static class CoopModAssets { public static UnityEngine.Font gamefont = new(); }
-    public class NetBody
+    public class NetBody : UnityEngine.Component
     {
         public ScavPlayer plr;
-        public string playerName => plr.playerName;
+        public bool IsLocal;
+        public string NativeBodyName = "";
+        public string bodyName => NativeBodyName;
+        public string playerName => plr?.playerName ?? bodyName;
+        public void DoMouseHoverTooltip(ref string tooltipName_text, ref string tooltipDescription_text) { tooltipName_text = bodyName; }
         public static int NameRefreshCalls;
         public static float ArrowAlpha = 0.2f;
         public void ApplyNameAndColor(string name, UnityEngine.Color color) { NameRefreshCalls++; ArrowAlpha = 1; }
@@ -110,6 +115,7 @@ namespace Together
         public UnityEngine.GameObject nametag;
         public void ApplyNameAndColor() { NetBody.NameRefreshCalls++; NetBody.ArrowAlpha = 1; }
         public void LateUpdate() { }
+        public static void TryMakeNametagFancy(TMPro.TMP_Text tmp, ScavPlayer plr) { }
     }
     public class UIInGame { public static void _GUI__DrawPlayerDirection(NetBody nb, float alpha, bool shiftHeld) { } }
     public static class Chat
@@ -136,4 +142,10 @@ namespace Together
     public static class UIBullshit { public static UnityEngine.Font FocusedChatFont() => CoopModAssets.gamefont; }
 }
 
-namespace Together { public class ServerMain { public void UpdateSyncClientsToClients() { } } public static class Lang { public static bool TryParseIndividualTag(ref string tag) => true; } }
+namespace Together { public class ServerMain { public void UpdateSyncClientsToClients() { } } public static class Lang {
+public static string CurrentLocale { get; set; } = "zh-CN";
+public static Dictionary<string, Dictionary<string, string>> dict = new() { ["zh-CN"] = new() { ["wv_viewers"] = "查看者" } };
+public static string Get(in string key, in bool allow_null_result = false) => key;
+public static bool TryParseIndividualTag(ref string tag) => true; } }
+
+public class WoundView { public static WoundView view = new(); public TMPro.TMP_Text nameText, bodyStatText; }

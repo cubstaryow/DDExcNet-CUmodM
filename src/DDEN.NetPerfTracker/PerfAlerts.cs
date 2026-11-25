@@ -37,6 +37,7 @@ namespace DDEN.NetPerfTracker
         internal readonly SampleRing<PerfEvent> Events = new SampleRing<PerfEvent>(160);
         internal int Revision { get; private set; }
         internal float Ratio = 2, MinMs = 8, CountDelta = 50, Cooldown = 3;
+        internal bool Enabled = true;
         internal void Record(int slot, float t, string key, string metric, float before, float after, string reason, AlertLevel level, float baselineT = -1)
         {
             var e = _last[slot];
@@ -55,12 +56,14 @@ namespace DDEN.NetPerfTracker
         }
         internal void Frame(float t, float ms, float observer, float[] stages, float physics = -1)
         {
+            if (!Enabled) return;
             for (int i = 0; i < 10; i++)
             {
                 float value = i == 0 ? ms : i == 1 ? observer : i == 9 ? physics : stages == null ? -1 : stages[i - 2];
                 if (value < 0 || float.IsNaN(value) || float.IsInfinity(value)) continue;
                 float baseline = _baseline[i], delta = i == 1 ? Math.Min(2, MinMs) : MinMs;
-                if (_observations[i] >= 12 && value >= baseline * Ratio && value - baseline >= delta)
+                // A longer deliberate frame-cap wait is a state, not a performance fluctuation warning.
+                if (i != 7 && _observations[i] >= 12 && value >= baseline * Ratio && value - baseline >= delta)
                     Record(i == 9 ? 21 : i, t, FrameKeys[i], FrameLabels[i], baseline, value,
                         i < 2 ? "相对近期平稳基线上升，同时超过倍数与最小毫秒变化阈值。" : "阶段读数突增；计时可能延迟若干帧，等待也不等于计算瓶颈。",
                         i == 0 && value >= 50 ? AlertLevel.Problem : AlertLevel.Watch);
@@ -78,6 +81,7 @@ namespace DDEN.NetPerfTracker
         }
         internal void Sample(PerfSample s, float engineStart, float slowFps)
         {
+            if (!Enabled) return;
             if (s.Fps < slowFps)
                 Record(9, s.T, "lowFPS", "低于帧率警戒", slowFps, s.Fps, "事实读数低于警戒；主动限帧或垂直同步也可能造成此结果。", AlertLevel.Problem);
             if (s.Objects.Valid && (!_objects.Valid || s.Objects.Ended != _objects.Ended))

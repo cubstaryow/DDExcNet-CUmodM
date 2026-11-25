@@ -155,10 +155,7 @@
   "低（多一件物品）": "Low (one extra item)",
   "多一件物品": "One extra item",
   "界面": "Interface",
-  "独立面板热键（StandaloneKey）": "Standalone panel key (StandaloneKey)",
-  "没有管理器时，用它打开修复面板。": "Opens the fix panel when the manager is not installed.",
   "只装了本模块没装管理器时没有界面。": "Provides a UI when using this module without the manager.",
-  "按下这个键打开独立小面板。": "Press the key to open the standalone panel.",
   "调试": "Debug",
   "详细日志（Verbose）": "Verbose logging (Verbose)",
   "输出更详细的日志。": "Writes more detailed logs.",
@@ -178,5 +175,10 @@
   "DDEN未校对此环境版本兼容性，需要打开面板处理！": "DDEN has not verified this environment. Open the panel to review compatibility.",
   "当前游戏 {0} · 联机组件 {1}；本版是针对联机组件 {2} 做的修复。": "Game {0} · MP {1}; these fixes were checked against MP {2}.",
   "Together 未就绪": "Together is not ready",
-  "CCL MP 未就绪": "CCL multiplayer bridge is not ready"
+  "CCL MP 未就绪": "CCL multiplayer bridge is not ready",
+  "合并同一同步对象的重复等待任务，分帧处理剩余重试；仅客机生效，保留原同步和超时。": "Merge duplicate waits for the same sync object and spread retries over frames; client only, preserving synchronization and timeouts.",
+  "限制客机背包同步重试造成的长帧。": "Reduce long client frames caused by inventory synchronization retries.",
+  "其他玩家离开后，背包同步等待任务重复积压，客机持续掉帧。": "Duplicate inventory synchronization waits can accumulate after a peer leaves and cause sustained client stutter.",
+  "合并同一同步对象的重复等待任务；每次最多处理64项，约2毫秒后让剩余任务等待后续帧，保留原超时和挂接流程。": "Merge duplicate waits for the same sync object; process up to 64 entries or about 2 ms per pass, preserving original timeouts and attachment logic.",
+  "仅对已核对的Together构建生效；单项操作及原扫描仍可能超过预算，多人实测待验收": "Verified Together builds only; a single operation and the original sweep can exceed the budget. Multiplayer validation is pending."
 }

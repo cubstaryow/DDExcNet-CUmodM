@@ -1,7 +1,9 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/DDEN.LoongNova/DDEN.LoongNova.csproj" />
     <Project Path="src/DDEN.MPfix/DDEN.MPfix.csproj" />
     <Project Path="src/DDEN.NetPerfTracker/DDEN.NetPerfTracker.csproj" />
+    <Project Path="src/DDEN.NetPerfTracker.Enhanced/DDEN.NetPerfTracker.Enhanced.csproj" />
     <Project Path="src/DDEN.SaveEditor/DDEN.SaveEditor.csproj" />
     <Project Path="src/DDEN.Shared/DDEN.Shared.csproj" />
     <Project Path="src/DDEN.UnitListMgr/DDEN.UnitListMgr.csproj" />

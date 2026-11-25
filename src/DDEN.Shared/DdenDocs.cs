@@ -149,7 +149,8 @@ namespace DDEN.Shared
 
             Line("功能", metadata?.Description ?? d?.What ?? entry?.Description?.Description);
             Line("修复的问题", metadata?.Problem ?? d?.Fixes);
-            Line("解决方案", metadata?.Method ?? d?.How);
+            if (entry?.ConfigFile?.ConfigFilePath?.EndsWith("com.dden.mpunchippedsync.cfg", StringComparison.OrdinalIgnoreCase) == true)
+                Line("解决方案", metadata?.Method ?? d?.How);
             string experimental = DdenLocalization.Language == DdenLanguage.English ? (IsExperimental(entry, policy) ? "Yes" : "No") : (IsExperimental(entry, policy) ? "是" : "否");
             string experimentNote = metadata?.ExperimentalNote ?? d?.ExperimentalNote;
             if (experimentNote == null && metadata?.IsExperimental.HasValue != true) experimentNote = LegacyNote(d?.Experimental);

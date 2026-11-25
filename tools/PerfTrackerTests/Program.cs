@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
 using DDEN.NetPerfTracker;
 
 internal static class Program
@@ -126,6 +128,171 @@ internal static class Program
         Check(text.IndexOf("EVENT t=0.500", StringComparison.Ordinal) < text.IndexOf("SAMPLE t=1.000", StringComparison.Ordinal), "late census event exports at its census time");
         Check(text.IndexOf("SAMPLE t=1.000", StringComparison.Ordinal) < text.IndexOf("EVENT t=2.000", StringComparison.Ordinal) && text.IndexOf("EVENT t=2.000", StringComparison.Ordinal) < text.IndexOf("SAMPLE t=3.000", StringComparison.Ordinal), "event records merge with corresponding sample time");
         Check(text.IndexOf("SAMPLE t=3.000", StringComparison.Ordinal) < text.IndexOf("EVENT t=4.000", StringComparison.Ordinal), "sub-second event after last sample is not lost");
+        ProbeChecks();
+        UnityReplayChecks();
         Console.WriteLine("PASS " + _checks + " checks");
+    }
+
+    private sealed class DangerousText
+    {
+        public override string ToString() => throw new Exception("must not call arbitrary ToString");
+    }
+    private static void ProbeChecks()
+    {
+        var inbox = new ProbeInbox();
+        inbox.Add("LES", true, false, "disabled", 0);
+        Check(inbox.Totals.Errors == 0 && inbox.Messages().Length == 0, "disabled probe never retains errors");
+        inbox.Enable(true);
+        inbox.Add("DDEN NetPerfTracker", true, false, "observer error", 0);
+        inbox.Add("Other", true, false, "unrelated error", 0);
+        inbox.Add("Together", false, false, "ordinary multiplayer chat", 0);
+        Check(inbox.Messages().Length == 0, "unrelated logs and normal chat do not feed the probe");
+        inbox.Add("LES", true, false, "first failure\n at entity.Update", 0.1f);
+        for (int i = 1; i < 10000; i++) inbox.Add("LES", true, false, "repeated failure", 0.1f);
+        var counters = inbox.Drain(out var totalSnapshot);
+        Check(totalSnapshot.Errors == counters.Errors, "window and cumulative counts share an atomic snapshot");
+        Check(counters.Errors == 10000 && counters.DetailSkipped == 9992 && inbox.Messages().Length == 8, "error storm counts every message while retaining at most eight details per second");
+        Check(inbox.Drain().Errors == 0 && inbox.Totals.Errors == 10000, "window drain preserves cumulative totals");
+        inbox.Add("LES", true, false, "next second", 1.1f);
+        for (int i = 0; i < 100; i++) inbox.Add("LES", true, false, "delayed callback", i % 2 == 0 ? 0.9f : 1.2f);
+        Check(inbox.Drain().DetailSkipped == 93, "out-of-order callback timestamps cannot reopen detail budgets");
+        long beforePause = inbox.Totals.Errors;
+        inbox.Enable(false); inbox.Add("LES", true, false, "paused", 1);
+        Check(inbox.Totals.Errors == beforePause, "stopping the listener stops capture without erasing history");
+        inbox.Enable(true);
+        for (int i = 1; i <= 120; i++) inbox.Add("Together", true, false, "later failure " + i, i);
+        var retained = inbox.Messages();
+        Check(retained.Length == 97 && retained[0].Text.StartsWith("first failure"), "bounded rolling samples retain the first original error after an extended storm");
+        inbox.Clear();
+        inbox.Add("LES", true, false, new string('x', 9000), 121);
+        Check(inbox.Messages()[0].Text.Length < 2100 && inbox.Messages()[0].Text.EndsWith("[truncated]"), "large stack storage is bounded and explicitly marked");
+        inbox.Add("LES", true, false, new DangerousText(), 122);
+        Check(inbox.Totals.Errors == 2, "log sampling does not invoke arbitrary object ToString methods");
+        inbox.Add("Unity Log", true, false, "LiteEntitySystem.Internal.InternalEntity failure", 123);
+        inbox.Add("LES", false, false, "P:1 Request baseline 30 because timeout", 124);
+        inbox.Add("Together", false, true, "warning", 125);
+        Check(inbox.Totals.Errors == 3 && inbox.Totals.BaselineLogs == 1 && inbox.Totals.Warnings == 1, "external LES stack messages, observed baseline logs and warnings remain separate");
+        inbox.Add("LES", true, false, "invalid time", float.NaN);
+        Check(inbox.Totals.Errors == 3, "invalid timestamps cannot pollute counters");
+        inbox.Clear();
+        var tasks = new Task[4];
+        for (int worker = 0; worker < tasks.Length; worker++)
+            tasks[worker] = Task.Run(() => { for (int i = 0; i < 2500; i++) inbox.Add("LES", true, false, "concurrent", 1); });
+        Task.WaitAll(tasks);
+        Check(inbox.Totals.Errors == 10000 && inbox.Messages().Length == 8, "concurrent log callbacks preserve exact totals and bounded storage");
+        inbox.Enable(false); inbox.Clear();
+        Check(inbox.Totals.Errors == 0 && inbox.Messages().Length == 0, "explicit clear releases evidence and counters");
+
+        var tail = new FrameTail();
+        for (int i = 0; i < 1000; i++) tail.Add(i * 0.01f, i % 100 == 0 ? 100 : 10);
+        Check(Math.Abs(tail.LowOnePercent(9.999f, out int frames) - 10) < 0.001f && frames == 1000, "slowest one percent reflects repeated 100ms hitches rather than average FPS");
+        Check(tail.LowOnePercent(30, out frames) == -1 && frames == 0, "expired frame history never becomes a current low-FPS value");
+        tail.Clear();
+        for (int i = 0; i < 119; i++) tail.Add(1, 16);
+        Check(tail.LowOnePercent(1, out frames) == -1 && frames == 119, "short warm-up windows remain unavailable");
+        tail.Add(1, 16);
+        Check(Math.Abs(tail.LowOnePercent(1, out frames) - 62.5f) < 0.001f, "stable frames retain stable low-tail estimate");
+        tail.Clear(); tail.Add(1, float.NaN); tail.Add(float.PositiveInfinity, 10); tail.Add(1, -10);
+        Check(tail.LowOnePercent(1, out frames) == -1 && frames == 0, "invalid frame readings are rejected");
+
+        var alerts = new PerfAlerts();
+        for (int i = 0; i < 20; i++) alerts.Frame(i * 0.016f, 16, 0.1f, null);
+        alerts.Frame(1, 100, 0.1f, null);
+        int retainedCount = alerts.Events.Count, revision = alerts.Revision;
+        alerts.Enabled = false;
+        alerts.Frame(2, 500, 20, null);
+        alerts.Sample(new PerfSample { T = 2, Fps = 1, GC2 = 4 }, 0, 45);
+        Check(alerts.Events.Count == retainedCount && alerts.Revision == revision, "disabled fluctuation alerts preserve history without producing new events");
+        alerts.Enabled = true; alerts.Clear();
+        var stages = new float[] { -1, -1, -1, -1, -1, 1, -1 };
+        for (int i = 0; i < 20; i++) alerts.Frame(i * 0.016f, 16, 0.1f, stages);
+        stages[5] = 50; alerts.Frame(1, 16, 0.1f, stages);
+        Check(alerts.Events.Count == 0, "deliberate target-FPS waiting is not turned into a fluctuation warning");
+
+        var sample = new PerfSample { LongFrames = 3, Probe = new TogetherSnapshot { Enabled = true, Logs = new ProbeLogCounts { Errors = 5 },
+            Tick = -1, TickDelta = -1, Queue = -1, ChangedEntities = -1, QueuedChunks = -1, LesPlayers = -1, PendingBaseline = -1,
+            AckAgeSeconds = -1, MainCpuPct = -1, LowOnePercent = -1, JobWaitMs = -1, JobWaitPeakMs = -1, GcMs = -1, GcPeakMs = -1 } };
+        string report = ProbeReport.Format(sample);
+        Check(report.Contains("仅表示区间相关") && report.Contains("不可用"), "feedback reports correlation and unknown values without claiming causation");
+        Check(ProbeReport.Message(new ProbeMessage { Text = "<size=999>error</size>", Source = "<size=99>LES" }).IndexOf('<') < 0, "raw stacks and logger names cannot inject IMGUI rich-text markup");
+        DDEN.Shared.DdenLocalization.Language = DDEN.Shared.DdenLanguage.English;
+        Check(ProbeReport.Format(sample).Contains("correlation only"), "multiplayer feedback is localized without changing evidence");
+        DDEN.Shared.DdenLocalization.Language = DDEN.Shared.DdenLanguage.Chinese;
+
+        string root = Path.GetFullPath(".");
+        using var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(root, "src/DDEN.NetPerfTracker/bin/Release/DDEN.NetPerfTracker.dll"));
+        Check(assembly.Name.Version == new Version(2, 3, 1, 0), "probe feature has an independent 2.3.1 component version");
+        Check(!assembly.MainModule.AssemblyReferences.Any(reference => reference.Name == "CasualtiesMP" || reference.Name == "LiteEntitySystem" || reference.Name == "LiteNetLib"), "optional probe never hard-references Together or its network libraries");
+        foreach (var type in AllTypes(assembly.MainModule.Types))
+        foreach (var method in type.Methods)
+        {
+            Check(!method.CustomAttributes.Any(attribute => attribute.AttributeType.Namespace == "HarmonyLib"), "performance module remains free of Harmony patches");
+            if (!method.HasBody) continue;
+            Check(!method.Body.Instructions.Any(instruction => instruction.Operand is Mono.Cecil.MethodReference call
+                && call.DeclaringType.FullName == "DDEN.Shared.Mp" && (call.Name.Contains("Send") || call.Name == "Broadcast" || call.Name == "RequestServer")), "probe never sends network traffic");
+        }
+        string game = Environment.GetEnvironmentVariable("CUMOD_GAME_DIR") ?? @"L:\SteamLibrary\steamapps\common\Casualties Unknown";
+        string deps = Path.Combine(game, "BepInEx/plugins/Together");
+        using var les = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(deps, "LiteEntitySystem.dll"));
+        using var together = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(deps, "CasualtiesMP.dll"));
+        var net = together.MainModule.Types.Single(type => type.FullName == "Together.Net");
+        Check(net.Properties.Any(property => property.Name == "ServerEntityManager" && property.GetMethod.IsStatic), "installed Together exposes the observed server manager");
+        Check(together.MainModule.Types.Single(type => type.FullName == "Together.WorldChunkSync").Fields.Any(field => field.Name == "server_chunksync_queue" && field.IsStatic), "installed Together has the observed chunk queue");
+        var manager = les.MainModule.Types.Single(type => type.FullName == "LiteEntitySystem.ServerEntityManager");
+        Check(new[] { "_pendingClientRequests", "_changedEntities", "_netPlayers" }.All(name => manager.Fields.Any(field => field.Name == name)), "installed LES has all three bounded scalar observations");
+        Check(les.MainModule.Types.Single(type => type.FullName == "LiteEntitySystem.EntityManager").Properties.Any(property => property.Name == "Tick" && property.PropertyType.MetadataType == Mono.Cecil.MetadataType.UInt16), "installed LES tick is a wrapping ushort");
+        var sparse = les.MainModule.Types.Single(type => type.FullName == "LiteEntitySystem.Collections.SparseMap`1");
+        Check(sparse.Methods.Single(method => method.Name == "GetByIndex").ReturnType.IsByReference, "installed SparseMap requires avoiding ordinary invocation of its ref return");
+        Check(sparse.Fields.Any(field => field.Name == "_dense" && field.FieldType.IsArray)
+            && sparse.NestedTypes.Single(type => type.Name == "SparseEntry").Fields.Any(field => field.Name == "Value"), "read-only peer storage bindings match installed SparseMap metadata");
+        var player = les.MainModule.Types.Single(type => type.FullName == "LiteEntitySystem.NetPlayer");
+        Check(player.Fields.Any(field => field.Name == "State") && player.Fields.Any(field => field.Name == "ServerTickChangedTime" && field.FieldType.FullName == "System.DateTime"), "installed peer state and acknowledgement timestamp bindings exist");
+    }
+    private static System.Collections.Generic.IEnumerable<Mono.Cecil.TypeDefinition> AllTypes(System.Collections.Generic.IEnumerable<Mono.Cecil.TypeDefinition> types)
+    {
+        foreach (var type in types)
+        { yield return type; foreach (var nested in AllTypes(type.NestedTypes)) yield return nested; }
+    }
+    private static void UnityReplayChecks()
+    {
+        var inbox = new ProbeInbox(); inbox.Enable(true);
+        // Sanitized stack shapes from the AMD and Intel logs. Unity supplies stack as a separate argument.
+        const string decay = "at Together.Item_HandleDecay_MultiplayerPatch.Prefix (Item __instance)\n at Item.DMD<Item::Update>(Item)";
+        const string talker = "at UnityEngine.Component.GetComponentFastPath\n at TMPro.TMP_Text.get_rectTransform ()\n at Talker.DMD<Talker::LateUpdate>(Talker)";
+        const string wearable = "at Wearable.Awake ()\n UnityEngine.GameObject:SetActive\n CpuOptimizationAdv.CullWorld:RestoreAndClear()";
+        inbox.AddUnity("NullReferenceException", decay, 1);
+        inbox.AddUnity("NullReferenceException", talker, 1);
+        inbox.AddUnity("NullReferenceException", wearable, 1);
+        var counts = inbox.Drain(out var total);
+        Check(counts.UnityErrors == 3 && counts.Errors == 2 && total.UnityErrors == 3, "Unity replay captures all three dominant stack shapes and keeps attributed counts separate");
+        Check(inbox.Messages().Length == 3 && inbox.Messages()[0].Text.Contains("Together.Item_HandleDecay"), "Unity samples preserve the separately supplied original stack");
+        inbox.Add("Together", true, false, "original Bep error", 2);
+        inbox.AddUnity("[Error  :  Together] original Bep error", "", 2);
+        counts = inbox.Drain();
+        Check(counts.Errors == 1 && counts.UnityErrors == 0, "Bep-to-Unity mirrors are not counted twice");
+        inbox.AddUnity("[Error] a real engine error", "SomeOtherMod.Update", 3);
+        counts = inbox.Drain();
+        Check(counts.UnityErrors == 1 && counts.Errors == 0, "unattributed engine errors remain visible without blaming Together");
+        inbox.Clear();
+        inbox.AddUnity("NullReferenceException", new string('x', 9000), 4);
+        Check(inbox.Messages()[0].Text.Length < 2100 && inbox.Messages()[0].Text.EndsWith("[truncated]"), "Unity stack storage is bounded before concatenation");
+        inbox.Clear();
+        for (int i = 0; i < 10000; i++) inbox.AddUnity("NullReferenceException", decay, 5);
+        counts = inbox.Drain();
+        Check(counts.UnityErrors == 10000 && counts.Errors == 10000 && counts.DetailSkipped == 9992
+            && inbox.Messages().Length == 8, "Unity error storms preserve totals with the same bounded detail budget");
+        inbox.Enable(false); inbox.AddUnity("NullReferenceException", decay, 6);
+        Check(inbox.Totals.UnityErrors == 10000, "Unity capture stops when the probe is disabled");
+        var data = new DDEN.Diagnostics.DeepWindow { Active = true, Status = "active", Frames = 120, Patched = 12, Expected = 12 };
+        Check(DeepTimingReport.Header(data).Contains("互相包含") && DeepTimingReport.Header(data).Contains("完整帧 120"), "deep feedback explains overlapping scopes and completed-frame counts");
+        Check(DeepTimingReport.Row(new DDEN.Diagnostics.DeepRow { Name = "<size=999>bad", Available = false }).IndexOf('<') < 0, "method labels cannot inject UI markup");
+        DDEN.Shared.DdenLocalization.Language = DDEN.Shared.DdenLanguage.English;
+        Check(DeepTimingReport.Header(data).Contains("Completed frames"), "deep diagnostics UI is localized");
+        DDEN.Shared.DdenLocalization.Language = DDEN.Shared.DdenLanguage.Chinese;
+        using var binary = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetFullPath("."), "src/DDEN.NetPerfTracker/bin/Release/DDEN.NetPerfTracker.dll"));
+        var probe = binary.MainModule.Types.Single(type => type.Name == "TogetherProbe");
+        Check(probe.Methods.Single(method => method.Name == "Start").Body.Instructions.Any(instruction => instruction.Operand is Mono.Cecil.MethodReference method && method.Name == "add_logMessageReceivedThreaded")
+            && probe.Methods.Single(method => method.Name == "Stop").Body.Instructions.Any(instruction => instruction.Operand is Mono.Cecil.MethodReference method && method.Name == "remove_logMessageReceivedThreaded"), "Unity callback lifetime follows explicit probe start and stop");
+        Check(probe.Methods.Single(method => method.Name == "UnityLog").Body.Instructions.Any(instruction => instruction.Operand is Mono.Cecil.MethodReference method && method.Name == "AddUnity"), "Unity callback routes full separate stacks to the bounded inbox");
     }
 }

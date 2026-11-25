@@ -1,5 +1,29 @@
 # DS Tool Extension 变更记录
 
+## v1.2.11 · 2026-11-25
+- 配置项中文显示名与实验性标记：启用/日志（正常色），尸体刷新/稀有度（实验性色），label 随中英切换翻译。
+
+- DDEN 配置页新增两项：CorpseSpawn（是否从尸体低概率刷新，默认关）、SpawnFrequency（战利品池份数，1-20，默认 1=最稀有），注册时生效（改完需重启）。
+- 全部配置项在 DDEN 显示正常颜色（不再实验性），DdenDocs 逐项提供 功能/问题/方案 说明；
+- 补全中英双语覆盖（配置描述 + DdenDocs 文本 + 标题/状态）。
+
+## v1.2.10 · 2026-11-25
+
+- 修复与 JDI-DDEN 的 DDEN 配置键冲突：cfg section 由 General 改为 DS Tool Extension（DdenDocs 全局以 section/key 为键，General/Enabled 冲突导致 JDI 的条目被覆盖为实验性）。
+- 旧 cfg（General/Enabled、General/DebugLog）回到默认值（Enabled=true、DebugLog=false），功能无影响。
+
+## v1.2.9 · 2026-11-25
+
+- 稀有度定稿：三件物品去掉世界散布（WorldSpawnPerChunk 移除），改为仅从 ContainerCrate/DropCapsule/CapsuleContainer 与三个商人池低概率获得（SpawnFrequency=1，最稀档）；不含医疗箱/食品箱/尸体。
+
+## v1.2.8 · 2026-11-25
+
+- 三件物品设置低概率世界生成（WorldSpawnPerChunk=0.001，不再注入随机战利品池），降低刷新率。
+
+## v1.2.7 · 2026-11-24
+
+- 性能：DrillLoopSound 静态缓存 drillLoop clip；Update 在静默时早退；物品不在玩家槽位时禁用组件，Plugin 每 1 秒兜底重新检查（Parent 变化未触发也能恢复）。
+
 ## v1.2.6 · 2026-11-23
 
 - 性能优化：DrillLoopSound 缓存 InventorySlot/本地 Body，状态每 0.2 秒评估一次；BatteryEncumbranceReduction 每 0.5 秒检查一次，减少每帧 GetComponent 与容器字段写入。

@@ -1,0 +1,22 @@
+{
+  "性能跟踪器增强": "Performance tracker enhancement",
+  "正在细分计时": "Collecting detailed timings",
+  "等待性能采样与Together探针": "Waiting for performance sampling and the Together probe",
+  "深层计时已关闭": "Deep timing is off",
+  "计时未能停止，请重启游戏": "Hook removal incomplete; restart the game",
+  "计时方法不可用": "Timing methods are unavailable",
+  "部分方法可用": "Some methods are available",
+  "诊断": "Diagnostics",
+  "启用深层计时": "Enable deep timing",
+  "深层计时：开": "Deep timing: On",
+  "深层计时：关": "Deep timing: Off",
+  "无管理器时打开增强模块页面。": "Open the enhancement page when the manager is absent.",
+  "细分Together调用组耗时。": "Time individual methods within Together call groups.",
+  "定位主机人数相关开销与客机退场后的卡顿。": "Locate host costs related to player count and client stutters after a peer leaves.",
+  "仅增加计时；保留原方法及异常。暂停采样、关闭Together探针或此开关时撤下本模块的钩子。": "Adds timing only; original methods and exceptions are preserved. Pausing sampling or disabling either probe removes this module's hooks.",
+  "默认关闭；开启后有额外开销，切换后等待几秒再比较": "Off by default. Instrumentation adds overhead; setup time when first enabled is not a performance baseline.",
+  "需要性能跟踪器2.3.0和Together；在性能分析的“告警与联机反馈”页查看逐函数数据。\n只增加计时，不改变游戏逻辑或网络消息。关闭探针会撤下自有钩子；安装和撤下均可能带来一次卡顿。\n首次启用后先等待几秒，再比较相同场景。函数墙钟时间包含其他模组补丁和线程等待；父项含子项，不能相加。": "Requires tracker 2.3.0 and Together. View individual methods on the Alerts & multiplayer feedback page.\nAdds timing only; game logic and messages are unchanged. Disabling removes owned hooks; installation/removal may cause a one-off hitch.\nWait several seconds after enabling before comparing the same scene. Method wall times include other patches and thread waits; parents include children and must not be added.",
+  "通过独立Harmony探针细分Together、LES和物体更新耗时；需要性能跟踪器2.3.0并开启Together探针。默认关闭，不改变游戏逻辑。": "Time Together, LES and object updates using optional Harmony probes; requires tracker 2.3.0 and its Together probe. Disabled by default; gameplay is unchanged.",
+  "先启用性能采样和Together探针，再开启深层计时。数据在“告警与联机反馈”页查看。\n切换后等待几秒，再比较相同场景。各项耗时可能互相包含，请勿相加。": "Enable performance sampling and the Together probe, then detailed timing. Results appear in Alerts & multiplayer feedback.\nWait several seconds after switching before comparing the same scene. Timings may overlap; do not add them.",
+  "细分联机与物体更新耗时；需要启用性能采样和Together探针。默认关闭。": "Break down multiplayer and object update times. Requires performance sampling and the Together probe. Off by default."
+}
