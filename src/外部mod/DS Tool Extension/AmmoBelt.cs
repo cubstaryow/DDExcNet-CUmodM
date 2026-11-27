@@ -86,8 +86,18 @@ namespace DsToolExtension
         /// <summary>只有穿在身上（bandolier 槽）时才执行装填/转移。</summary>
         private bool IsWorn()
         {
+            Transform parent = transform.parent;
+            if (parent != null && parent.GetComponent<Limb>() != null) return true;
             Body body = PlayerCamera.main != null ? PlayerCamera.main.body : null;
-            return body != null && _item != null && body.GetWearableBySlotID("bandolier") == _item;
+            if (body == null || _item == null) return false;
+            for (int i = 0; i < body.limbs.Length; i++)
+            {
+                foreach (Transform child in body.limbs[i].transform)
+                {
+                    if (child != null && child.GetComponent<Item>() == _item) return true;
+                }
+            }
+            return false;
         }
 
         private static bool IsRemoteClient()
@@ -155,6 +165,7 @@ namespace DsToolExtension
                 }
                 if (mag == null) return;
 
+                var rounds = new List<AmmoScript>();
                 for (int i = 0; i < root.childCount; i++)
                 {
                     Transform child = root.GetChild(i);
@@ -164,8 +175,13 @@ namespace DsToolExtension
                     AmmoScript ammo = item.GetComponent<AmmoScript>();
                     if (ammo == null || ammo.itemType != AmmoScript.AmmoItemType.Round) continue;
                     if (ammo.ammoType != mag.ammoType) continue;
-                    mag.LoadRound(ammo);   // 装一发即停
-                    break;
+                    rounds.Add(ammo);
+                }
+                for (int i = 0; i < rounds.Count && mag != null && mag.rounds < mag.maxRounds; i++)
+                {
+                    AmmoScript round = rounds[i];
+                    if (round == null) continue;
+                    mag.LoadRound(round);   // 装满弹夹
                 }
             }
             catch (Exception ex)
@@ -215,4 +231,6 @@ namespace DsToolExtension
         }
     }
 }
+
+
 
