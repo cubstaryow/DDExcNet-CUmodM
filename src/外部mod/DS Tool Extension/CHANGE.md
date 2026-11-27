@@ -1,5 +1,11 @@
 ﻿# DS Tool Extension 变更记录
 
+## v1.3.1 · 2026-11-28
+
+- 自动装填优化：childCount 未变时跳过扫描；每 2 秒检查一次；找到未满弹夹后只装一发；
+- 新增弹药转移：每 10 秒把玩家其他容器里的三种子弹转移到本子弹带（主机/单机）；
+- 两者都要求子弹带穿在身上（bandolier 槽）执行，未穿戴时不做任何处理；
+- csproj 增加 UnityEngine.Physics2DModule 引用（转移时访问 rb.simulated）。
 ## v1.3.0 · 2026-11-28
 
 - 新增第四件装备：自动装填子弹带（Autoreloadingammobelt），实验性容器：
@@ -102,5 +108,6 @@
 - 循环音效 `drillLoop`（重型钻机同款，手持且攻击时播放）；
 - 中英文本走 `zh-CN.json` / `EN.json`；
 - DDEN L1 接入：实验性标记 + `DdenLocalize` 双语。
+
 
 
