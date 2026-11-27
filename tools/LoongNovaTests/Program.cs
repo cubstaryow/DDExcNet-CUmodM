@@ -700,11 +700,12 @@ for (int i = 0; i < 1000000; i++)
     CountLoot(LootRules.Select(8, "container", roll));
     CountLoot(LootRules.Select(128, "utility", roll));
 }
-Check(counts[Registration.DragonId] == 5000 && counts[Registration.WrenchId] == 1000 && counts[Registration.PickaxeId] == 1000, "Merchant tool-slot rates must be dragon 0.5 percent and wrench 0.1 percent");
-Check(counts[Registration.BeltId] == 1000 && counts[Registration.GunId] == 500 && counts[Registration.ChargeGunId] == 500 && counts[Registration.CellId] == 1000,
-    "Matching slots must produce belt/cell 0.1 percent and gun 0.05 percent");
-Check(counts[CannonAmmoState.BioId]==1000 && counts[CannonAmmoState.DemolitionId]==1000 && counts[CannonAmmoState.ExplosiveId]==1000,
-    "Each ammunition type must occupy a 0.1 percent interval of a compatible utility draw");
+Check(counts[Registration.DragonId] == 5000 && counts[Registration.WrenchId] == 5000 && counts[Registration.PickaxeId] == 8000, "Merchant tool-slot rates must be dragon/wrench 0.5 percent and pickaxe 0.8 percent");
+Check(counts[Registration.BeltId] == 1000 && counts[Registration.GunId] == 500 && counts[Registration.ChargeGunId] == 500 && counts[Registration.CellId] == 4000,
+    "Matching slots must produce belt 0.1 percent, cell 0.4 percent and each gun 0.05 percent");
+Check(counts[CannonAmmoState.BioId]==4000 && counts[CannonAmmoState.DemolitionId]==4000 && counts[CannonAmmoState.ExplosiveId]==4000,
+    "Each ordinary ammunition type must occupy a 0.4 percent interval of a compatible utility draw");
+LootRateChecks.Run(Check);
 int crateDragons=0;for(int rollIndex=0;rollIndex<100000;rollIndex++)if(LootRules.Select(8,"tool",(rollIndex+0.5)/100000)==Registration.DragonId)crateDragons++;
 Check(crateDragons==100,"Supply-crate dragon chance must be exactly 0.1 percent per tool-category draw");
 var bossWon = new BossDropGate();
@@ -721,6 +722,7 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
     MedicalChecks.Inspect(assembly,Check);
     RegrowthChecks.Inspect(assembly,Check);
     EconomyChecks.Inspect(assembly,Check);
+    LootRateChecks.Inspect(assembly,Check);
     ContentResourceChecks.Inspect(assembly,Check,root);
     RevivalChecks.Inspect(assembly,Check,root);
     var types = assembly.MainModule.Types;

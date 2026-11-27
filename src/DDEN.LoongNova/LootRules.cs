@@ -6,10 +6,17 @@ namespace DDEN.LoongNova
     internal static class LootRules
     {
         internal const double DragonChance = 0.005;
-        internal const double ToolChance = 0.001;
+        internal const double WrenchChance = 0.005;
+        internal const double PickaxeChance = 0.008;
+        internal const double BeltChance = 0.001;
+        internal const double InjectorChance = 0.005;
+        internal const double MedicalChance = 0.004;
+        internal const double RegenerationChance = 0.0005;
+        internal const double RevivalMedicalChance = 0.001;
+        internal const double RevivalAmmoChance = 0.0005;
         internal const double GunChance = 0.0005;
-        internal const double CellChance = 0.001;
-        internal const double AmmoChance = 0.001;
+        internal const double CellChance = 0.004;
+        internal const double AmmoChance = 0.004;
         internal const double CrateDragonChance = 0.001;
         internal const double ElderChance = 0.25;
         internal static bool IsTrader(int source) => source == 16 || source == 32 || source == 64 || source == 112;
@@ -21,7 +28,7 @@ namespace DDEN.LoongNova
         internal static string BonusRound(int index) => index == 0 ? CannonAmmoState.BioId
             : index == 1 ? CannonAmmoState.DemolitionId : index == 2 ? CannonAmmoState.ExplosiveId : index == 3 ? CannonAmmoState.DrillId
             : index == 4 ? CannonAmmoState.DrainId : index == 5 ? CannonAmmoState.BreachId : index == 6 ? CannonAmmoState.RevivalId : null;
-        private static string SelectAmmo(double roll, bool trader)
+        private static string SelectAmmo(double roll)
         {
             if (roll < AmmoChance) return CannonAmmoState.BioId;
             if (roll < AmmoChance * 2) return CannonAmmoState.DemolitionId;
@@ -29,7 +36,7 @@ namespace DDEN.LoongNova
             if (roll < AmmoChance * 4) return CannonAmmoState.DrillId;
             if (roll < AmmoChance * 5) return CannonAmmoState.DrainId;
             if (roll < AmmoChance * 6) return CannonAmmoState.BreachId;
-            if (trader && roll < AmmoChance * 7) return CannonAmmoState.RevivalId;
+            if (roll < AmmoChance * 6 + RevivalAmmoChance) return CannonAmmoState.RevivalId;
             return null;
         }
 
@@ -38,28 +45,28 @@ namespace DDEN.LoongNova
             if (!Eligible(source, category) || double.IsNaN(roll) || roll < 0 || roll > 1) return null;
             if (category == "medical")
             {
-                if (roll < ToolChance) return MedicalCatalog.InjectorId;
-                if (roll < ToolChance + GunChance) return source == 2 || IsTrader(source) ? MedicalCatalog.RegenerationId : null;
-                if (roll < ToolChance * 2 + GunChance) return MedicalCatalog.MedicalId;
-                if (roll < ToolChance * 2 + GunChance * 2) return CannonAmmoState.RevivalId;
+                if (roll < InjectorChance) return MedicalCatalog.InjectorId;
+                if (roll < InjectorChance + RegenerationChance) return source == 2 || IsTrader(source) ? MedicalCatalog.RegenerationId : null;
+                if (roll < InjectorChance + RegenerationChance + MedicalChance) return MedicalCatalog.MedicalId;
+                if (roll < InjectorChance + RegenerationChance + MedicalChance + RevivalMedicalChance) return CannonAmmoState.RevivalId;
                 return null;
             }
             if (category == "tool")
             {
                 double dragon = IsTrader(source) ? DragonChance : source == 8 ? CrateDragonChance : 0;
                 if (roll < dragon) return Registration.DragonId;
-                if (roll < dragon + ToolChance) return Registration.WrenchId;
-                if (roll < dragon + ToolChance * 2) return Registration.PickaxeId;
+                if (roll < dragon + WrenchChance) return Registration.WrenchId;
+                if (roll < dragon + WrenchChance + PickaxeChance) return Registration.PickaxeId;
             }
             else if (category == "utility")
             {
                 if (roll < GunChance) return Registration.GunId;
                 if (roll < GunChance * 2) return Registration.ChargeGunId;
                 if (roll < GunChance * 2 + CellChance) return Registration.CellId;
-                return SelectAmmo(roll - (GunChance * 2 + CellChance), IsTrader(source));
+                return SelectAmmo(roll - (GunChance * 2 + CellChance));
             }
-            else if (category == "ammo") return SelectAmmo(roll, IsTrader(source));
-            else if (roll < ToolChance) return Registration.BeltId;
+            else if (category == "ammo") return SelectAmmo(roll);
+            else if (roll < BeltChance) return Registration.BeltId;
             return null;
         }
     }

@@ -95,11 +95,32 @@ namespace DDEN.LoongNova
     [HarmonyPatch]
     internal static class LootPoolPatches
     {
-        private static MethodBase TargetMethod() => AccessTools.Method(
-            AccessTools.TypeByName("CUCoreLib.Registries.DropPoolRegistry"), "TryGetRandomItemId");
-        private static void Postfix(DropPool source, string fallbackCategory, ref string itemId, ref bool __result)
+        private static IDictionary<DropPool, List<string>> _sourcePools;
+        private static MethodBase TargetMethod()
         {
-            if (!__result || string.IsNullOrWhiteSpace(itemId) || Mp.IsRunning && !Mp.IsServer
+            var registry = AccessTools.TypeByName("CUCoreLib.Registries.DropPoolRegistry");
+            _sourcePools = (IDictionary<DropPool, List<string>>)AccessTools.Field(registry, "ExplicitPools").GetValue(null);
+            return AccessTools.Method(registry, "TryGetRandomItemId");
+        }
+        private static bool Prefix(DropPool source, string fallbackCategory, ref string itemId, ref bool __result, out bool __state)
+        {
+            __state = false;
+            if (Mp.IsRunning && !Mp.IsServer || !LootRules.Eligible((int)source, fallbackCategory)) return true;
+            List<string> category = null;
+            ItemLootPool.pool?.TryGetValue(fallbackCategory, out category);
+            _sourcePools.TryGetValue(source, out var explicitItems);
+            int ordinaryEntries = (category?.Count ?? 0) + (explicitItems?.Count ?? 0);
+            // One virtual CCL pool entry, alongside its category and source entries. Resolve it here
+            // so no placeholder item ID can escape into spawning, trading, saves or network packets.
+            if (Random.Range(0, ordinaryEntries + 1) != ordinaryEntries) return true;
+            string rare = ArsenalLootPool.TryPick((int)source, fallbackCategory, Random.value, Random.value);
+            if (rare == null) return true;
+            itemId = rare; __result = true; __state = true;
+            return false;
+        }
+        private static void Postfix(DropPool source, string fallbackCategory, ref string itemId, ref bool __result, bool __state)
+        {
+            if (__state || !__result || string.IsNullOrWhiteSpace(itemId) || Mp.IsRunning && !Mp.IsServer
                 || !LootRules.Eligible((int)source, fallbackCategory)) return;
             string rare = LootRules.Select((int)source, fallbackCategory, Random.value);
             if (rare != null) itemId = rare;

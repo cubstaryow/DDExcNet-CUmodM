@@ -28,6 +28,7 @@
     <Compile Include="../../src/DDEN.LoongNova/ItemCardLayout.cs" Link="ItemCardLayout.cs" />
     <Compile Include="../../src/DDEN.LoongNova/LowEnergyNotice.cs" Link="LowEnergyNotice.cs" />
     <Compile Include="../../src/DDEN.LoongNova/LootRules.cs" Link="LootRules.cs" />
+    <Compile Include="../../src/DDEN.LoongNova/ArsenalLootPool.cs" Link="ArsenalLootPool.cs" />
     <Compile Include="../../src/DDEN.LoongNova/BeltWingVisual.cs" Link="BeltWingVisual.cs" />
     <Compile Include="../../src/DDEN.LoongNova/WingFlightLease.cs" Link="WingFlightLease.cs" />
     <Compile Include="../../src/DDEN.LoongNova/DragonizationPatches.cs" Link="DragonizationPatches.cs" />

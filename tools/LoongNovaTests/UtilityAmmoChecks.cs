@@ -78,7 +78,8 @@ internal static class UtilityAmmoChecks
         foreach(int index in Enumerable.Range(0,LootRules.RoundCount))
         {
             var id=LootRules.BonusRound(index);
-            check(CannonAmmoState.IsRound(id)&&LootRules.Select(16,"ammo",(index+0.5)*LootRules.AmmoChance)==id,
+            double roll=index==6?0.02425:(index+0.5)*0.004;
+            check(CannonAmmoState.IsRound(id)&&LootRules.Select(16,"ammo",roll)==id,
                 "All seven rounds must be available through random spawn bonuses and rare merchant ammo slots");
         }
     }
