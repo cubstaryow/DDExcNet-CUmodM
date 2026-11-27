@@ -38,11 +38,11 @@ namespace DDEN.LoongNova
                     ? string.Format(Registration.Text("beltSocketLoaded"), state.Remaining, state.ChargeFraction * 100)
                     : Registration.Text("beltSocketEmpty");
             }
-            else if (item.id == Registration.GunId)
+            else if (Registration.IsGun(item.id))
             {
                 var gun = DragonGun.For(item);
                 hint = gun.CellHint();
-                loaded = gun.State.Loaded;
+                loaded = gun.IsChargeGun ? gun.Ammo.Loaded : gun.State.Loaded;
             }
             else if (item.id == Registration.CellId)
             {

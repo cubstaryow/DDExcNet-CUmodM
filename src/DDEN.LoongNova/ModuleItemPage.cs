@@ -12,9 +12,9 @@ namespace DDEN.LoongNova
         }
         private static readonly Card[] Cards =
         {
-            new Card(Registration.BeltId, "belt"), new Card(Registration.GunId, "gun"),
+            new Card(MedicalCatalog.InjectorId, "injector"), new Card(MedicalCatalog.RegenerationId, "regeneration"), new Card(MedicalCatalog.MedicalId, "medical"), new Card(MedicalCatalog.EmptyId, "emptyAmpoule"), new Card(CannonAmmoState.RevivalId, "revival"), new Card(Registration.BeltId, "belt"), new Card(Registration.GunId, "gun"),
             new Card(Registration.CellId, "cell"), new Card(Registration.WrenchId, "wrench"),
-            new Card(Registration.MatterId, "matter"), new Card(Registration.DragonId, "dragon")
+            new Card(Registration.ChargeGunId, "charge"), new Card(CannonAmmoState.BioId, "bio"), new Card(CannonAmmoState.DemolitionId, "demo"), new Card(CannonAmmoState.DrillId, "drill"), new Card(CannonAmmoState.DrainId, "drain"), new Card(CannonAmmoState.BreachId, "breach"), new Card(CannonAmmoState.CarrierId, "carrier"), new Card(CannonAmmoState.ExplosiveId, "explosive"), new Card(Registration.PickaxeId, "pickaxe"), new Card(Registration.MatterId, "matter"), new Card(Registration.DragonId, "dragon")
         };
         private readonly Color _copper = new Color(0.93f, 0.55f, 0.28f);
         private Vector2 _scroll;
@@ -84,10 +84,10 @@ namespace DDEN.LoongNova
             var body = PlayerCamera.main != null ? PlayerCamera.main.body : null;
             var held = body != null ? body.GetItem(body.handSlot) : null;
             string gunText = Registration.Text("notEquipped");
-            if (held != null && held.id == Registration.GunId)
+            if (held != null && Registration.IsGun(held.id))
             {
                 var gun = DragonGun.For(held);
-                gunText = string.Format(Registration.Text("gunLive"), gun.CellHint(), held.condition * 100);
+                gunText = string.Format(Registration.Text(gun.IsChargeGun ? "chargeLive" : "gunLive"), gun.CellHint(), held.condition * 100);
                 if (gun.Status.Length > 0) gunText += " · " + gun.Status;
             }
             DdenUI.Label(new Rect(box.x + 12, box.y + 4, box.width - 24, 22),

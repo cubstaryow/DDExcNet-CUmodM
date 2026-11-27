@@ -1,6 +1,6 @@
 # DS Tool Extension 维护说明
 
-本目录是独立外部模组，继承仓库操作与授权边界；DDEN 内部模块的 Shared 日志、接口和 UI 要求不适用于这里。保持程序集/插件名 `DS Tool Extension`、GUID `com.dstool.extension`、版本 **1.2.11**。不得为接管配置而强制引入 DDEN 公共层。
+本目录是独立外部模组，继承仓库操作与授权边界；DDEN 内部模块的 Shared 日志、接口和 UI 要求不适用于这里。保持程序集/插件名 `DS Tool Extension`、GUID `com.dstool.extension`、版本 **1.2.12**。不得为接管配置而强制引入 DDEN 公共层。
 
 ## 文件入口
 

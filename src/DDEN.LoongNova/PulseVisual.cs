@@ -56,6 +56,22 @@ namespace DDEN.LoongNova
         internal static void Play(JToken data, bool drawBeam = true, Item originGun = null)
         {
             if (data == null) return;
+            if (data.Value<bool?>("healingFields") == true) { HealingFields.Receive(data); return; }
+            if (data["injector"] != null) { MedicalInjector.Receive(data); return; }
+            if (data.Value<bool?>("breachDoors") == true) { CannonBreach.ReceiveDoors(data); return; }
+            if (data.Value<bool?>("chargeAudio") == true) { CannonChargeAudio.Receive(data); return; }
+            if (Mp.IsRunning && !Mp.IsServer && data["state"] is JObject state)
+            {
+                var item = NetworkAccess.Item(data.Value<int>("gun"));
+                if (item != null && item.id == Registration.ChargeGunId) DragonGun.For(item).ApplyServerState(state);
+            }
+            if (data["pellets"] is JArray pellets)
+            {
+                if (pellets.Count < 1 || pellets.Count > 20) return;
+                foreach (var pellet in pellets)
+                    if (pellet is JObject && pellet["pellets"] == null) Play(pellet, drawBeam, originGun);
+                return;
+            }
             float x = data.Value<float>("x"), y = data.Value<float>("y");
             float dx = data.Value<float>("dx"), dy = data.Value<float>("dy");
             if (!Finite(x) || !Finite(y) || !Finite(dx) || !Finite(dy)) return;
@@ -81,14 +97,16 @@ namespace DDEN.LoongNova
                 }
                 else { line.gameObject.SetActive(false); Available.Push(line); }
             }
-            Sound.Play("laser", start);
+            if (data.Value<bool?>("feedback") == false) return;
+            bool cannon = originGun != null ? originGun.id == Registration.ChargeGunId : data.Value<bool?>("cannon") == true;
+            Sound.Play(cannon ? "rifleshot" : "laser", start, pitchShift: !cannon);
             var body = PlayerCamera.main != null ? PlayerCamera.main.body : null;
             var held = body != null ? body.GetItem(body.handSlot) : null;
-            bool ours = held != null && held.id == Registration.GunId
+            bool ours = held != null && Registration.IsGun(held.id)
                 && (originGun != null ? held == originGun : Mp.IsRunning && NetworkAccess.Id(held) == data.Value<int>("gun"));
             if (ours)
             {
-                body.rb.velocity -= direction * 2;
+                body.rb.velocity -= direction * (cannon ? 6 : 2);
                 body.eyeScareTime = 1;
             }
         }

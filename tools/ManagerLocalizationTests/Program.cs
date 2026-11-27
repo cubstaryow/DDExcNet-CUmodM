@@ -244,7 +244,7 @@ declaration.Id = "future-module";
 Check(DdenVersionPolicy.Evaluate("3.0", null, "2.0", declaration, 1).ReleaseStatus == DdenReleaseStatus.Unrecorded, "unrecorded release is explicit");
 foreach (DdenReleaseStatus state in Enum.GetValues<DdenReleaseStatus>()) Check(ManagerText.Has("versions.release." + state), "release status translation exists: " + state);
 using (var mp = AssemblyDefinition.ReadAssembly(Path.Combine(root, "src/DDEN.MPfix/bin/Release/DDEN.MPfix.dll")))
-    Check(mp.Name.Version == new Version(1,8,0,0), "MPfix independent assembly version");
+    Check(mp.Name.Version == new Version(1,8,5,0), "MPfix independent assembly version");
 using (var perf = AssemblyDefinition.ReadAssembly(Path.Combine(root, "src/DDEN.NetPerfTracker/bin/Release/DDEN.NetPerfTracker.dll")))
     Check(perf.Name.Version == new Version(2,3,1,0), "tracker independent assembly version");
 using (var editor = AssemblyDefinition.ReadAssembly(Path.Combine(root, "src/DDEN.SaveEditor/bin/Release/DDEN.SaveEditor.dll")))

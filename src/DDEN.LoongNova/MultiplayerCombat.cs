@@ -32,6 +32,7 @@ namespace DDEN.LoongNova
             var combine = AccessTools.Method(Reflect.Type("Together.Body_CombineItems_MultiplayerPatch"), "Body_CombineItems");
             var eject = AccessTools.Method(Reflect.Type("Together.PlayerCamera_GunEjectMag_MultiplayerPatch"), "Postfix");
             var rack = AccessTools.Method(Reflect.Type("Together.PlayerCamera_GunRack_MultiplayerPatch"), "Postfix");
+            var use = Reflect.Type("Together.Body_UseItem_MultiplayerPatch");
             _trackerType = Reflect.Type("Together.TrackerGunScript");
             if (prefix == null || postfix == null || combine == null || eject == null || rack == null || _trackerType == null)
                 throw new MissingMethodException("Together gun compatibility");
@@ -53,26 +54,37 @@ namespace DDEN.LoongNova
                 harmony.Patch(combine, prefix: new HarmonyMethod(typeof(MultiplayerCombat), nameof(SkipNativeCombine)));
                 harmony.Patch(eject, prefix: new HarmonyMethod(typeof(MultiplayerCombat), nameof(SkipNativeCamera)));
                 harmony.Patch(rack, prefix: new HarmonyMethod(typeof(MultiplayerCombat), nameof(SkipNativeCamera)));
+                harmony.Patch(AccessTools.Method(use, "Prefix"), prefix: new HarmonyMethod(typeof(MultiplayerCombat), nameof(SkipNativeInjectorPrefix)));
+                harmony.Patch(AccessTools.Method(use, "Postfix"), prefix: new HarmonyMethod(typeof(MultiplayerCombat), nameof(SkipNativeInjectorUse)));
+                harmony.Patch(AccessTools.Method(Reflect.Type("Together.DrillPod_OnUse_MultiplayerPatch"), "OnUseRewritten"),
+                    prefix: new HarmonyMethod(typeof(DrillPodSource), nameof(DrillPodSource.Multiplayer)));
                 _guards = true;
             }
             catch { harmony.UnpatchSelf(); throw; }
         }
 
-        private static bool SkipNativeFire(GunScript __0) => __0.GetComponent<Item>()?.id != Registration.GunId;
-        private static bool SkipNativeCamera(PlayerCamera __0) => __0.body == null || __0.body.GetItem(__0.body.handSlot)?.id != Registration.GunId;
+        private static bool SkipNativeInjectorPrefix(Item item, ref bool __result)
+        {
+            if (item == null || item.id != MedicalCatalog.InjectorId) return true;
+            __result = true; // Allow Body.UseItem to invoke our delegate without a second native MP announcement.
+            return false;
+        }
+        private static bool SkipNativeInjectorUse(Item item) => item == null || item.id != MedicalCatalog.InjectorId;
+        private static bool SkipNativeFire(GunScript __0) => !Registration.IsGun(__0.GetComponent<Item>()?.id);
+        private static bool SkipNativeCamera(PlayerCamera __0) => __0.body == null || !Registration.IsGun(__0.body.GetItem(__0.body.handSlot)?.id);
 
         private static bool SkipNativeCombine(Body __0, Item __1, Item __2, ref bool __result)
         {
-            if (__1?.id == Registration.BeltId || __2?.id == Registration.BeltId)
+            if (__1?.id == Registration.BeltId || __2?.id == Registration.BeltId || __1?.id == MedicalCatalog.InjectorId || __2?.id == MedicalCatalog.InjectorId)
             {
                 // Belt operations always use the authenticated CCL channel, including tool-assisted ejection.
                 __result = false;
                 return false;
             }
-            if (__1?.id != Registration.GunId && __2?.id != Registration.GunId) return true;
-            var item = __1 != null && __1.id == Registration.GunId ? __1 : __2;
+            if (!Registration.IsGun(__1?.id) && !Registration.IsGun(__2?.id)) return true;
+            var item = __1 != null && Registration.IsGun(__1.id) ? __1 : __2;
             var cell = item == __1 ? __2 : __1;
-            if (Mp.CoreReady && Mp.IsRunning && Mp.IsServer && cell != null && cell.id == Registration.CellId)
+            if (Mp.CoreReady && Mp.IsRunning && Mp.IsServer && cell != null && (item.id == Registration.ChargeGunId ? CannonAmmoState.IsRound(cell.id) : cell.id == Registration.CellId))
                 LoongNovaPlugin.Service.Execute("load", DragonGun.For(item), cell, __0);
             __result = false;
             return false;
@@ -82,7 +94,7 @@ namespace DDEN.LoongNova
         private static bool BlockNativeShot(object __0, ref bool __result)
         {
             var component = __0 as Component;
-            if (component == null || component.GetComponent<Item>()?.id != Registration.GunId) return true;
+            if (component == null || !Registration.IsGun(component.GetComponent<Item>()?.id)) return true;
             __result = false;
             return false;
         }
@@ -91,6 +103,7 @@ namespace DDEN.LoongNova
         {
             if (!Ready || !Mp.CoreReady || !Mp.IsRunning || !Mp.IsServer) throw new InvalidOperationException("Multiplayer combat unavailable");
             if (gun.Tracker == null) gun.Tracker = gun.GetComponent(_trackerType) ?? gun.gameObject.AddComponent(_trackerType);
+            float priorStructure = gun.Gun.structureDamage, priorCreature = gun.Gun.animalDamage;
             var tracker = gun.Tracker;
             var netBody = NetworkAccess.NetBody(body);
             _body.SetValue(tracker, body);
@@ -108,6 +121,8 @@ namespace DDEN.LoongNova
                 _context[2].SetValue(null, false);
                 _context[3].SetValue(null, false);
                 _context[4].SetValue(null, false);
+                // Together's PvP path reads TrackerGunScript.og.animalDamage, not FireInfo.animalDamage.
+                gun.Gun.structureDamage = fire.structureDamage; gun.Gun.animalDamage = fire.animalDamage;
                 TurretScript.Shoot(fire);
                 // A pulse can cross several colliders belonging to one body or building.
                 var uniqueLimbs = new List<Limb>();
@@ -120,6 +135,7 @@ namespace DDEN.LoongNova
             }
             finally
             {
+                gun.Gun.structureDamage = priorStructure; gun.Gun.animalDamage = priorCreature;
                 for (int i = 0; i < _context.Length; i++) _context[i].SetValue(null, prior[i]);
                 limbs.Clear(); foreach (object limb in oldLimbs) limbs.Add(limb);
                 buildings.Clear(); foreach (object building in oldBuildings) buildings.Add(building);

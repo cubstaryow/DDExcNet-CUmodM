@@ -9,26 +9,56 @@ namespace DDEN.LoongNova
         internal const double ToolChance = 0.001;
         internal const double GunChance = 0.0005;
         internal const double CellChance = 0.001;
+        internal const double AmmoChance = 0.001;
+        internal const double CrateDragonChance = 0.001;
         internal const double ElderChance = 0.25;
         internal static bool IsTrader(int source) => source == 16 || source == 32 || source == 64 || source == 112;
         internal static bool IsContainer(int source) => source == 8 || source == 128 || source == 256;
-        internal static bool Eligible(int source, string category) => (IsTrader(source) || IsContainer(source))
-            && (category == "tool" || category == "utility" || category == "container");
+        internal static bool Eligible(int source, string category) => (IsTrader(source) || IsContainer(source) || source == 2 && category == "medical")
+            && (category == "tool" || category == "utility" || category == "container" || category == "ammo" || category == "medical");
+
+        internal const int RoundCount = 7;
+        internal static string BonusRound(int index) => index == 0 ? CannonAmmoState.BioId
+            : index == 1 ? CannonAmmoState.DemolitionId : index == 2 ? CannonAmmoState.ExplosiveId : index == 3 ? CannonAmmoState.DrillId
+            : index == 4 ? CannonAmmoState.DrainId : index == 5 ? CannonAmmoState.BreachId : index == 6 ? CannonAmmoState.RevivalId : null;
+        private static string SelectAmmo(double roll, bool trader)
+        {
+            if (roll < AmmoChance) return CannonAmmoState.BioId;
+            if (roll < AmmoChance * 2) return CannonAmmoState.DemolitionId;
+            if (roll < AmmoChance * 3) return CannonAmmoState.ExplosiveId;
+            if (roll < AmmoChance * 4) return CannonAmmoState.DrillId;
+            if (roll < AmmoChance * 5) return CannonAmmoState.DrainId;
+            if (roll < AmmoChance * 6) return CannonAmmoState.BreachId;
+            if (trader && roll < AmmoChance * 7) return CannonAmmoState.RevivalId;
+            return null;
+        }
 
         internal static string Select(int source, string category, double roll)
         {
             if (!Eligible(source, category) || double.IsNaN(roll) || roll < 0 || roll > 1) return null;
+            if (category == "medical")
+            {
+                if (roll < ToolChance) return MedicalCatalog.InjectorId;
+                if (roll < ToolChance + GunChance) return source == 2 || IsTrader(source) ? MedicalCatalog.RegenerationId : null;
+                if (roll < ToolChance * 2 + GunChance) return MedicalCatalog.MedicalId;
+                if (roll < ToolChance * 2 + GunChance * 2) return CannonAmmoState.RevivalId;
+                return null;
+            }
             if (category == "tool")
             {
-                double dragon = IsTrader(source) ? DragonChance : 0;
+                double dragon = IsTrader(source) ? DragonChance : source == 8 ? CrateDragonChance : 0;
                 if (roll < dragon) return Registration.DragonId;
                 if (roll < dragon + ToolChance) return Registration.WrenchId;
+                if (roll < dragon + ToolChance * 2) return Registration.PickaxeId;
             }
             else if (category == "utility")
             {
                 if (roll < GunChance) return Registration.GunId;
-                if (roll < GunChance + CellChance) return Registration.CellId;
+                if (roll < GunChance * 2) return Registration.ChargeGunId;
+                if (roll < GunChance * 2 + CellChance) return Registration.CellId;
+                return SelectAmmo(roll - (GunChance * 2 + CellChance), IsTrader(source));
             }
+            else if (category == "ammo") return SelectAmmo(roll, IsTrader(source));
             else if (roll < ToolChance) return Registration.BeltId;
             return null;
         }

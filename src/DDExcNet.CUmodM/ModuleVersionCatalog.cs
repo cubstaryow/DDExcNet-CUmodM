@@ -11,8 +11,8 @@ namespace DDExcNet.CUmodM
         internal const int SupportedApi = 1;
         private static readonly Dictionary<string, string> Recorded = new Dictionary<string, string>(System.StringComparer.Ordinal)
         {
-            ["mpfix"] = "1.8.0", ["perf"] = "2.3.1", ["perfdeep"] = "0.2.1-alpha", ["saveeditor"] = "2.0.1-alpha",
-            ["unitlistmgr"] = "0.1.2-alpha", ["loongnova"] = "1.0.1"
+            ["mpfix"] = "1.8.5", ["perf"] = "2.3.1", ["perfdeep"] = "0.2.1-alpha", ["saveeditor"] = "2.0.1-alpha",
+            ["unitlistmgr"] = "0.1.2-alpha", ["loongnova"] = "1.1.0"
         };
         internal static readonly IReadOnlyList<string> KnownIds = new[] { "mpfix", "perf", "perfdeep", "saveeditor", "unitlistmgr", "loongnova" };
         internal static string Latest(string id) => id != null && Recorded.TryGetValue(id, out var version) ? version : null;

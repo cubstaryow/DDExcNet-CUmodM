@@ -6,7 +6,7 @@
 | --- | --- |
 | `DDEN.Shared` | 模块契约、配置绘制、兼容、反射／联机桥、存档编解码与日志 |
 | `DDExcNet.CUmodM` | 管理器窗口、路由、输入隔离 |
-| `DDEN.LoongNova` | 龙灼线束、龙息单元、重力腰带、龙化工具／配方与CCL联机适配 |
+| `DDEN.LoongNova` | 龙域武库（LoongNova，龙化装备包）：龙灼线束、龙息单元、重力腰带、龙化工具／配方与CCL联机适配 |
 | `DDEN.MPfix` | 多人修复、可选主机配置与娱乐分支 |
 | `DDEN.SaveEditor` | 存档工作副本、图形化编辑与保存 |
 | `DDEN.NetPerfTracker` | 只读性能采样／图表／日志，无Harmony补丁 |

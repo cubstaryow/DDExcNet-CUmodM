@@ -9,7 +9,7 @@ namespace DDEN.LoongNova
     {
         private const BindingFlags Static = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
         private static Type _trackerType, _idType, _syncType;
-        private static MethodInfo _itemById, _bodyBySender;
+        private static MethodInfo _itemById, _bodyBySender, _reachItem, _itemSyncInfo;
         private static PropertyInfo _serverManager, _clientManager;
         private static FieldInfo _trackerId, _idValue;
         internal static object Connection => !Mp.CoreReady || !Mp.IsRunning ? null
@@ -27,6 +27,18 @@ namespace DDEN.LoongNova
         internal static int Id(Item item)
         {
             if (item == null || !Mp.IsRunning) return 0;
+            if (_syncType == null) _syncType = Reflect.Type("Together.SyncInfo");
+            if (_itemSyncInfo == null && _syncType != null) _itemSyncInfo = Reflect.Type("Together.ItemSync")?.GetMethod("TryGetSyncInfo", Static,
+                null, new[] { typeof(Item), _syncType.MakeByRefType() }, null);
+            if (_itemSyncInfo != null)
+            {
+                var args = new object[] { item, null };
+                if (_itemSyncInfo.Invoke(null, args) is bool found && found)
+                {
+                    var syncId = Reflect.GetInstance(args[1], "syncId");
+                    if (syncId != null && Reflect.GetInstance(syncId, "id") is ushort nativeId) return nativeId;
+                }
+            }
             if (_trackerType == null) _trackerType = Reflect.Type("Together.SyncInfoGameObjectTracker");
             var tracker = _trackerType == null ? null : item.GetComponent(_trackerType);
             if (tracker == null) return 0;
@@ -71,6 +83,16 @@ namespace DDEN.LoongNova
             if (body.HoldingItem(item)) return true;
             foreach (Item candidate in body.GetAllItemsThorough()) if (candidate == item) return true;
             return false;
+        }
+        internal static bool CanAccess(Body body, Item item)
+        {
+            if (body == null || item == null) return false;
+            if (!Mp.IsRunning) return body.DoPickupCheck(item, noAlerts: true);
+            if (!Mp.CoreReady) return false;
+            // Use the same defaults as native MP combine/battery handlers; no additional range or ray check.
+            if (_reachItem == null) _reachItem = Reflect.Type("Together.ItemSync")?.GetMethod("CheckIfBodyReachThisItem", Static,
+                null, new[] { typeof(Item), typeof(Body), typeof(float), typeof(bool) }, null);
+            return _reachItem?.Invoke(null, new object[] { item, body, 20f, false }) is bool allowed && allowed;
         }
     }
 }

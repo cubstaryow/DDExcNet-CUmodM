@@ -11,7 +11,7 @@ namespace DDEN.LoongNova
     internal sealed class WeaponService
     {
         internal const string Channel = "dden.loongnova.action.v1";
-        private const string VisualChannel = "dden.loongnova.pulse.v1";
+        internal const string VisualChannel = "dden.loongnova.pulse.v1";
         private Delegate _handler;
         private float _retryAt;
         private object _connection;
@@ -52,6 +52,8 @@ namespace DDEN.LoongNova
                         if (Mp.CoreReady && Mp.IsRunning && !Mp.IsServer) PulseVisual.Play(token);
                     })) return;
                     if (!Mp.RegisterClientHandler(WingVisualSync.Channel, WingVisualSync.Receive)) return;
+                    if (!Mp.RegisterSyncModule("dden.loongnova.breach-doors.v1", CannonBreach.CaptureDoors, data => CannonBreach.ReceiveDoors(data))) return;
+                    if (!Mp.RegisterSyncModule("dden.loongnova.healing-fields.v1", HealingFields.Capture, data => HealingFields.Receive(data, true))) return;
                     MultiplayerCombat.InstallGuards();
                     _handler = receiver;
                     break;
@@ -80,8 +82,14 @@ namespace DDEN.LoongNova
                 if (Time.unscaledTime - peer.Window >= 1) { peer.Window = Time.unscaledTime; peer.Count = 0; }
                 if (++peer.Count > 24) return new JObject { ["ok"] = false, ["request"] = request };
                 var item = NetworkAccess.Item(packet.Value<int>("gun"));
-                if (item == null || item.id != Registration.GunId && item.id != Registration.BeltId)
+                if (item == null || !Registration.IsGun(item.id) && item.id != Registration.BeltId && item.id != MedicalCatalog.InjectorId)
                     return new JObject { ["ok"] = false, ["request"] = request };
+                if (item.id == MedicalCatalog.InjectorId)
+                {
+                    var reply = MedicalInjector.For(item).Execute(packet.Value<string>("operation"),
+                        NetworkAccess.Item(packet.Value<int>("cell")), NetworkAccess.Body(sender));
+                    reply["request"] = request; Remember(peer, request, reply); return reply;
+                }
                 if (item.id == Registration.BeltId)
                 {
                     var reply = GravityBelt.For(item).Execute(packet.Value<string>("operation"),
@@ -110,22 +118,22 @@ namespace DDEN.LoongNova
 
         internal JObject Execute(string operation, DragonGun gun, Item cell, Body body, Vector2? direction = null)
         {
-            if (gun == null || gun.Item == null || gun.Item.id != Registration.GunId
+            if (gun == null || gun.Item == null || !Registration.IsGun(gun.Item.id)
                 || Mp.IsRunning && (!Mp.IsServer || !Ready) || body == null || !body.conscious
-                || body.GetItem(body.handSlot) != gun.Item && !NetworkAccess.Carries(body, gun.Item)) return Reply(gun, false);
+                || (operation == "load" || operation == "eject" || operation == "read" ? !NetworkAccess.CanAccess(body, gun.Item) : !NetworkAccess.Carries(body, gun.Item))) return Reply(gun, false);
+            if (gun.IsChargeGun) return CannonService.Execute(operation, gun, cell, body, direction);
             if (operation == "read") return Reply(gun, true);
+            if (operation == "cancel") { gun.Charge.Cancel(); return Reply(gun, true); }
+            if (operation == "load" || operation == "eject") gun.Charge.Cancel();
             if (operation == "load")
             {
-                if (gun.State.Loaded || cell == null || cell.id != Registration.CellId || !NetworkAccess.Carries(body, cell)) return Reply(gun, false);
+                if (gun.State.Loaded || cell == null || cell.id != Registration.CellId || !NetworkAccess.CanAccess(body, cell)) return Reply(gun, false);
                 if (!Finite(cell.condition)) return Reply(gun, false);
                 float energy = Mathf.Clamp01(cell.condition) * EnergyState.Capacity;
                 bool favourite = cell.favourited;
-                // Detach before committing ownership to the gun. Destroy is deferred by Unity.
-                if (cell.TryGetParentContainer(out var container)) container.UnloadItem(cell);
-                body.DropItem(cell);
-                if (cell.transform.parent != null) return Reply(gun, false);
+                // Match native BatteryItem.LoadBattery: store charge, then consume the item in place.
                 gun.State.Set(true, energy, favourite);
-                cell.gameObject.SetActive(false);
+
                 UnityEngine.Object.Destroy(cell.gameObject);
                 Sound.Play("gunloadmag", gun.transform.position);
             }
@@ -187,6 +195,6 @@ namespace DDEN.LoongNova
             peer.Order.Enqueue(request);
             if (peer.Order.Count > 128) peer.Completed.Remove(peer.Order.Dequeue());
         }
-        private static JObject Reply(DragonGun gun, bool ok) => new JObject { ["ok"] = ok, ["state"] = gun?.State.Capture() };
+        private static JObject Reply(DragonGun gun, bool ok) => new JObject { ["ok"] = ok, ["state"] = gun?.CaptureState(), ["chargeElapsed"] = gun?.Charge.Elapsed(Time.time) ?? 0 };
     }
 }

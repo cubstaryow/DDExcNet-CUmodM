@@ -39,7 +39,7 @@ cubstaryow 名下有两位 agent 在同一个仓库工作，分工如下（同�
 
 ## 工作边界
 
-- DDEN组件独立版本：Shared 2.0.1（API v1）、管理器2.1.0、MPfix 1.8.0、性能跟踪器2.3.1、增强0.2.1-alpha、存档编辑器2.0.1-alpha、UnitListMgr 0.1.2-alpha、LoongNova 1.0.1；各csproj独立维护，不再统一升号，见[版本契约](../docs/component-versions.md)。DDExcNet发布包仅六个DDEN产物（含Shared）；ET-Fix／JDI-DDEN独立版本，不随包发布，不把Unity引擎版本当游戏版本。
+- DDEN组件独立版本：Shared 2.0.1（API v1）、管理器2.1.0、MPfix 1.8.0、性能跟踪器2.3.1、增强0.2.1-alpha、存档编辑器2.0.1-alpha、UnitListMgr 0.1.2-alpha、LoongNova 1.1.0；各csproj独立维护，不再统一升号，见[版本契约](../docs/component-versions.md)。DDExcNet发布包仅六个DDEN产物（含Shared）；ET-Fix／JDI-DDEN独立版本，不随包发布，不把Unity引擎版本当游戏版本。
 - Git操作以用户授权及仓库工作流程为准；在 `dev`提交经过检查的相关文件，获准后普通推送 `origin/dev`。不force push、不改remote、不替用户合并master、打tag或创建Release。不要把一次任务的授权推广到无关任务。
 - 写入L盘需依照工具权限申请执行；不要把工具权限失败误判为仓库bare或擅自修改git配置。保护用户已有改动，不用reset/clean丢弃内容，不用无差别add把无关文件带入提交。
 - 不提交 `bin/obj/dist/artifacts/decomp/backup`或商业游戏／第三方依赖。反编译仅阅读结论，不复制他人实现。

@@ -1,4 +1,4 @@
-# DDExcNet 1.8.0 — 安装 / Installation
+# DDExcNet 1.8.5 — 安装 / Installation
 
 本包为八个 DDExcNet 组件：公共层、管理器、MPfix、性能跟踪器、可选深层诊断、可选存档编辑器、可选单位清单管理器与龙灼线束。
 现有 DLL / GUID / 配置仍使用 DDEN 名称。ET-Fix、JDI-DDEN、DS Tool Extension 是独立外部模组，不含在本包中。
@@ -11,6 +11,11 @@
 4. 启动游戏，按管理器快捷键（默认 **F11**）打开面板，或在控制台输入 `dden`。与其他模组撞键时管理器会自动换键并保存，以界面显示为准。
 5. 联机：主机与每一位客机装同一版本。多人修复需要 Together / CasualtiesMP **5.5.5**；无芯片同步、合成补救、商人快照、主机权威配置还需要 CUCoreLib。
 6. 卸载：删掉 `BepInEx/plugins/DDEN/` 里的 dll 即可，不写注册表、不留后台服务。存档编辑器会在你改过的存档旁留 `.cumod.bak` 备份。
+
+## Nexus 分发包
+
+N 网：主包含 DDEN 公共层 / 管理器 / 多人修复 / 性能跟踪器 / 深层诊断 / 存档编辑器 / 单位清单管理器；
+**龙域武库（DDEN.LoongNova.dll）单独一个包**，需要时另装，避免重复安装。
 
 ## 实验性模块 / Experimental
 
@@ -31,6 +36,6 @@ Experimental modules: the save editor and the unit list manager are experimental
 ## 校验 / Verification
 
 ```
-SHA256(DDExcNet-v1.8.0.zip) = 4f74216dea6a2018554a4d30f24595fba9530f186c39cd674fc991b8cb7975c8
-大小 = 7256.3 KB
+SHA256(DDExcNet-v1.8.5.zip) = 2c2b0956853e07c081e786f5bcc7e65113619b922f05281f8e2005c3b10aba9a
+大小 = 394.9 KB
 ```

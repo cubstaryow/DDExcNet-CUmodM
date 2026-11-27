@@ -37,6 +37,7 @@ namespace DDEN.LoongNova
         {
             // Delegates are local behavior and cannot be reconstructed from CCL's JSON content snapshot.
             if (id == Registration.WrenchId && __result != null) __result.useAction = Registration.UseWrench;
+            if (id == Registration.PickaxeId && __result != null) __result.useAction = Registration.UsePickaxe;
             if (id != Registration.CellId || Registration.CellStats == null) return;
             __result = Registration.CellStats;
             // Keep direct dictionary consumers consistent with Item.Stats after CCL reinjection.
@@ -46,7 +47,12 @@ namespace DDEN.LoongNova
         [HarmonyPatch(typeof(Item), "Start"), HarmonyPostfix]
         private static void EnsureGunComponent(Item __instance)
         {
-            if (__instance.id == Registration.GunId) DragonGun.For(__instance).Normalize();
+            if (Registration.IsGun(__instance.id))
+            {
+                DragonGun.For(__instance).Normalize();
+                if (__instance.id == Registration.ChargeGunId && __instance.GetComponent<CannonChargeAudio>() == null)
+                    __instance.gameObject.AddComponent<CannonChargeAudio>();
+            }
             else if (__instance.id == Registration.BeltId) GravityBelt.For(__instance).RefreshEncumbrance();
         }
 
@@ -64,10 +70,13 @@ namespace DDEN.LoongNova
                 __result = other != null && (other.id == Registration.CellId ? !loaded : loaded && IsTool(other));
                 return false;
             }
-            if (it1?.id != Registration.GunId && it2?.id != Registration.GunId) return true;
-            var gun = it1 != null && it1.id == Registration.GunId ? it1 : it2;
+            if (!Registration.IsGun(it1?.id) && !Registration.IsGun(it2?.id)) return true;
+            var gun = it1 != null && Registration.IsGun(it1.id) ? it1 : it2;
             var cell = gun == it1 ? it2 : it1;
-            __result = cell != null && cell.id == Registration.CellId && !DragonGun.For(gun).State.Loaded;
+            var controller = DragonGun.For(gun);
+            __result = cell != null && (gun.id == Registration.ChargeGunId
+                ? CannonAmmoState.IsRound(cell.id) && controller.Ammo.CanLoad && !controller.State.Loaded && cell.condition > 0
+                : cell.id == Registration.CellId && !controller.State.Loaded);
             return false;
         }
 
@@ -82,10 +91,10 @@ namespace DDEN.LoongNova
                 else if (IsTool(other)) GravityBelt.For(belt).Request("eject", __instance);
                 return false;
             }
-            if (it1?.id != Registration.GunId && it2?.id != Registration.GunId) return true;
-            var gun = it1 != null && it1.id == Registration.GunId ? it1 : it2;
+            if (!Registration.IsGun(it1?.id) && !Registration.IsGun(it2?.id)) return true;
+            var gun = it1 != null && Registration.IsGun(it1.id) ? it1 : it2;
             var cell = gun == it1 ? it2 : it1;
-            if (cell != null && cell.id == Registration.CellId) DragonGun.For(gun).Request("load", __instance, cell);
+            if (cell != null && (gun.id == Registration.ChargeGunId ? CannonAmmoState.IsRound(cell.id) : cell.id == Registration.CellId)) DragonGun.For(gun).Request("load", __instance, cell);
             return false;
         }
 
@@ -95,10 +104,10 @@ namespace DDEN.LoongNova
         private static bool GunUpdate(GunScript __instance)
         {
             var item = __instance.GetComponent<Item>();
-            if (item == null || item.id != Registration.GunId) return true;
+            if (item == null || !Registration.IsGun(item.id)) return true;
             var state = DragonGun.For(item);
             // Network content snapshots can replace CCL's useAction delegate with its default.
-            if (__instance.triggerPressed && PlayerCamera.main != null)
+            if (item.id == Registration.GunId && __instance.triggerPressed && PlayerCamera.main != null)
                 state.Request("shoot", PlayerCamera.main.body);
             __instance.triggerPressed = false;
             state.Normalize();
@@ -109,30 +118,25 @@ namespace DDEN.LoongNova
         private static bool Eject(GunScript __instance)
         {
             var item = __instance.GetComponent<Item>();
-            if (item == null || item.id != Registration.GunId) return true;
+            if (item == null || !Registration.IsGun(item.id)) return true;
             if (PlayerCamera.main != null) DragonGun.For(item).Request("eject", PlayerCamera.main.body);
             return false;
         }
 
         [HarmonyPatch(typeof(GunScript), nameof(GunScript.TryRack)), HarmonyPrefix]
-        private static bool Rack(GunScript __instance) => __instance.GetComponent<Item>()?.id != Registration.GunId;
+        private static bool Rack(GunScript __instance)
+        {
+            var item = __instance.GetComponent<Item>();
+            if (item != null && item.id == Registration.ChargeGunId && PlayerCamera.main != null)
+                DragonGun.For(item).Request("rack", PlayerCamera.main.body);
+            return !Registration.IsGun(item?.id);
+        }
 
         [HarmonyPatch(typeof(GunScript), nameof(GunScript.LoadMag)), HarmonyPrefix]
-        private static bool Ammunition(GunScript __instance) => __instance.GetComponent<Item>()?.id != Registration.GunId;
+        private static bool Ammunition(GunScript __instance) => !Registration.IsGun(__instance.GetComponent<Item>()?.id);
 
         [HarmonyPatch(typeof(GunScript), nameof(GunScript.Fire)), HarmonyPrefix, HarmonyPriority(Priority.First)]
-        private static bool NativeFire(GunScript __instance) => __instance.GetComponent<Item>()?.id != Registration.GunId;
+        private static bool NativeFire(GunScript __instance) => !Registration.IsGun(__instance.GetComponent<Item>()?.id);
 
-        [HarmonyPatch(typeof(RecipeItem), nameof(RecipeItem.GetMatchingItem)), HarmonyPostfix]
-        private static void NearlyFullCell(RecipeItem __instance, System.Collections.Generic.List<Item> items,
-            System.Collections.Generic.List<Item> exclusions, ref Item __result)
-        {
-            if (__result != null || !__instance.specific || __instance.specificId != Registration.CellId || !__instance.noMaxCondition) return;
-            foreach (var item in items)
-            {
-                if (item == null || item.id != Registration.CellId || item.favourited || exclusions.Contains(item)) continue;
-                if (item.condition >= 0.991f && item.condition < 1) { __result = item; return; }
-            }
-        }
     }
 }

@@ -19,6 +19,12 @@ namespace DDEN.LoongNova
             return true;
         }
 
+        internal bool TrySpend(float amount)
+        {
+            if (!Loaded || float.IsNaN(amount) || float.IsInfinity(amount) || amount <= 0 || Energy < amount) return false;
+            Set(true, Energy - amount, Favourite);
+            return true;
+        }
         internal void Set(bool loaded, float energy, bool favourite)
         {
             Loaded = loaded;
