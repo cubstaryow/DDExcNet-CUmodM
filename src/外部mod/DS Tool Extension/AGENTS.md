@@ -1,6 +1,6 @@
-# DS Tool Extension 维护说明
+﻿# DS Tool Extension 维护说明
 
-本目录是独立外部模组，继承仓库操作与授权边界；DDEN 内部模块的 Shared 日志、接口和 UI 要求不适用于这里。保持程序集/插件名 `DS Tool Extension`、GUID `com.dstool.extension`、版本 **1.2.12**。不得为接管配置而强制引入 DDEN 公共层。
+本目录是独立外部模组，继承仓库操作与授权边界；DDEN 内部模块的 Shared 日志、接口和 UI 要求不适用于这里。保持程序集/插件名 `DS Tool Extension`、GUID `com.dstool.extension`、版本 **1.2.13**。不得为接管配置而强制引入 DDEN 公共层。
 
 ## 文件入口
 
@@ -36,3 +36,4 @@ dotnet build "DS Tool Extension.csproj" -c Release -m:1 -nodeReuse:false -p:Depl
 真实游戏验收需覆盖：物品出现、攻击数值/耗电、循环音效、中英切换、多人主机/客机。
 
 本文件保留独立模组的技术约束。协作方式见 [根目录 agent.md](../../../agent.md)，个人工作约定按协作者身份选择 `agent/` 中的对应文件。
+

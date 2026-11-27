@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Linq;
 using BepInEx;
 using BepInEx.Bootstrap;
@@ -19,7 +20,7 @@ namespace DsToolExtension
     /// 第二件：实验性等离子束发射器（Experimentalplasmaemitter）——等离子切割器升级版。
     /// CCL 前置、多人兼容、DDEN L1 软接入（实验性 + 中英双语）。
     /// </summary>
-    [BepInPlugin(Guid, "DS Tool Extension", "1.2.12")]
+    [BepInPlugin(Guid, "DS Tool Extension", "1.2.13")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.HardDependency)]
     [BepInDependency("com.a4kk.enhancedtools", BepInDependency.DependencyFlags.SoftDependency)]
     public class Plugin : BaseUnityPlugin
@@ -40,7 +41,6 @@ namespace DsToolExtension
         internal static ManualLogSource Log;
         internal static ConfigEntry<bool> Enabled;
         internal static ConfigEntry<bool> DebugLog;
-        internal static ConfigEntry<int> SpawnFrequency;
 
         internal static void LogInfo(string message) => Log?.LogInfo(message);
         internal static void LogWarning(string message) => Log?.LogWarning(message);
@@ -60,7 +60,6 @@ namespace DsToolExtension
             {
                 Enabled = Config.Bind("DS Tool Extension", "Enabled", true, "启用 DS 工具扩展。");
                 DebugLog = Config.Bind("DS Tool Extension", "DebugLog", false, "输出循环音效等调试日志（默认关闭）。");
-                SpawnFrequency = Config.Bind("DS Tool Extension", "SpawnFrequency", 1, new ConfigDescription("战利品池中的份数（1 最稀有，越大越常见）。", new AcceptableValueRange<int>(1, 20)));
                 bool hasET = Chainloader.PluginInfos.ContainsKey("com.a4kk.enhancedtools");
                 if (Enabled.Value)
                 {
@@ -89,11 +88,14 @@ namespace DsToolExtension
             DrillLoopSound.SweepAll();
         }
 
-        private static int SpawnFrequencyValue()
+        /// <summary>与 LoongNova 一致：只在商人/容器类来源、且类别匹配时参与稀有物摇号。</summary>
+        internal static bool LootSourceEligible(int source, string category)
         {
-            return SpawnFrequency != null ? Math.Max(1, SpawnFrequency.Value) : 1;
+            bool trader = source == 16 || source == 32 || source == 64 || source == 112;
+            bool container = source == 8 || source == 128 || source == 256;
+            if (!trader && !container) return false;
+            return category == "tool" || category == "utility" || category == "container";
         }
-
         private void RegisterDrill()
         {
             Sprite sprite = AssetLoader.LoadSpriteFromPluginFolder(this, "images/Experimental Ti-alloy drill.png", 8f);
@@ -124,7 +126,7 @@ namespace DsToolExtension
                     SpawnWithBattery = true
                 },
                 SpriteScale = 1f,
-                SpawnFrequency = SpawnFrequencyValue(),
+                DropPool = DropPool.None,
                 useAction = delegate (Body body, Item item)
                 {
                     if (item.condition > 0f && body.Attack(new AttackInfo
@@ -184,7 +186,7 @@ namespace DsToolExtension
                     SpawnWithBattery = true
                 },
                 SpriteScale = 1f,
-                SpawnFrequency = SpawnFrequencyValue(),
+                DropPool = DropPool.None,
                 useAction = delegate (Body body, Item item)
                 {
                     if (item.condition > 0f && body.Attack(new AttackInfo
@@ -266,7 +268,7 @@ namespace DsToolExtension
                 wearableHitDurabilityLossMultiplier = 0.15f,
                 wearableVisualOffset = 5,
                 SpriteScale = 0.45f,
-                SpawnFrequency = SpawnFrequencyValue(),
+                DropPool = DropPool.None,
                 InventoryIconScale = 1.5f
             };
 
@@ -457,6 +459,35 @@ namespace DsToolExtension
         }
     }
 
+    /// <summary>
+    /// 低概率掉落：CCL 正常抽完后，按来源与类别再摇一次；命中则替换为 DS 物品。
+    /// 钻机/等离子 20%，腿包 10%（每件独立摇，先后顺序固定）。
+    /// 仅主机/单机判定，客机不摇，避免与主机结果不一致。
+    /// </summary>
+    [HarmonyPatch]
+    internal static class LootPoolPatches
+    {
+        internal const double DrillChance = 0.20;
+        internal const double PlasmaChance = 0.20;
+        internal const double LegPackChance = 0.10;
+
+        private static MethodBase TargetMethod() => AccessTools.Method(
+            AccessTools.TypeByName("CUCoreLib.Registries.DropPoolRegistry"), "TryGetRandomItemId");
+
+        private static void Postfix(DropPool source, string fallbackCategory, ref string itemId, ref bool __result)
+        {
+            if (!__result || string.IsNullOrWhiteSpace(itemId)) return;
+            if (Plugin.Enabled != null && !Plugin.Enabled.Value) return;
+            if (!Plugin.LootSourceEligible((int)source, fallbackCategory)) return;
+
+            double roll = UnityEngine.Random.value;
+            if (roll < DrillChance) { itemId = Plugin.DrillItemId; return; }
+            roll -= DrillChance;
+            if (roll < PlasmaChance) { itemId = Plugin.PlasmaItemId; return; }
+            roll -= PlasmaChance;
+            if (roll < LegPackChance) { itemId = Plugin.LegPackItemId; }
+        }
+    }
     // DDEN CUmodM 的 L1 接入（零引用，反射约定）：实验性 + 中英双语
     public static class DdenBridge
     {
@@ -495,10 +526,7 @@ namespace DsToolExtension
                     fields["label"] = "日志";
                     fields["experimental"] = "false";
                     break;
-                case "SpawnFrequency":
-                    fields["label"] = "稀有度";
-                    fields["experimental"] = "true";
-                    break;
+
                 default:
                     return null;
             }
@@ -528,12 +556,7 @@ namespace DsToolExtension
                         how = "仅影响日志输出，不影响功能。";
                         restart = false;
                         break;
-                    case "SpawnFrequency":
-                        what = "调整三件物品在战利品池中的份数（越高越常见，1 为最稀有）。";
-                        fixes = "1 份时最难刷出。";
-                        how = "注册时写入 SpawnFrequency，改完需要重启游戏。";
-                        restart = true;
-                        break;
+
                     default:
                         what = pair.Value.Description.Description;
                         fixes = "";
@@ -557,11 +580,9 @@ namespace DsToolExtension
             {
                 case "启用 DS 工具扩展。": return "Enable DS Tool Extension.";
                 case "输出循环音效等调试日志（默认关闭）。": return "Output debug logs such as the loop sound (off by default).";
-                case "战利品池中的份数（1 最稀有，越大越常见）。": return "Entries in the loot pool (1 = rarest, higher = more common).";
                 case "启用": return "Enable";
                 case "日志": return "Log";
                 case "尸体刷新": return "Corpse spawn";
-                case "稀有度": return "Rarity";
                 case "未加载": return "Not loaded";
                 case "运行中": return "Running";
                 case "启用后注册实验性钛合金钻机、等离子束发射器与实验性特种腿包，并注入箱子/商人战利品池。": return "Registers the Experimental Ti-alloy drill, the Experimental plasma emitter and the Experimental special leg pack, and injects them into container/trader loot pools.";
@@ -570,11 +591,14 @@ namespace DsToolExtension
                 case "输出循环音效等调试日志。": return "Output debug logs such as the loop sound.";
                 case "排查音效问题时开启。": return "Enable when troubleshooting sound issues.";
                 case "仅影响日志输出，不影响功能。": return "Only affects log output, not functionality.";
-                case "调整三件物品在战利品池中的份数（越高越常见，1 为最稀有）。": return "Adjust how many entries the three items occupy in loot pools (higher = more common, 1 = rarest).";
-                case "1 份时最难刷出。": return "1 entry is the rarest setting.";
-                case "注册时写入 SpawnFrequency，改完需要重启游戏。": return "Written as SpawnFrequency at registration; restart the game after changing.";
                 default: return zh;
             }
         }
     }
 }
+
+
+
+
+
+
