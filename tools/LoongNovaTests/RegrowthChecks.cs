@@ -81,7 +81,8 @@ internal static class RegrowthChecks
                 &&Math.Abs(body.bloodViscosity+20)<0.01&&Math.Abs(body.radiationSickness-40)<0.01&&body.bloodVolume==37,
                 "Rapid treatment must remove venom reservoirs/sepsis, normalize blood viscosity and reduce radiation at 1/s without adding blood");
             Time.deltaTime=5;DragonLifeBlessingPatch.Bless(body);
-            check(Math.Abs(body.radiationSickness-35)<0.01&&body.venomTotal<13,"The aftereffect must continue blood detoxification and moderate radiation treatment");
+            check(Math.Abs(body.radiationSickness-40)<0.01&&Math.Abs(body.venomTotal-25)<0.01&&Math.Abs(body.septicShock-25)<0.01
+                &&Math.Abs(body.bloodViscosity+20)<0.01,"The aftereffect must not continue systemic detoxification, bad-blood treatment or radiation recovery");
             PlayerCamera.main=new PlayerCamera{body=body};body.venomCurrent=body.venomTotal=50;body.radiationSickness=50;
             HealingFieldEffects.Apply(body,5);
             check(body.venomCurrent==37.5f&&body.venomTotal==37.5f&&body.radiationSickness==45,
@@ -94,6 +95,26 @@ internal static class RegrowthChecks
         MedicalEffects.RecoverBlood(remote,5);check(remote.venomCurrent==50&&remote.venomTotal==50&&remote.radiationSickness==50,
             "Clients must not apply additional detoxification on top of host health snapshots");
         Mp.IsRunning=Mp.IsServer=false;PlayerCamera.main=null;
+        var reapply=new Body{bloodVolume=37,venomCurrent=50,venomTotal=50,radiationSickness=50};
+        var first=new Limb{body=reapply};var second=new Limb{body=reapply};reapply.limbs=new[]{first,second};
+        MedicalEffects.Apply(first,MedicalCatalog.MedicalId);Time.deltaTime=11;DragonLifeBlessingPatch.Bless(reapply);
+        check(reapply.radiationSickness==40&&reapply.venomTotal==25&&reapply.GetStatus<DragonLifeBlessing>().RapidRemaining==0,
+            "A frame crossing ten seconds must apply at most ten seconds of rapid systemic treatment");
+        Time.deltaTime=5;DragonLifeBlessingPatch.Bless(reapply);
+        check(reapply.radiationSickness==40&&reapply.venomTotal==25,"Aftereffect-only time must leave systemic values unchanged");
+        MedicalEffects.Apply(second,MedicalCatalog.MedicalId);Time.deltaTime=1;DragonLifeBlessingPatch.Bless(reapply);
+        check(reapply.radiationSickness==39&&reapply.venomTotal==22.5f,"A fresh quick-treatment dose during an existing aftereffect must restart its own ten-second systemic treatment");
+        MedicalEffects.Apply(first,MedicalCatalog.MedicalId);MedicalEffects.Apply(second,MedicalCatalog.MedicalId);
+        Time.deltaTime=1;DragonLifeBlessingPatch.Bless(reapply);
+        check(reapply.radiationSickness==38&&reapply.venomTotal==20,"Multiple treated limbs must not multiply systemic drug potency");
+        var rapidSave=JObject.FromObject(reapply.GetStatus<DragonLifeBlessing>());
+        check(rapidSave.Value<float>("RapidRemaining")==9,"The remaining rapid-treatment duration must persist separately from the aftereffect");
+        foreach(float delay in new[]{0f,5f})
+        {
+            var legacy=new Body{radiationSickness=50};legacy.Statuses[typeof(DragonLifeBlessing)]=JObject.Parse("{\"Delay\":"+delay+",\"Remaining\":120}").ToObject<DragonLifeBlessing>();
+            Time.deltaTime=1;DragonLifeBlessingPatch.Bless(legacy);
+            check(legacy.radiationSickness==(delay>0?49:50),"Legacy saves may infer an unfinished quick-treatment delay, never an entire systemic aftereffect");
+        }
     }
     internal static void Inspect(AssemblyDefinition assembly,Action<bool,string> check)
     {

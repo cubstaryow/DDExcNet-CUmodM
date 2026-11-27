@@ -24,10 +24,14 @@ namespace DDEN.LoongNova
         [HarmonyPrefix, HarmonyPriority(Priority.First)]
         private static void BeforePickup(Item item)
         {
-            if (item == null || item.id != Registration.ChargeGunId) return;
+            if (item == null || item.id != Registration.ChargeGunId && item.id != MedicalCatalog.InjectorId) return;
             var bought = item.GetComponent<BoughtItem>();
             // Native, CCL singleplayer and Together host purchases all add this marker before pickup.
-            if (bought != null && bought.time >= 299) CannonSpawnAmmo.Give(item);
+            if (bought != null && bought.time >= 299)
+            {
+                if (item.id == Registration.ChargeGunId) CannonSpawnAmmo.Give(item);
+                else MedicalInjector.For(item).GrantSpawnDose();
+            }
         }
     }
     [HarmonyPatch]
@@ -38,7 +42,10 @@ namespace DDEN.LoongNova
             AccessTools.TypeByName("CUCoreLib.Registries.BuildingEntityRegistry"), "SpawnDrop");
         private static void Postfix(string itemId, GameObject __result)
         {
-            if (itemId == Registration.ChargeGunId && __result != null) CannonSpawnAmmo.Give(__result.GetComponent<Item>());
+            if (__result == null) return;
+            var item = __result.GetComponent<Item>();
+            if (itemId == Registration.ChargeGunId) CannonSpawnAmmo.Give(item);
+            else if (itemId == MedicalCatalog.InjectorId && item != null) MedicalInjector.For(item).GrantSpawnDose();
         }
     }
 }

@@ -1,5 +1,12 @@
 # 变更记录
 
+## 2026-11-27 · 注射器合成空槽与医疗安瓿快速治疗阶段修正
+
+- 注射器不再在Awake中自动补医疗安瓿，合成结果为空槽。仅在CCL容器掉落工厂与原SP／MP商人购买入口发放初始医疗安瓿，沿用已保存的一次性发放标记与主机权威；读取存档、组件重建及普通背包移动不补药。自然刷新／购买仍带一剂，注射后仍保留空安瓿。
+- 医疗安瓿清理坏血、毒素及毒素储备、抗毒血清效果、降低辐射仅在10秒快速治疗期执行。120秒治疗后效只保留全身肌肉／皮肤各+0.5/s、感染-0.5/s及镇痛，不补充血容量。独立保存身体级RapidRemaining计时，多肢体注射不叠加全身药效，后效期间新注射可重启10秒快速治疗；旧存档仅从尚未结束的Delay推断剩余快速治疗，不让已有后效重新解毒。????弹治疗力场保持原效果。
+- 同步修正物品／BUFF说明，版本保持1.1.0，未改变贴图、配方材料或刷新概率。LoongNova与LoongNovaTests Release构建0警告／0错误，7992项离线检查通过，覆盖合成不配药、购买／容器专属配药入口、10秒阶段边界、后效不再全身解毒降辐射、重复注射不叠加及旧存档迁移。限定git diff --check通过；未启动、停止或部署游戏，未真实单人／多人验收，未提交推送。
+- 编译件已更新dist/LoongNova-v1.1.0/DDEN.LoongNova.dll，217088 字节，构建／交付SHA-256：9E8460A648F898443B0F7D064E16BAFAD832C327D1C31AB46DA9E53DCD39117D。
+
 ## 2026-11-27 · 修复安瓿贴图资源后缀重名导致的加载中断
 
 - 已核对游戏目录DLL与上一份dist修复件SHA-256一致，确认本次重启确实加载上一修订。最新日志不再是Item.GetItem空引用，而是在Registration.Resource -> LoadSprite -> RegisterMedical抛出InvalidOperationException: Sequence contains more than one matching element。原资源加载器通过EndsWith(suffix)后Single查找；请求ampoule.png时同时匹配空安瓿、medical-ampoule.png及regeneration-ampoule.png，因此在空安瓿注册处中断。

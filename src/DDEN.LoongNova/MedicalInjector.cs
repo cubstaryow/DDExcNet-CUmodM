@@ -20,8 +20,12 @@ namespace DDEN.LoongNova
         private void Awake()
         {
             Item = GetComponent<Item>(); Known = !Mp.IsRunning || Mp.IsServer;
-            if (Known) State.TryGrantSpawnDose();
             RefreshSprite();
+        }
+        internal bool GrantSpawnDose()
+        {
+            if (Mp.IsRunning && !Mp.IsServer || !State.TryGrantSpawnDose()) return false;
+            Known = true; RefreshSprite(); Publish(); return true;
         }
         private void LateUpdate() => RefreshSprite();
         internal void RefreshSprite()

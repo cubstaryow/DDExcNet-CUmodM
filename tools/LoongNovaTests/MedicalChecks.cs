@@ -7,6 +7,8 @@ internal static class MedicalChecks
 {
     internal static void Run(Action<bool,string> check)
     {
+        var manufactured=new AmpouleState();
+        check(!manufactured.Loaded&&!manufactured.SpawnDoseGranted,"Manufactured injectors must begin empty before any explicit purchase/drop grant");
         var factorySlot=new AmpouleState();
         check(factorySlot.TryGrantSpawnDose()&&factorySlot.Id==MedicalCatalog.MedicalId&&factorySlot.Condition==1&&factorySlot.SpawnDoseGranted,
             "A new injector must receive exactly one full medical ampoule");
@@ -166,9 +168,15 @@ internal static class MedicalChecks
             "Medical use must check effect eligibility before consuming and execute on the authority only");
         check(types.Single(t=>t.Name=="GunSaveProvider").Methods.Single(m=>m.Name=="Restore").Body.Instructions.Any(i=>i.Operand as string==MedicalCatalog.InjectorId),
             "Loaded medical injectors must be restored by the production item-save provider");
-        check(injector.Methods.Single(m=>m.Name=="Awake").Body.Instructions.Any(i=>i.Operand is MethodReference m&&m.Name=="TryGrantSpawnDose")
-            &&injector.Methods.Single(m=>m.Name=="Awake").Body.Instructions.Any(i=>i.Operand is MethodReference m&&m.Name=="get_IsServer"),
-            "Initial injector ammunition must be granted on new authoritative instances");
+        check(!injector.Methods.Single(m=>m.Name=="Awake").Body.Instructions.Any(i=>i.Operand is MethodReference m&&(m.Name=="TryGrantSpawnDose"||m.Name=="GrantSpawnDose")),
+            "General initialization, including crafting, must not grant a free medical dose");
+        check(injector.Methods.Single(m=>m.Name=="GrantSpawnDose").Body.Instructions.Any(i=>i.Operand is MethodReference m&&m.Name=="TryGrantSpawnDose")
+            &&injector.Methods.Single(m=>m.Name=="GrantSpawnDose").Body.Instructions.Any(i=>i.Operand is MethodReference m&&m.Name=="get_IsServer"),
+            "Explicit spawn doses must still be granted only by the authority and at most once");
+        foreach(string source in new[]{"CannonPurchaseAmmoPatch","CannonDropAmmoPatch"})
+            check(types.Single(t=>t.Name==source).Methods.Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions)
+                .Any(i=>i.Operand is MethodReference m&&m.DeclaringType.Name=="MedicalInjector"&&m.Name=="GrantSpawnDose"),
+                "Only recognized purchase/container-drop sources must supply the injector's initial dose: "+source);
         var visual=injector.Methods.Single(m=>m.Name=="RefreshSprite").Body.Instructions;
         check(visual.Any(i=>i.Operand is FieldReference f&&f.Name=="InjectorLoadedSprite")&&visual.Any(i=>i.Operand is FieldReference f&&f.Name=="InjectorEmptySprite")
             &&visual.Any(i=>i.Operand is MethodReference m&&m.Name=="set_sprite"),"The live renderer must select separate loaded/empty sprites");

@@ -24,6 +24,9 @@ namespace DDEN.LoongNova
     {
         public float Delay;
         public float Remaining;
+        // Separate systemic rapid-treatment timer; one body timer prevents stacking across injected limbs.
+        // Legacy saves omit this field, so only their unfinished initial delay is inferred on first update.
+        public float RapidRemaining = -1;
     }
 
     internal static class MedicalEffects
@@ -60,6 +63,7 @@ namespace DDEN.LoongNova
                 var blessing = body.GetStatus<DragonLifeBlessing>();
                 if (blessing.Remaining <= 0) blessing.Delay = MedicalRules.TreatmentSeconds;
                 blessing.Remaining = MedicalRules.BlessingSeconds;
+                blessing.RapidRemaining = MedicalRules.TreatmentSeconds;
             }
             Sound.Play("syringe", body.transform.position);
             if (WoundView.view != null && WoundView.view.body == body)
@@ -130,8 +134,10 @@ namespace DDEN.LoongNova
         {
             var status = __instance.GetStatus<DragonLifeBlessing>();
             if (status.Remaining <= 0) return;
-            if (!__instance.alive) { status.Remaining = status.Delay = 0; return; }
-            float recovery = MedicalRules.TreatmentStep(status.Delay + status.Remaining, Time.deltaTime);
+            if (!__instance.alive) { status.Remaining = status.Delay = status.RapidRemaining = 0; return; }
+            if (status.RapidRemaining < 0) status.RapidRemaining = Mathf.Max(0, status.Delay);
+            float recovery = MedicalRules.TreatmentStep(status.RapidRemaining, Time.deltaTime);
+            status.RapidRemaining = Mathf.Max(0, status.RapidRemaining - recovery);
             float delay = MedicalRules.TreatmentStep(status.Delay, Time.deltaTime);
             status.Delay = Mathf.Max(0, status.Delay - delay);
             float seconds = MedicalRules.TreatmentStep(status.Remaining, Time.deltaTime - delay);
