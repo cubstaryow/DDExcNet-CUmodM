@@ -16,7 +16,7 @@ namespace DDEN.LoongNova
     public sealed class LoongNovaPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleVersion, IDdenModuleHealth
     {
         public const string Guid = "com.dden.loongnova";
-        public const string ReleaseVersion = "1.0.1";
+        public const string ReleaseVersion = "1.1.0";
         internal static LogChannel Log;
         internal static readonly WeaponService Service = new WeaponService();
         private Harmony _harmony;
@@ -47,11 +47,28 @@ namespace DDEN.LoongNova
                 SaveRegistry.RegisterItemProvider(Guid + ".energy.v1", new GunSaveProvider());
                 _harmony = new Harmony(Guid);
                 _harmony.PatchAll(typeof(WeaponPatches));
+                _harmony.PatchAll(typeof(ChargeHudPatch));
+                _harmony.PatchAll(typeof(CannonRackControls));
+                _harmony.PatchAll(typeof(CannonSightPatch));
+                _harmony.PatchAll(typeof(CannonInterruption));
+                _harmony.PatchAll(typeof(CellRefillMatching));
                 _harmony.PatchAll(typeof(EquipmentPatches));
+                _harmony.PatchAll(typeof(MedicalPatches));
+                _harmony.PatchAll(typeof(MedicalTradePatch));
+                _harmony.PatchAll(typeof(InjectorGrip));
+                _harmony.PatchAll(typeof(DrillPodSource));
+                _harmony.PatchAll(typeof(RegenerationComaPatch));
+                _harmony.PatchAll(typeof(LimbGrowthPatch));
+                _harmony.PatchAll(typeof(MedicalTreatmentPatch));
+                _harmony.PatchAll(typeof(DragonLifeBlessingPatch));
+                _harmony.PatchAll(typeof(HealingFieldTreatmentPatch));
+                _harmony.PatchAll(typeof(InventoryStateVisuals));
                 _harmony.PatchAll(typeof(DragonizationPatches));
                 _harmony.PatchAll(typeof(BeltInteractionPatches));
                 _harmony.PatchAll(typeof(BeltWearPatches));
                 _harmony.PatchAll(typeof(LootPoolPatches));
+                _harmony.PatchAll(typeof(CannonPurchaseAmmoPatch));
+                _harmony.PatchAll(typeof(CannonDropAmmoPatch));
                 _harmony.PatchAll(typeof(ElderDragonDrop));
             }
             catch (Exception error)
@@ -69,6 +86,9 @@ namespace DDEN.LoongNova
             if (_problem != null) return;
             Service.Tick();
             PulseVisual.Tick();
+            HealingFields.Tick();
+            try { CannonUtility.Tick(); }
+            catch (Exception error) { CannonUtility.Clear(); Log.Exception(error, "Utility ammunition update"); }
         }
 
         public void DrawPage(Rect area) => _itemPage.Draw(area);
@@ -81,6 +101,10 @@ namespace DDEN.LoongNova
             _harmony?.UnpatchSelf();
             new Harmony(Guid + ".mp").UnpatchSelf();
             PulseVisual.Dispose();
+            HealingFields.Clear();
+            CannonUtility.Clear();
+            CannonBreach.ClearDoors();
+            CannonChargeAudio.Dispose();
             DdenHub.SetPanelVisible(Id, false);
         }
     }

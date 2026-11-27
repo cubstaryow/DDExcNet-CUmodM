@@ -113,9 +113,27 @@ try {
     # ===== 4b. Nexus 包：目录结构固定为 BepInEx/plugins/DDEN/*.dll（直接解压到游戏根目录即可） =====
     $nexusStage = Join-Path $dist "nexus-stage-$Tag"
     if (Test-Path -LiteralPath $nexusStage) { Remove-Item -LiteralPath $nexusStage -Recurse -Force }
+
+    # ===== 4b-2. LoongNova 单独一个 Nexus 包（同样 BepInEx/plugins/DDEN 结构） =====
+    $novaStage = Join-Path $dist "nexus-nova-$Tag"
+    if (Test-Path -LiteralPath $novaStage) { Remove-Item -LiteralPath $novaStage -Recurse -Force }
+    $novaDden = Join-Path $novaStage 'BepInEx/plugins/DDEN'
+    New-Item -ItemType Directory -Force -Path $novaDden | Out-Null
+    Copy-Item $releaseBin['DDEN.LoongNova.dll'] (Join-Path $novaDden 'DDEN.LoongNova.dll') -Force
+    $novaZip = Join-Path $dist "DDExcNet-$Tag-Nexus-LoongNova.zip"
+    if (Test-Path $novaZip) { Remove-Item $novaZip -Force }
+    Compress-Archive -Path (Join-Path $novaStage '*') -DestinationPath $novaZip -CompressionLevel Optimal
+    $novaSize = [math]::Round((Get-Item $novaZip).Length / 1KB, 1)
+    $novaHash = (Get-FileHash $novaZip -Algorithm SHA256).Hash.ToLower()
+    Remove-Item -LiteralPath $novaStage -Recurse -Force
+    Write-Host "== 产物: dist/DDExcNet-$Tag-Nexus-LoongNova.zip（$novaSize KB，龙域武库单独包）" -ForegroundColor Green
+    Write-Host "   SHA256: $novaHash"
     $nexusDden = Join-Path $nexusStage 'BepInEx/plugins/DDEN'
     New-Item -ItemType Directory -Force -Path $nexusDden | Out-Null
+    # LoongNova 在 Nexus 单独发一个包，主包不放它，避免重复安装
+    $nexusSplit = @('DDEN.LoongNova.dll')
     foreach ($pair in $releaseBin.GetEnumerator()) {
+        if ($nexusSplit -contains $pair.Key) { continue }
         Copy-Item $pair.Value (Join-Path $nexusDden $pair.Key) -Force
     }
     $nexusZip = Join-Path $dist "DDExcNet-$Tag-Nexus.zip"

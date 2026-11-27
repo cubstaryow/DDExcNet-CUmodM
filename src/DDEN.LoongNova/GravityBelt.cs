@@ -12,15 +12,16 @@ namespace DDEN.LoongNova
         internal Item Item { get; private set; }
         internal bool Known;
         internal string Status = "";
-        private bool _boosting, _pending, _ejectQueued;
-        private float _nextReport, _nextRead, _deadline, _protectedUntil;
+        private bool _boosting, _ejectQueued;
+        private readonly PendingActions _requests = new PendingActions();
+        private bool Pending => _requests.Count > 0;
+        private float _nextReport, _nextRead, _protectedUntil;
         private double _confirmedWork;
         private long _serverRevision = -1;
         private object _connection;
         private Body _lastOwner;
         private Transform _wearParent;
         private Limb _wearLimb;
-        private string _request;
         private readonly WorkReportBudget _reports = new WorkReportBudget();
         private Container _container;
         private bool _flying, _audioTemplateTried;
@@ -152,21 +153,21 @@ namespace DDEN.LoongNova
             object connection = LoongNovaPlugin.Service.Connection;
             if (!ReferenceEquals(_connection, connection))
             {
-                _connection = connection; _pending = _ejectQueued = false; _request = null;
+                _connection = connection; _requests.Clear(); _ejectQueued = false;
                 _nextRead = 0; _serverRevision = -1; _confirmedWork = 0;
                 _remoteWings.Reset(); _lastWingReported = _lastWingPublished = false; _nextWingPublish = 0;
                 if (Mp.IsRunning && !Mp.IsServer) Known = false;
             }
-            if (_pending && Time.unscaledTime >= _deadline)
+            if (_requests.Expire(Time.unscaledTime, out _))
             {
-                _pending = false; _request = null; Known = false; Status = Registration.Text("rejected");
+                _ejectQueued = false; _nextRead = Time.unscaledTime + 1; Status = Registration.Text("rejected");
             }
             PublishLocalWingPose();
             UpdateFeedback();
             var body = PlayerCamera.main != null ? PlayerCamera.main.body : null;
-            if (_ejectQueued && !_pending) { Request("eject", body); return; }
+            if (_ejectQueued && !Pending) { Request("eject", body); return; }
             if (!Mp.IsRunning || Mp.IsServer || body == null || !Known && Time.unscaledTime < _nextRead) return;
-            if (!_pending && (State.WorkTotal > _confirmedWork + 1e-7 || _flying != _lastWingReported) && Time.unscaledTime >= _nextReport)
+            if (!Pending && (State.WorkTotal > _confirmedWork + 1e-7 || _flying != _lastWingReported) && Time.unscaledTime >= _nextReport)
             {
                 _nextReport = Time.unscaledTime + 0.5f;
                 if (Owner == body || NetworkAccess.Carries(body, Item)) Request("work", body);
@@ -176,7 +177,7 @@ namespace DDEN.LoongNova
                     _confirmedWork = State.WorkTotal; // Stop retrying an item no longer carried by this player.
                 }
             }
-            else if (!_pending && Owner == body && Time.unscaledTime >= _nextRead)
+            else if (!Pending && Owner == body && Time.unscaledTime >= _nextRead)
                 Request("read", body);
         }
 
@@ -184,11 +185,16 @@ namespace DDEN.LoongNova
         {
             if (Item == null || body == null) return;
             if (operation == "eject") _ejectQueued = true;
-            if (_pending) return;
+            if (Pending) return;
             if (!Mp.IsRunning || Mp.IsServer)
             {
-                ApplyResponse(Execute(operation, cell, body, null));
-                _ejectQueued = false;
+                try { ApplyResponse(Execute(operation, cell, body, null)); }
+                catch (Exception error)
+                {
+                    Status = Registration.Text("rejected");
+                    LoongNovaPlugin.Log.Warn("LoongNova belt action: " + error.GetBaseException().Message);
+                }
+                finally { _ejectQueued = false; }
                 return;
             }
             if (!LoongNovaPlugin.Service.Ready || NetworkAccess.Id(Item) == 0)
@@ -201,18 +207,27 @@ namespace DDEN.LoongNova
                 ["cell"] = cell != null ? NetworkAccess.Id(cell) : 0,
                 ["epoch"] = State.Epoch, ["work"] = State.WorkTotal, ["flying"] = _flying
             };
-            _pending = true; _request = request; _deadline = Time.unscaledTime + 5;
+            _requests.Add(request, operation, Time.unscaledTime);
             if (operation == "work") _lastWingReported = _flying;
             _nextReport = Time.unscaledTime + 0.5f; _nextRead = Time.unscaledTime + 5;
             var connection = NetworkAccess.Connection;
             bool sent = Mp.RequestServer(WeaponService.Channel, packet, response =>
             {
-                if (this == null || !_pending || _request != request || !ReferenceEquals(connection, NetworkAccess.Connection)
-                    || response?.Value<string>("request") != request) return;
-                _pending = false; _request = null;
-                if (Mp.CoreReady && Mp.IsRunning && !Mp.IsServer) ApplyResponse(response);
+                if (this == null || !_requests.Finish(request)) return;
+                if (!ReferenceEquals(connection, NetworkAccess.Connection)) return;
+                try
+                {
+                    if (response?.Value<string>("request") != request)
+                    { _ejectQueued = false; _nextRead = Time.unscaledTime + 1; Status = Registration.Text("rejected"); return; }
+                    if (Mp.CoreReady && Mp.IsRunning && !Mp.IsServer) ApplyResponse(response);
+                }
+                catch (Exception error)
+                {
+                    _ejectQueued = false; _nextRead = Time.unscaledTime + 1; Status = Registration.Text("rejected");
+                    LoongNovaPlugin.Log.Warn("LoongNova belt response: " + error.GetBaseException().Message);
+                }
             });
-            if (!sent) { _pending = false; Known = false; Status = Registration.Text("unavailable"); }
+            if (!sent) { _requests.Finish(request); _ejectQueued = false; _nextRead = Time.unscaledTime + 1; Status = Registration.Text("unavailable"); }
         }
 
         private void PublishLocalWingPose()
@@ -298,6 +313,7 @@ namespace DDEN.LoongNova
         }
         private void OnDisable()
         {
+            _requests.Clear(); _ejectQueued = false;
             _flying = false;
             _remoteWings.Reset();
             if (_flightAudio != null)
@@ -329,7 +345,7 @@ namespace DDEN.LoongNova
         {
             if (Item == null || Item.id != Registration.BeltId || body == null
                 || Mp.IsRunning && (!Mp.IsServer || !LoongNovaPlugin.Service.Ready)
-                || !NetworkAccess.Carries(body, Item)) return Reply(false);
+                || (operation == "load" || operation == "eject" || operation == "read" ? !NetworkAccess.CanAccess(body, Item) : !NetworkAccess.Carries(body, Item))) return Reply(false);
             if (packet != null && (operation == "work" || operation == "eject"))
             {
                 if (!_reports.Apply(State, packet.Value<string>("epoch"), packet.Value<double?>("work") ?? double.NaN, Time.time))
@@ -346,14 +362,12 @@ namespace DDEN.LoongNova
             if (operation == "load")
             {
                 if (State.Cell.Loaded || cell == null || cell.id != Registration.CellId
-                    || !BeltPowerState.Finite(cell.condition) || !NetworkAccess.Carries(body, cell)) return Reply(false);
+                    || !BeltPowerState.Finite(cell.condition) || !NetworkAccess.CanAccess(body, cell)) return Reply(false);
                 float energy = Mathf.Clamp01(cell.condition) * EnergyState.Capacity;
                 bool favourite = cell.favourited;
-                if (cell.TryGetParentContainer(out var container)) container.UnloadItem(cell);
-                body.DropItem(cell);
-                if (cell.transform.parent != null) return Reply(false);
+                // Match native BatteryItem.LoadBattery without a separate detach/parent-state transaction.
                 State.Load(energy, favourite);
-                cell.gameObject.SetActive(false);
+
                 UnityEngine.Object.Destroy(cell.gameObject);
             }
             else if (operation == "eject")

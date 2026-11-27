@@ -6,12 +6,12 @@
 | --- | --- | --- |
 | DDEN.Shared | 2.0.1 | 公共API代际为v1；`DdenApi.CurrentVersion`及程序集`DDEN.ApiVersion`元数据均为1 |
 | DDExcNet管理器 | 2.1.0 | 内置本次已知模块最新版本目录，支持API v1 |
-| MPfix | 1.8.0 | 声明管理器≥2.0.0、Shared≥2.0.1、API v1 |
+| MPfix | 1.8.5 | 声明管理器≥2.0.0、Shared≥2.0.1、API v1 |
 | 性能跟踪器 | 2.3.1 | 声明管理器≥2.0.0、Shared≥2.0.1、API v1 |
 | 存档编辑器 | 2.0.1-alpha | 声明管理器≥2.0.0、Shared≥2.0.1、API v1 |
 | UnitListMgr | 0.1.2-alpha | 声明管理器≥2.0.0、Shared≥2.0.1、API v1 |
 | 性能跟踪器增强 | 0.2.1-alpha | 独立可选诊断组件，不加入六组件包；需要基础跟踪器2.3.1与Together，Shared≥2.0.1、API v1 |
-| LoongNova | 1.0.1 | 龙域武库（龙化装备包：龙灼线束、龙翼腰带与龙化工具）；独立于六组件发布包，声明管理器≥2.0.0、Shared≥2.0.1、API v1 |
+| LoongNova | 1.1.0 | 龙域武库（龙化装备包：龙灼线束、龙翼腰带与龙化工具）；独立于六组件发布包，声明管理器≥2.0.0、Shared≥2.0.1、API v1 |
 
 版本由各组件自己的csproj和插件声明维护。程序集数字版本采用四段数字，例如`2.0.0.0`。当前BepInEx加载器不接受`2.0.0-alpha`作为BepInPlugin版本，其Version会为空；因此当前编辑器插件加载声明使用`2.0.1`，csproj发行版本、AssemblyInformationalVersion和IDdenModule.Version保留`2.0.1-alpha`。管理器总览及模块页展示含alpha的发行版本，不能仅根据加载器的数字版号称其为正式版。
 
@@ -39,7 +39,7 @@ public int RequiredSharedApiVersion => 1;
 
 ## 管理器如何显示
 
-管理器自身的`ModuleVersionCatalog`记录当前已知最新版本：mpfix=1.8.0、perf=2.3.1、perfdeep=0.2.1-alpha、saveeditor=2.0.1-alpha、unitlistmgr=0.1.2-alpha、loongnova=1.0.1，Shared记录版本为2.0.1。目录随管理器源码／发布更新，不联网查询，也不会把安装中的未知新版本反过来写成“已知最新”。
+管理器自身的`ModuleVersionCatalog`记录当前已知最新版本：mpfix=1.8.5、perf=2.3.1、perfdeep=0.2.1-alpha、saveeditor=2.0.1-alpha、unitlistmgr=0.1.2-alpha、loongnova=1.1.0，Shared记录版本为2.0.1。目录随管理器源码／发布更新，不联网查询，也不会把安装中的未知新版本反过来写成“已知最新”。
 
 | 结果 | 显示 |
 | --- | --- |

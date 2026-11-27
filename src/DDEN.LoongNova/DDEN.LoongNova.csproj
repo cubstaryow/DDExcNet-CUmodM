@@ -2,7 +2,7 @@
   <PropertyGroup>
     <AssemblyName>DDEN.LoongNova</AssemblyName>
     <RootNamespace>DDEN.LoongNova</RootNamespace>
-    <Version>1.0.1</Version>
+    <Version>1.1.0</Version>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../DDEN.Shared/DDEN.Shared.csproj" />
@@ -10,7 +10,9 @@
       <HintPath>$(ManagedDir)/UnityEngine.AudioModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="Unity.TextMeshPro"><HintPath>$(ManagedDir)/Unity.TextMeshPro.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="UnityEngine.AnimationModule"><HintPath>$(ManagedDir)/UnityEngine.AnimationModule.dll</HintPath><Private>false</Private></Reference>
     <EmbeddedResource Include="Content.json" />
-    <EmbeddedResource Include="images/*.png" Exclude="images/dragon-wing-back-side.png;images/gravity-belt.png;images/dragon-wing-back.png;images/dragon-wing-waist.png" />
+    <EmbeddedResource Include="images/*.png" Exclude="images/demolition-round.png;images/dragon-wing-back-side.png;images/gravity-belt.png;images/dragon-wing-back.png;images/dragon-wing-waist.png" />
   </ItemGroup>
 </Project>
