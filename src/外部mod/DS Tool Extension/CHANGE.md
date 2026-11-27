@@ -1,5 +1,10 @@
-# DS Tool Extension 变更记录
+﻿# DS Tool Extension 变更记录
 
+## v1.2.13 · 2026-11-27
+
+- 稀有度改为概率替换（同 DDEN.LoongNova 的 LootPoolPatches）：三件物品 DropPool=None 移出类别池，改为 CCL TryGetRandomItemId 后置 Postfix，命中才替换；
+- 概率：实验性钛合金钻机 20%、实验性等离子束发射器 20%、实验性特种腿包 10%；只在商人/容器类来源且 category 为 tool/utility/container 时参与；
+- 移除 SpawnFrequency（稀有度）配置与相关 DdenDocs/双语条目（份数不再适用）。
 ## v1.2.12 · 2026-11-25
 
 - 稀有度改为与 EnhancedTools 一致：三件物品去掉显式 DropPool，改走 CCL 默认类别池（SpawnFrequency=1 份，与原版同类物品同池），解决空投仓/胶囊容器 1/3 高概率；
@@ -88,3 +93,4 @@
 - 循环音效 `drillLoop`（重型钻机同款，手持且攻击时播放）；
 - 中英文本走 `zh-CN.json` / `EN.json`；
 - DDEN L1 接入：实验性标记 + `DdenLocalize` 双语。
+
