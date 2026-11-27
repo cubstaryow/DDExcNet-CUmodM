@@ -706,6 +706,7 @@ Check(counts[Registration.BeltId] == 1000 && counts[Registration.GunId] == 500 &
 Check(counts[CannonAmmoState.BioId]==4000 && counts[CannonAmmoState.DemolitionId]==4000 && counts[CannonAmmoState.ExplosiveId]==4000,
     "Each ordinary ammunition type must occupy a 0.4 percent interval of a compatible utility draw");
 LootRateChecks.Run(Check);
+SupplyCrateChecks.Run(Check);
 int crateDragons=0;for(int rollIndex=0;rollIndex<100000;rollIndex++)if(LootRules.Select(8,"tool",(rollIndex+0.5)/100000)==Registration.DragonId)crateDragons++;
 Check(crateDragons==100,"Supply-crate dragon chance must be exactly 0.1 percent per tool-category draw");
 var bossWon = new BossDropGate();
@@ -723,6 +724,7 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
     RegrowthChecks.Inspect(assembly,Check);
     EconomyChecks.Inspect(assembly,Check);
     LootRateChecks.Inspect(assembly,Check);
+    SupplyCrateChecks.Inspect(assembly,Check,root);
     ContentResourceChecks.Inspect(assembly,Check,root);
     RevivalChecks.Inspect(assembly,Check,root);
     var types = assembly.MainModule.Types;
@@ -920,8 +922,9 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
     var page = types.Single(t => t.Name == "ModuleItemPage");
     var cards = page.Methods.Single(m => m.Name == ".cctor");
     var catalogIds = cards.Body.Instructions.Where(i => i.Operand is string s && s.StartsWith("dden.loongnova.")).Select(i => (string)i.Operand).ToList();
-    Check(catalogIds.Count == 20 && catalogIds.Contains(CannonAmmoState.RevivalId) && catalogIds.Contains(MedicalCatalog.EmptyId) && !catalogIds.Contains("dden.loongnova.dragon-claw-refitted-wrench"),
-        "Catalog must include the empty ampoule among twenty active items and exclude the deferred wrench");
+    Check(catalogIds.Count == 22 && catalogIds.Contains(SupplyCrateRules.SealedId) && catalogIds.Contains(SupplyCrateRules.OpenId)
+        && catalogIds.Contains(CannonAmmoState.RevivalId) && catalogIds.Contains(MedicalCatalog.EmptyId) && !catalogIds.Contains("dden.loongnova.dragon-claw-refitted-wrench"),
+        "Catalog must include both supply crates among twenty-two active items and exclude the deferred wrench");
     var drawing = page.Methods.Single(m => m.Name == "Draw");
     Check(drawing.Body.ExceptionHandlers.Any(h => h.HandlerType == Mono.Cecil.Cil.ExceptionHandlerType.Finally),
         "Module page must always close its scroll view even if drawing fails");
@@ -1051,7 +1054,7 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
     Check(equipment.Body.Instructions.Any(instruction => instruction.Operand is string text && text == "cutting")
         && equipment.Body.Instructions.Any(instruction => instruction.Operand is string text && text == "hammering")
         && equipment.Body.Instructions.Any(instruction => instruction.Operand is string text && text == "loongnova.dragonization"), "Wrench must provide cutting, hammering and dragonization");
-    Check(assembly.MainModule.Resources.Count(resource => resource.Name.EndsWith(".png")) == 25, "Twenty-five small sprites must include the user's empty ampoule and new mysterious round while excluding superseded art");
+    Check(assembly.MainModule.Resources.Count(resource => resource.Name.EndsWith(".png")) == 27, "Twenty-seven small sprites must include both user-provided supply crate images while excluding superseded art");
     Check(assembly.MainModule.Resources.Any(r => r.Name.EndsWith("dragon-scorch-rifle-v2.png"))
         && definition.Body.Instructions.Any(i => i.Operand is string s && s == "dragon-scorch-rifle-v2.png"),
         "Gun registration must use the new sprite without an external magazine");
@@ -1136,8 +1139,9 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
     Check(beforeDeath.Body.Instructions.Any(i => i.Operand is Mono.Cecil.MethodReference m && m.Name == "get_IsServer")
         && bossDrop.Methods.Single(m => m.Name == "AfterDeath").Body.Instructions.Any(i => i.Operand is Mono.Cecil.MethodReference m && m.Name == "get_IsServer"),
         "Both death observation and spawning must reject multiplayer clients");
-    Check(bossDrop.Methods.Single(m => m.Name == "AfterDeath").Body.Instructions.Count(i => i.Operand is Mono.Cecil.MethodReference m && m.Name == "InstantiateReturn") == 1,
-        "Boss reward must use one normal CCL factory call");
+    Check(bossDrop.Methods.Single(m => m.Name == "Spawn").Body.Instructions.Count(i => i.Operand is Mono.Cecil.MethodReference m && m.Name == "InstantiateReturn") == 1
+        && bossDrop.Methods.Single(m => m.Name == "AfterDeath").Body.Instructions.Any(i => i.Operand is Mono.Cecil.MethodReference m && m.Name == "TryClaim"),
+        "Boss rewards must use the normal CCL factory and one shared death claim, independently of the optional dragon roll");
     Check(!assembly.MainModule.Resources.Any(r => r.Name.EndsWith("dragon-wing-back-side.png"))
         && assembly.MainModule.Resources.Any(r => r.Name.EndsWith("dragon-wing-open-side.png")), "Only the newly redrawn single visible open wing must ship");
     using var ccl = Mono.Cecil.AssemblyDefinition.ReadAssembly(@"L:\SteamLibrary\steamapps\common\Casualties Unknown\BepInEx\plugins\CUCoreLib.dll");

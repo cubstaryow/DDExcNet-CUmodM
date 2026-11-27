@@ -8,11 +8,11 @@ namespace DDEN.LoongNova
 {
     internal static class CannonSpawnAmmo
     {
-        internal static void Give(Item item)
+        internal static void Give(Item item, bool allowRevival = true)
         {
             if (item == null || item.id != Registration.ChargeGunId || Mp.IsRunning && !Mp.IsServer) return;
             var gun = DragonGun.For(item);
-            if (gun.State.Loaded || !gun.Ammo.TryGrantSpawnRound(CannonSpawnWeights.Pick(Random.value))) return;
+            if (gun.State.Loaded || !gun.Ammo.TryGrantSpawnRound(CannonSpawnWeights.Pick(Random.value, allowRevival))) return;
             gun.Known = true; gun.Normalize();
             if (Mp.IsRunning && Mp.CoreReady && NetworkAccess.Id(item) != 0)
                 Mp.Broadcast(WeaponService.VisualChannel, new JObject { ["gun"] = NetworkAccess.Id(item), ["state"] = gun.CaptureState() });

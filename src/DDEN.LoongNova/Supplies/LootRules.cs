@@ -74,11 +74,16 @@ namespace DDEN.LoongNova
     internal sealed class BossDropGate
     {
         private bool _used;
+        internal bool TryClaim()
+        {
+            if (_used) return false;
+            _used = true;
+            return true;
+        }
         internal bool TryRoll(double roll)
         {
-            if (_used || double.IsNaN(roll) || roll < 0 || roll > 1) return false;
-            _used = true;
-            return roll < LootRules.ElderChance;
+            if (double.IsNaN(roll) || roll < 0 || roll > 1) return false;
+            return TryClaim() && roll < LootRules.ElderChance;
         }
     }
 }

@@ -12,6 +12,7 @@ namespace DDEN.LoongNova
         }
         private static readonly Card[] Cards =
         {
+            new Card(SupplyCrateRules.SealedId, "supplySealed"), new Card(SupplyCrateRules.OpenId, "supplyOpen"),
             new Card(MedicalCatalog.InjectorId, "injector"), new Card(MedicalCatalog.RegenerationId, "regeneration"), new Card(MedicalCatalog.MedicalId, "medical"), new Card(MedicalCatalog.EmptyId, "emptyAmpoule"), new Card(CannonAmmoState.RevivalId, "revival"), new Card(Registration.BeltId, "belt"), new Card(Registration.GunId, "gun"),
             new Card(Registration.CellId, "cell"), new Card(Registration.WrenchId, "wrench"),
             new Card(Registration.ChargeGunId, "charge"), new Card(CannonAmmoState.BioId, "bio"), new Card(CannonAmmoState.DemolitionId, "demo"), new Card(CannonAmmoState.DrillId, "drill"), new Card(CannonAmmoState.DrainId, "drain"), new Card(CannonAmmoState.BreachId, "breach"), new Card(CannonAmmoState.CarrierId, "carrier"), new Card(CannonAmmoState.ExplosiveId, "explosive"), new Card(Registration.PickaxeId, "pickaxe"), new Card(Registration.MatterId, "matter"), new Card(Registration.DragonId, "dragon")

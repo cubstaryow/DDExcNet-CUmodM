@@ -81,6 +81,7 @@ namespace DDEN.LoongNova
                 RegisterEquipment();
                 RegisterChargeGun(originalGun);
                 RegisterMedical();
+                RegisterSupplyCrates();
             }
             using (RecipeRegistry.BeginOwnerRegistration(LoongNovaPlugin.Guid)) RegisterRecipes();
         }

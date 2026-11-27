@@ -54,6 +54,7 @@ namespace DDEN.LoongNova
                 _harmony.PatchAll(typeof(CellRefillMatching));
                 _harmony.PatchAll(typeof(EquipmentPatches));
                 _harmony.PatchAll(typeof(MedicalPatches));
+                _harmony.PatchAll(typeof(SupplyCratePatches));
                 _harmony.PatchAll(typeof(MedicalTradePatch));
                 _harmony.PatchAll(typeof(InjectorGrip));
                 _harmony.PatchAll(typeof(DrillPodSource));
