@@ -51,7 +51,7 @@ namespace DDEN.LoongNova
                 || (effect == CannonEffect.None || effect == CannonEffect.Drain || effect == CannonEffect.Revive) && size != 0)
                 throw new ArgumentException("Invalid utility round metadata: " + id);
             if (!Finite(structure) || !Finite(creature) || structure < 0 || creature < 0 || !utility && structure + creature <= 0
-                || pellets < 1 || pellets > 20 || !Finite(spread) || spread < 0 || spread > 45
+                || pellets < 1 || pellets > 30 || !Finite(spread) || spread < 0 || spread > 45
                 || !Finite(maximum) || maximum < 1 || maximum > 16 || !Finite(delay) || delay < 0 || delay >= ChargeCycle.Maximum
                 || !Finite(blast) || blast < 0 || blast > 32 || blast > 0 && (pellets != 1 || spread != 0))
                 throw new ArgumentException("Invalid cannon round metadata: " + id);

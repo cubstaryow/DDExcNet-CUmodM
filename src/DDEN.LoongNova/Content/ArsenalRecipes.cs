@@ -18,7 +18,7 @@ namespace DDEN.LoongNova
             });
             yield return Make(CannonAmmoState.DemolitionId, new List<RecipeItem>
             {
-                Material(CannonAmmoState.CarrierId), Material("scrapcube"), Material("nails"), Material("nails"),
+                Material(CannonAmmoState.CarrierId), Material("titaniumrod"), Material("nails"), Material("nails"), Material("nails"), Material("nails"), Material("nails"), Material("nails"),
                 Material("flammablepowder"), Dragonization(100)
             });
             yield return Make(CannonAmmoState.ExplosiveId, new List<RecipeItem>

@@ -14,6 +14,8 @@ namespace DDEN.LoongNova
         internal readonly SpatialPowerState State = new SpatialPowerState();
         internal Item Item;
         internal bool Known;
+        private SpriteRenderer _renderer;
+        private Sprite _visibleSprite;
         private bool IsCharger => Item != null && Item.id == SpatialCatalog.ChargerId;
         private Container _container;
         private readonly PendingActions _requests = new PendingActions();
@@ -35,7 +37,20 @@ namespace DDEN.LoongNova
             if (container != null) _container = container;
             if (_container == null) _container = GetComponent<Container>();
             if (_container != null) _container.encumberanceMult = IsCharger ? 0 : State.Multiplier;
+            RefreshSprite();
             // Item.condition remains the container's durability, never its installed battery charge.
+        }
+        private void LateUpdate() => RefreshSprite();
+        internal void RefreshSprite()
+        {
+            if (!IsCharger) return;
+            var sprite = State.Cell.Loaded && State.Activated && (!Mp.IsRunning || Mp.IsServer || Known)
+                ? Registration.RechargerActiveSprite : Registration.RechargerInactiveSprite;
+            if (sprite == null) return;
+            if (_renderer == null) _renderer = GetComponent<SpriteRenderer>();
+            // Reuse CCL's per-instance icon override for inventory and the existing world renderer.
+            if (_visibleSprite != sprite && CUCoreUtils.SetItemSprite(Item, sprite)) _visibleSprite = sprite;
+            if (_renderer != null && _renderer.sprite != sprite) _renderer.sprite = sprite;
         }
         internal void Settle()
         {

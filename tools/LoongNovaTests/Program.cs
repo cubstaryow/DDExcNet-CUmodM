@@ -31,7 +31,7 @@ foreach (float charge in new[] { 0f, 0.001f, 0.5f, 0.991f, 0.99999f, 1f, -1f, fl
 Item ordinaryMatch = null;
 Check(CellRefillMatching.Match(new RecipeItem { specific = true, specificId = "largebattery", noMaxCondition = true }, new List<Item>(), new List<Item>(), ref ordinaryMatch), "Other batteries and recipes must keep their native matcher");
 CannonRoundRegistry.Register(CannonAmmoState.BioId, new CannonRound(1, 750, 1, 0, 4, 1).Parameters());
-CannonRoundRegistry.Register(CannonAmmoState.DemolitionId, new CannonRound(200, 1, 20, 20, 5, 1).Parameters());
+CannonRoundRegistry.Register(CannonAmmoState.DemolitionId, new CannonRound(200, 25, 30, 20, 5, 1).Parameters());
 CannonRoundRegistry.Register(CannonAmmoState.ExplosiveId, new CannonRound(500,400,1,0,1,1,12).Parameters());
 CannonRoundRegistry.Register(CannonAmmoState.RevivalId, new CannonRound(0,0,1,0,1,effect:CannonEffect.Revive).Parameters());
 MinuteSyncChecks.Run(Check);
@@ -63,7 +63,7 @@ Check(ammo.Rack() && !ammo.Loaded && ammo.Load(CannonAmmoState.DemolitionId, 1, 
 var bioProfile = CannonAmmoState.Profile(CannonAmmoState.BioId);
 var demoProfile = CannonAmmoState.Profile(CannonAmmoState.DemolitionId);
 Check(bioProfile.Structure == 1 && bioProfile.Creature == 750 && bioProfile.Pellets == 1 && bioProfile.Spread == 0, "Bio profile must be exactly 1/750 and one projectile");
-Check(demoProfile.Structure == 200 && demoProfile.Creature == 1 && demoProfile.Pellets == 20 && demoProfile.Spread == 20, "Demolition must fire twenty 200/1 pellets in a 40-degree cone");
+Check(demoProfile.Structure == 200 && demoProfile.Creature == 25 && demoProfile.Pellets == 30 && demoProfile.Spread == 20, "Demolition must fire thirty 200/25 pellets in a 40-degree cone");
 Check(CannonAmmoState.Profile("unknown").Pellets == 0, "Unknown projectile types must have no firing profile");
 var legacyCell = new EnergyState(); legacyCell.Set(true, 123.375f, true);
 var legacyAmmo = new CannonAmmoState(); var legacyRestored = new EnergyState();
@@ -103,7 +103,7 @@ foreach (var time in new[] { 0d, 0.7, 0.999, 1d })
     Check(bioProfile.DamageMultiplier(time) == 1 && demoProfile.DamageMultiplier(time) == 1, "No charge damage bonus may apply until after one second");
 Check(bioProfile.DamageMultiplier(2) == 2.5f && bioProfile.DamageMultiplier(3) == 4
     && bioProfile.DamageMultiplier(10) == 4, "Registered ammunition must ramp linearly to its own maximum without overshooting");
-Check(bioProfile.Creature * bioProfile.DamageMultiplier(3) == 3000 && demoProfile.Structure * demoProfile.DamageMultiplier(3) == 1000 && demoProfile.Creature * demoProfile.DamageMultiplier(3) == 5,
+Check(bioProfile.Creature * bioProfile.DamageMultiplier(3) == 3000 && demoProfile.Structure * demoProfile.DamageMultiplier(3) == 1000 && demoProfile.Creature * demoProfile.DamageMultiplier(3) == 125,
     "Full charge must use the ammo's base damage and multiplier");
 const string thirdRound = "offline.third-round";
 CannonRoundRegistry.Register(thirdRound, new CannonRound(17, 91, 3, 7, 6, 1.5f).Parameters());
@@ -111,7 +111,7 @@ var extensionAmmo = new CannonAmmoState();
 Check(extensionAmmo.Load(thirdRound, 1, false) && extensionAmmo.Rack() && CannonAmmoState.Profile(thirdRound).Pellets == 3
     && CannonAmmoState.Profile(thirdRound).DamageMultiplier(3) == 6,
     "A newly registered round must load, chamber and use its own special parameters without modifying the gun");
-var invalidMetadata = new CannonRound(1, 1, 21, 0).Parameters();
+var invalidMetadata = new CannonRound(1, 1, 31, 0).Parameters();
 bool rejectedMetadata = false;
 try { CannonRoundRegistry.Register("offline.invalid-round", invalidMetadata); } catch (ArgumentException) { rejectedMetadata = true; }
 Check(rejectedMetadata && !CannonRoundRegistry.Contains("offline.invalid-round"), "Malformed round metadata must never enter the supported-ammo registry");
@@ -324,7 +324,7 @@ void CheckArsenalMaterials(string id,params (string Id,int Count)[] expected)
 }
 CheckArsenalMaterials(CannonAmmoState.CarrierId,(Registration.MatterId,1),("casing",4),("titaniumsheet",1),("processedcopper",1));
 CheckArsenalMaterials(CannonAmmoState.BioId,(CannonAmmoState.CarrierId,1),("flammablepowder",2),("titaniumrod",1));
-CheckArsenalMaterials(CannonAmmoState.DemolitionId,(CannonAmmoState.CarrierId,1),("scrapcube",1),("nails",2),("flammablepowder",1));
+CheckArsenalMaterials(CannonAmmoState.DemolitionId,(CannonAmmoState.CarrierId,1),("titaniumrod",1),("nails",6),("flammablepowder",1));
 CheckArsenalMaterials(CannonAmmoState.ExplosiveId,(CannonAmmoState.CarrierId,1),("dynamite",1),("scrappanel",1));
 CheckArsenalMaterials(Registration.ChargeGunId,(Registration.MatterId,2),("titaniumsheet",2),("bundleofwires",3),
     (Registration.CellId,1),("scraptube",1),("flexiglass",2),("rifle",1));
@@ -796,7 +796,7 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
         && types.Single(t => t.Name == "ChargeHudPatch").Methods.Single(m => m.Name == "Postfix").Body.Instructions.Any(i => i.Operand is Mono.Cecil.GenericInstanceMethod m && m.Name == "AddComponent" && m.GenericArguments.Any(t => t.Name == "CannonRackControls")),
         "The production plugin must install the rack patch and attach its button-state lifecycle");
     Check(chargeBuilder.Body.Instructions.Any(i => i.Operand is string s && s == "universal-ammo-carrier.png")
-        && chargeBuilder.Body.Instructions.Any(i => i.Operand is string s && s == "demolition-round-v2.png")
+        && chargeBuilder.Body.Instructions.Any(i => i.Operand is string s && s == "demolition-round.png")
         ,
         "Both compact demolition ammo and its independent matching spent casing must be used by live registration");
 
@@ -1088,7 +1088,7 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
     Check(equipment.Body.Instructions.Any(instruction => instruction.Operand is string text && text == "cutting")
         && equipment.Body.Instructions.Any(instruction => instruction.Operand is string text && text == "hammering")
         && equipment.Body.Instructions.Any(instruction => instruction.Operand is string text && text == "loongnova.dragonization"), "Wrench must provide cutting, hammering and dragonization");
-    Check(assembly.MainModule.Resources.Count(resource => resource.Name.EndsWith(".png")) == 31, "Thirty-one small sprites must include both user-provided supply crate images while excluding superseded art");
+    Check(assembly.MainModule.Resources.Count(resource => resource.Name.EndsWith(".png")) == 32, "Thirty-two small sprites must include both user-provided supply crate images while excluding superseded art");
     Check(assembly.MainModule.Resources.Any(r => r.Name.EndsWith("dragon-scorch-rifle-v2.png"))
         && definition.Body.Instructions.Any(i => i.Operand is string s && s == "dragon-scorch-rifle-v2.png"),
         "Gun registration must use the new sprite without an external magazine");

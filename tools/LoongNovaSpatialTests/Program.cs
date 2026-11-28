@@ -36,6 +36,18 @@ internal static class Program
     {
         Item.Registry[Registration.CellId]=new BatteryInfo{maxCharge=1000};Item.Registry["smallbattery"]=new BatteryInfo{maxCharge=50};
         var body=new Body();PlayerCamera.main=new PlayerCamera{body=body};
+        var appearance=Device(SpatialCatalog.ChargerId);var renderer=appearance.gameObject.AddComponent<SpriteRenderer>();
+        appearance.RefreshSprite();Check(renderer.sprite==Registration.RechargerInactiveSprite,"New rechargers display the inactive artwork");
+        appearance.Execute("load",Cell(199),body);appearance.RefreshSprite();
+        Check(renderer.sprite==Registration.RechargerInactiveSprite,"Rejected activation preserves the inactive artwork");
+        appearance.Execute("load",Cell(200),body);
+        Check(renderer.sprite==Registration.RechargerActiveSprite,"A successful activation displays running artwork even at zero initial reserve");
+        appearance.Execute("eject",null,body);
+        Check(renderer.sprite==Registration.RechargerInactiveSprite,"Ejecting the source immediately restores inactive artwork");
+        appearance.State.Activate(500,false);Mp.IsRunning=true;Mp.IsServer=false;appearance.Known=false;appearance.RefreshSprite();
+        Check(renderer.sprite==Registration.RechargerInactiveSprite,"Clients do not display an unconfirmed running state");
+        appearance.Known=true;appearance.RefreshSprite();Check(renderer.sprite==Registration.RechargerActiveSprite,"Authoritative state confirmation updates client artwork");
+        Mp.IsRunning=false;Mp.IsServer=true;body.Notices=0;
         var charger=Device(SpatialCatalog.ChargerId);var insufficient=Cell(199);
         Check(!charger.Execute("load",insufficient,body).Value<bool>("ok")&&insufficient!=null&&insufficient.condition==0.199f&&!charger.State.Cell.Loaded&&body.Notices==1,
             "Low energy cancels installation, preserves the original cell, and invokes the head notice");

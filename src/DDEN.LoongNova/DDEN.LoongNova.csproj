@@ -13,6 +13,6 @@
     <Reference Include="Unity.TextMeshPro"><HintPath>$(ManagedDir)/Unity.TextMeshPro.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="UnityEngine.AnimationModule"><HintPath>$(ManagedDir)/UnityEngine.AnimationModule.dll</HintPath><Private>false</Private></Reference>
     <EmbeddedResource Include="Locales/*.json" WithCulture="false" />
-    <EmbeddedResource Include="images/*.png" Exclude="images/demolition-round.png;images/dragon-wing-back-side.png;images/gravity-belt.png;images/dragon-wing-back.png;images/dragon-wing-waist.png" />
+    <EmbeddedResource Include="images/*.png" />
   </ItemGroup>
 </Project>

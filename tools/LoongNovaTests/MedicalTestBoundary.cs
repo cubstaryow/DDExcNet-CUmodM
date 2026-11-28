@@ -147,3 +147,12 @@ namespace DDEN.LoongNova
         internal void Request(string op,Body body,Item ampoule=null){Requests++;Operation=op;RequestedAmpoule=ampoule;}
     }
 }
+
+namespace DDEN.LoongNova
+{
+    internal sealed class MicroSpaceCrate
+    {
+        internal static MicroSpaceCrate For(Item item)=>new MicroSpaceCrate();
+        internal void RefreshSprite(){}
+    }
+}

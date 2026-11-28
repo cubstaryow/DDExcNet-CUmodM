@@ -185,7 +185,7 @@ internal static class RevivalChecks
             check(content.Value<string>("fieldBuffName")=="????弹"&&content.Value<string>("fieldBuffDescription")=="你猜的没错，这是代表生命的亮绿色。",
                 "The healing-field buff must display the exact requested name and description");
         }
-        foreach(string file in new[]{"revival-round.png","bio-erasure-round.png","demolition-round-v2.png","drill-round.png","spatial-drain-round.png",
+        foreach(string file in new[]{"revival-round.png","bio-erasure-round.png","demolition-round.png","drill-round.png","spatial-drain-round.png",
             "emp-breach-round.png","explosive-round.png","universal-ammo-carrier.png","regeneration-ampoule.png","medical-ampoule.png","medical-injector.png","medical-injector-empty.png","ampoule.png"})
         {
             using var stream=((EmbeddedResource)assembly.MainModule.Resources.Single(r=>r.Name.EndsWith("."+file))).GetResourceStream();
@@ -201,8 +201,8 @@ internal static class RevivalChecks
             "Actual resurrection must use the original medical health synchronization");
         var inventory=types.Single(t=>t.Name=="InventoryStateVisuals").Methods.Single(m=>m.Name=="Refresh");
         check(inventory.CustomAttributes.Any(a=>a.AttributeType.Name=="HarmonyPriority"&&(int)a.ConstructorArguments[0].Value==0)
-            &&inventory.Body.Instructions.Count(i=>i.Operand is MethodReference m&&m.Name=="RefreshSprite")==2,
-            "Inventory state icons must refresh both guns/injectors after ordinary icon patches");
+            &&inventory.Body.Instructions.Count(i=>i.Operand is MethodReference m&&m.Name=="RefreshSprite")==3,
+            "Inventory state icons must refresh guns/injectors/rechargers after ordinary icon patches");
         check(types.Single(t=>t.Name=="MedicalInjector").Methods.Single(m=>m.Name=="RefreshSprite").Body.Instructions
             .Any(i=>i.Operand is MethodReference m&&m.Name=="SetItemSprite"),"Injector load state must also update CCL's per-instance icon override");
         check(types.Single(t=>t.Name=="DragonGun").Methods.Single(m=>m.Name=="LateUpdate").Body.Instructions

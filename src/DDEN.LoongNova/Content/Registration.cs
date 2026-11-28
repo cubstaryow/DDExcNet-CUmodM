@@ -89,7 +89,7 @@ namespace DDEN.LoongNova
         {
             CannonSprite = LoadSprite("charge-sniper-cannon.png", "rifle", pivot: new Vector2(0.25f, 0.4f), pixelWidth: 64, worldLength: 5);
             BioRoundSprite = LoadSprite("bio-erasure-round.png", "riflemagazine", pixelWidth: 12, worldLength: 1, preserveFrame: true);
-            DemolitionRoundSprite = LoadSprite("demolition-round-v2.png", "riflemagazine", pixelWidth: 12, worldPixelsPerUnit: 36, preserveFrame: true);
+            DemolitionRoundSprite = LoadSprite("demolition-round.png", "riflemagazine", pixelWidth: 12, worldPixelsPerUnit: 36, preserveFrame: true);
             var prototype = new CustomItemInfo
             {
                 fullName = Text("chargeName"), description = Text("chargeDescription"),
@@ -113,7 +113,7 @@ namespace DDEN.LoongNova
             prototype.AddSpawnComponent<CannonChargeAudio>();
             ItemRegistry.Register(ChargeGunId, (ItemInfo)prototype, CannonSprite, 0);
             RegisterRound(CannonAmmoState.BioId, "bio", BioRoundSprite, new CannonRound(1, 750, 1, 0, 4, 1));
-            RegisterRound(CannonAmmoState.DemolitionId, "demo", DemolitionRoundSprite, new CannonRound(200, 1, 20, 20, 5, 1));
+            RegisterRound(CannonAmmoState.DemolitionId, "demo", DemolitionRoundSprite, new CannonRound(200, 25, 30, 20, 5, 1));
             var explosiveIcon = LoadSprite("explosive-round.png", "riflemagazine", pixelWidth: 12, worldPixelsPerUnit: 36, preserveFrame: true);
             RegisterRound(CannonAmmoState.ExplosiveId, "explosive", explosiveIcon, new CannonRound(500, 400, 1, 0, 1, 1, 12), 0.5f);
             RegisterRound(CannonAmmoState.DrillId, "drill", LoadSprite("drill-round.png", "riflemagazine", pixelWidth: 12, worldPixelsPerUnit: 36, preserveFrame: true),

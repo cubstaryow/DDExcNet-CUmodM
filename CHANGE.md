@@ -1,5 +1,28 @@
 # 变更记录
 
+## 2026-11-28 · 暴梨花针弹参数调整（1.1.0）
+
+- 原破拆弹药显示名改为龙域武库-暴梨花针弹／DDArsenal-Pear Blossom Needle Round，保留原物品ID与贴图，兼容已有弹药与存档。每颗弹丸基础建筑／生物伤害200／25、满蓄1000／125，30弹丸，左右各20度散布和1至3秒五倍增幅不变。
+- 同步弹药元数据弹丸上限与客机视觉包弹丸上限至30，避免注册失败或多人丢弃整组弹丸效果；中英文说明及主页卡片同步。配方按用户最终确认改为弹壳1、钛棒1、铁钉6、易燃粉末1、可龙化100，产出1发。
+- Release构建0警告／0错误，21979项离线检查通过；更新dist/LoongNova-v1.1.0的DLL和两份语言覆盖文件。未实机联机验收，未部署／提交／推送。
+
+## 2026-11-28 · LoongNova主页完整状态图标（1.1.0）
+
+- 模组主页卡片固定使用再充能模组运行图、注射器已装安瓿图、龙灼线束已装弹夹图及狙击炮正常图；其余仍走原物品图标。复用DdenUI.DrawSprite与ImageFit保持比例，不改变实例状态或游戏内空载图标，不增加贴图或网络请求。
+- Release构建0警告／0错误，更新dist/LoongNova-v1.1.0/DDEN.LoongNova.dll；未启动或部署游戏，未实机界面验收。
+
+## 2026-11-28 · 再充能模组运行贴图切换（1.1.0）
+
+- 将用户提供的spatial-recharger-nopower.png原样重命名为spatial-recharger-inactive.png，spatial-recharger.png保留为运行图；两图均以相同参考尺寸注册，默认静态图为未运行图，未修改PNG像素。
+- MicroSpaceCrate复用CUCoreUtils.SetItemSprite及实例SpriteRenderer，按已安装且已Activated状态切换；客户端未确认状态先显示未运行，成功启动后即使初始剩余0仍按自持运行显示。卸除立即恢复未运行图，LateUpdate维持地面外观，InventoryStateVisuals最后覆盖CCL静态图用于物品栏。只在图标变化时更新CCL实例缓存，复用现有装卸／存档／网络状态，不增加发包。
+- Release构建0警告／0错误，21976项主离线检查及43项真实Harmony空间夹具检查通过，新增默认／拒绝启动／成功启动／卸除／客机未知与确认状态切图用例。dist/LoongNova-v1.1.0/DDEN.LoongNova.dll已更新；未启动／部署游戏，未真实联机界面验收，未提交推送。
+
+## 2026-11-28 · LoongNova无用PNG清理（1.1.0）
+
+- 删除images根目录中无代码引用的gravity-belt.png、dragon-wing-back.png及dragon-wing-waist.png，清除csproj过期排除列表；不动其他模组或用户已移走的备份。
+- 发现demolition-round-v2.png已被用户删除，而demolition-round.png仍存在；注册与离线检查改用现存文件，保留PNG原始字节，避免缺失嵌入资源导致加载失败。
+- 31张运行时PNG与代码引用逐一对应，无缺图或多余PNG；Release构建0警告／0错误，21966项离线检查通过。更新dist/LoongNova-v1.1.0/DDEN.LoongNova.dll，未启动／部署游戏，未提交推送。
+
 ## 2026-11-28 · LoongNova分钟校准、变化通知与腐坏入口优化（1.1.0）
 
 - 审计发现空间设备／注射器与配方原每2秒查询、手持枪原每5秒查询、腰带工作及飞行姿态原每0.5秒上报。改为变化即时操作加60秒精确校准，状态查询共享每秒2次、单帧最多1次且不累积空闲突发的预算；装填／卸除／开火及耗能起停绕过可选查询预算。使用已知服务端revision缓存，无变化的查询只返回小确认，不重复完整state；空间设备另比较耗能模式，防止相同revision掩盖模式变化。

@@ -8,6 +8,7 @@ namespace DDEN.LoongNova
 {
     internal static partial class Registration
     {
+        internal static Sprite RechargerActiveSprite, RechargerInactiveSprite;
         private static void RegisterSpatialItems()
         {
             ItemRegistry.Register(SpatialCatalog.MembraneId, (ItemInfo)new CustomItemInfo
@@ -51,8 +52,11 @@ namespace DDEN.LoongNova
                     ItemsVisible = false, TagRestriction = new[] { "battery" }
                 }
             };
+            var reference = RechargerPlaceholder();
+            RechargerActiveSprite = LoadSprite("spatial-recharger.png", "handcrank", reference, pixelWidth: 16, preserveFrame: true);
+            RechargerInactiveSprite = LoadSprite("spatial-recharger-inactive.png", "handcrank", reference, pixelWidth: 16, preserveFrame: true);
             recharger.AddSpawnComponent<MicroSpaceCrate>();
-            ItemRegistry.Register(SpatialCatalog.ChargerId, (ItemInfo)recharger, LoadSprite("spatial-recharger.png", "handcrank", RechargerPlaceholder(), pixelWidth: 16, preserveFrame: true), 0);
+            ItemRegistry.Register(SpatialCatalog.ChargerId, (ItemInfo)recharger, RechargerInactiveSprite, 0);
         }
         private static Sprite RechargerPlaceholder()
         {

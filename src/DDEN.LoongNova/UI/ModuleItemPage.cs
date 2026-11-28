@@ -71,7 +71,15 @@ namespace DDEN.LoongNova
             DdenUI.Fill(new Rect(box.x, box.y, 3, box.height), selected ? _copper : DdenUI.AccentDim);
             var icon = new Rect(box.x + 12, box.y + 12, 44, 44);
             DdenUI.Fill(icon, DdenUI.Bg);
-            DdenUI.DrawItemIcon(new Rect(icon.x + 4, icon.y + 4, 36, 36), card.Id);
+            var iconBox = new Rect(icon.x + 4, icon.y + 4, 36, 36);
+            var sprite = PreviewSprite(card.Id);
+            if (sprite == null) DdenUI.DrawItemIcon(iconBox, card.Id);
+            else
+            {
+                var source = sprite.textureRect;
+                var fit = new ImageFit(iconBox.width, iconBox.height, source.width, source.height);
+                DdenUI.DrawSprite(new Rect(iconBox.x + fit.X, iconBox.y + fit.Y, fit.Width, fit.Height), sprite);
+            }
             float textX = box.x + 66;
             float textWidth = Mathf.Max(1, box.width - 76);
             string name = Registration.Text(card.Key + "Name");
@@ -79,6 +87,16 @@ namespace DDEN.LoongNova
             DdenUI.Label(new Rect(textX, box.y + 29, textWidth, 38), Registration.Text(card.Key + "Card"), DdenUI.Wrap);
             DdenUI.Hover(box, name + "\n" + Registration.Text(card.Key + "Description"));
             if (GUI.Button(box, GUIContent.none, GUIStyle.none)) _selected = index;
+        }
+
+        // Catalog artwork shows the complete item rather than a live instance's load state.
+        private static Sprite PreviewSprite(string id)
+        {
+            if (id == SpatialCatalog.ChargerId) return Registration.RechargerActiveSprite;
+            if (id == MedicalCatalog.InjectorId) return Registration.InjectorLoadedSprite;
+            if (id == Registration.GunId) return Registration.GunLoadedSprite;
+            if (id == Registration.ChargeGunId) return Registration.CannonSprite;
+            return null;
         }
 
         private void DrawStatus(Rect box)

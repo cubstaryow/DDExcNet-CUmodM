@@ -14,6 +14,7 @@ namespace DDEN.LoongNova
             if (item == null) return;
             if (Registration.IsGun(item.id)) DragonGun.For(item).RefreshSprite();
             else if (item.id == MedicalCatalog.InjectorId) MedicalInjector.For(item).RefreshSprite();
+            else if (item.id == SpatialCatalog.ChargerId) MicroSpaceCrate.For(item).RefreshSprite();
             else return;
             // CCL's icon postfix can restore its registered/snapshot icon after the native renderer lookup.
             // Read the instance's current load state last, for hand slots, medical slots and container slots alike.

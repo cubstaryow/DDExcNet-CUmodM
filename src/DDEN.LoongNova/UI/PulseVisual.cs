@@ -68,7 +68,7 @@ namespace DDEN.LoongNova
             }
             if (data["pellets"] is JArray pellets)
             {
-                if (pellets.Count < 1 || pellets.Count > 20) return;
+                if (pellets.Count < 1 || pellets.Count > 30) return;
                 foreach (var pellet in pellets)
                     if (pellet is JObject && pellet["pellets"] == null) Play(pellet, drawBeam, originGun);
                 return;

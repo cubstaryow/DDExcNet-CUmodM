@@ -161,7 +161,7 @@ namespace DDEN.Shared
 namespace DDEN.LoongNova
 {
     internal static class Registration
-    {internal const string CellId="dden.loongnova.dragon-breath-cell",WrenchId="dden.loongnova.dragon-claw-wrench";internal static string Text(string key)=>key;}
+    {internal const string CellId="dden.loongnova.dragon-breath-cell",WrenchId="dden.loongnova.dragon-claw-wrench";internal static UnityEngine.Sprite RechargerActiveSprite=new UnityEngine.Sprite(),RechargerInactiveSprite=new UnityEngine.Sprite();internal static string Text(string key)=>key;}
     internal static class CannonAmmoState{internal const string CarrierId="dden.loongnova.universal-ammo-carrier",DrillId="dden.loongnova.drill-round";}
     internal static class SupplyCrateRules{internal const string OpenId="dden.loongnova.supply-crate";}
     internal static class BeltPowerState{internal static bool Finite(float value)=>!float.IsNaN(value)&&!float.IsInfinity(value);}
@@ -178,4 +178,14 @@ namespace DDEN.LoongNova
         internal static object NetBody(Body body)=>null;
     }
     internal static class EnergyCellNotice{internal static void Show(Body body){body.Notices++;}}
+}
+
+namespace UnityEngine
+{
+    public sealed class Sprite:Object{}
+    public sealed class SpriteRenderer:Component{public Sprite sprite;}
+}
+namespace CUCoreLib.Helpers
+{
+    public static class CUCoreUtils{public static bool SetItemSprite(Item item,UnityEngine.Sprite sprite)=>true;}
 }
