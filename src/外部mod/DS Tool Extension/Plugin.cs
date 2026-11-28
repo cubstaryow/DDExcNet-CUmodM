@@ -20,7 +20,7 @@ namespace DsToolExtension
     /// 第二件：实验性等离子束发射器（Experimentalplasmaemitter）——等离子切割器升级版。
     /// CCL 前置、多人兼容、DDEN L1 软接入（实验性 + 中英双语）。
     /// </summary>
-    [BepInPlugin(Guid, "DS Tool Extension", "1.3.2")]
+    [BepInPlugin(Guid, "DS Tool Extension", "1.3.3")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.HardDependency)]
     [BepInDependency("com.a4kk.enhancedtools", BepInDependency.DependencyFlags.SoftDependency)]
     public class Plugin : BaseUnityPlugin
@@ -73,6 +73,7 @@ namespace DsToolExtension
                     RegisterDrillRecipe(hasET);
                     RegisterPlasmaRecipe(hasET);
                     RegisterLegPackRecipe(hasET);
+                    RegisterAutoBeltRecipe(hasET);
                 }
                 new Harmony(Guid).PatchAll(typeof(Plugin));
                 DdenBridge.DdenDocs();
@@ -324,6 +325,53 @@ namespace DsToolExtension
             info.AddSpawnComponent<AmmoBeltBattery>();
             info.AddSpawnComponent<AmmoBeltAutoReload>();
             ItemRegistry.Register(AutoBeltItemId, info, sprite);
+        }
+        /// <summary>
+        /// 自动装填子弹带双配方（INT 14）：
+        /// ET 版：工程化 1 / 可改造 4 / 可切割 2；普通版：可切割 2 / 可捶打 2。
+        /// </summary>
+        private static void RegisterAutoBeltRecipe(bool hasET)
+        {
+            var items = new List<RecipeItem>
+            {
+                new RecipeItem(0f) { specific = true, specificId = "bandolier" },
+                new RecipeItem(0f) { specific = true, specificId = "titaniumrod" },
+                new RecipeItem(0f) { specific = true, specificId = "titaniumrod" },
+                new RecipeItem(0f) { specific = true, specificId = "processedcopper" },
+                new RecipeItem(0.8f) { specific = true, specificId = "circuitboard" }
+            };
+            if (!hasET) items.Add(new RecipeItem(0.8f) { specific = true, specificId = "circuitboard" });
+            items.Add(new RecipeItem(0f) { specific = true, specificId = "bundleofwires" });
+            if (!hasET) items.Add(new RecipeItem(0f) { specific = true, specificId = "bundleofwires" });
+            items.Add(new RecipeItem(0f) { specific = true, specificId = "flexiglass" });
+            items.Add(new RecipeItem(0f) { specific = true, specificId = "flexiglass" });
+            if (!hasET) items.Add(new RecipeItem(0f) { specific = true, specificId = "flexiglass" });
+            items.Add(new RecipeItem(40f) { specific = true, specificId = "biochem", isLiquid = true });
+            if (hasET)
+            {
+                items.Add(new RecipeItem(0f) { quality = new CraftingQuality("engineering", 1f), destroyItem = false });
+                items.Add(new RecipeItem(0f) { quality = new CraftingQuality("modification", 4f), destroyItem = false });
+                items.Add(new RecipeItem(0f) { quality = new CraftingQuality("cutting", 2f), destroyItem = false });
+            }
+            else
+            {
+                items.Add(new RecipeItem(0f) { quality = new CraftingQuality("cutting", 2f), destroyItem = false });
+                items.Add(new RecipeItem(0f) { quality = new CraftingQuality("hammering", 2f), destroyItem = false });
+            }
+
+            RecipeRegistry.Register(new Recipe
+            {
+                INT = 14,
+                category = (Recipes.RecipeCategory)1,
+                result = new RecipeResult
+                {
+                    id = AutoBeltItemId,
+                    amount = 1,
+                    isLiquid = false,
+                    resultCondition = 1f
+                },
+                items = items
+            });
         }
         /// <summary>
         /// 钻机双配方：装 EnhancedTools 用工程化/可改造品质，否则用可捶打/可切割品质。
@@ -645,6 +693,7 @@ namespace DsToolExtension
         }
     }
 }
+
 
 
 
