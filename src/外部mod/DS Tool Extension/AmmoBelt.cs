@@ -19,11 +19,6 @@ namespace DsToolExtension
         {
             return item != null && item.Stats != null && Allowed.Contains(item.id);
         }
-
-        internal static bool IsRound(Item item)
-        {
-            return item != null && (item.id == "9mmround" || item.id == "556round" || item.id == "12gauge");
-        }
     }
 
     [HarmonyPatch(typeof(Container), "CanHoldItem")]
@@ -64,7 +59,8 @@ namespace DsToolExtension
     /// <summary>
     /// 自动装填 + 弹药转移（仅子弹带穿在身上时）：
     ///  - 每 2 秒把所有未满弹夹装满；
-    ///  - 每 10 秒把玩家身上（槽位、穿戴、容器内）的子弹转移到子弹带，并拆开 12 号霰弹盒。
+    ///  - 每 10 秒把玩家身上（槽位、穿戴、容器内，含嵌套）的子弹/弹夹转移到子弹带，
+    ///    并拆开任意位置的 12 号霰弹盒。
     /// </summary>
     public class AmmoBeltAutoReload : MonoBehaviour
     {
@@ -213,10 +209,13 @@ namespace DsToolExtension
                 if (belt == null) return;
                 Item beltItem = belt.GetComponent<Item>();
 
-                // 1) 拆开 12 号霰弹盒（boxof12gauge 的 rounds 就是里面的霰弹）
+                List<Item> items = AllItems(body, containers);
+
+                // 1) 拆开任意位置的 12 号霰弹盒（boxof12gauge 的 rounds 就是里面的霰弹）
                 int unloaded = 0;
-                foreach (Item owner in PlayerItems(body))
+                for (int i = 0; i < items.Count && unloaded < MaxUnloadPerPass; i++)
                 {
+                    Item owner = items[i];
                     if (owner == null || owner.id != "boxof12gauge") continue;
                     AmmoScript box = owner.GetComponent<AmmoScript>();
                     if (box == null || box.rounds <= 0) continue;
@@ -225,39 +224,15 @@ namespace DsToolExtension
                         box.UnloadRound();
                         unloaded++;
                     }
-                    break;
                 }
 
-                // 2) 槽位/穿戴里的子弹 + 各容器内子弹
+                // 2) 槽位/穿戴/容器内的子弹与弹夹
                 int moved = 0;
-                foreach (Item item in PlayerItems(body))
+                for (int i = 0; i < items.Count; i++)
                 {
+                    Item item = items[i];
                     if (item == null || item == beltItem) continue;
-                    if (AmmoBeltRules.IsAllowed(item)) moved += MoveToBelt(belt, item);   // 子弹与两种弹夹
-                    Container cont = item.GetComponent<Container>();
-                    if (cont == null) continue;
-                    for (int i = cont.transform.childCount - 1; i >= 0; i--)
-                    {
-                        Transform child = cont.transform.GetChild(i);
-                        if (child == null) continue;
-                        Item inner = child.GetComponent<Item>();
-                        if (inner == null || inner == beltItem) continue;
-                        if (AmmoBeltRules.IsAllowed(inner)) moved += MoveToBelt(belt, inner);
-                        else if (inner.GetComponentsInChildren<Container>(true).Length > 0)
-                        {
-                            foreach (Container nested in inner.GetComponentsInChildren<Container>(true))
-                            {
-                                if (nested == null) continue;
-                                for (int k = nested.transform.childCount - 1; k >= 0; k--)
-                                {
-                                    Transform nc = nested.transform.GetChild(k);
-                                    if (nc == null) continue;
-                                    Item ni = nc.GetComponent<Item>();
-                                    if (ni != null && AmmoBeltRules.IsAllowed(ni)) moved += MoveToBelt(belt, ni);
-                                }
-                            }
-                        }
-                    }
+                    if (AmmoBeltRules.IsAllowed(item)) moved += MoveToBelt(belt, item);
                 }
 
                 if ((moved > 0 || unloaded > 0) && Plugin.DebugLog != null && Plugin.DebugLog.Value)
@@ -279,12 +254,14 @@ namespace DsToolExtension
             return 1;
         }
 
-        private static IEnumerable<Item> PlayerItems(Body body)
+        private static List<Item> AllItems(Body body, Container[] containers)
         {
+            var list = new List<Item>();
+            var seen = new HashSet<int>();
             for (int i = 0; i < body.slots.Length; i++)
             {
                 Item item = body.GetItem(i);
-                if (item != null) yield return item;
+                if (item != null && seen.Add(item.GetInstanceID())) list.Add(item);
             }
             for (int i = 0; i < body.limbs.Length; i++)
             {
@@ -292,11 +269,22 @@ namespace DsToolExtension
                 {
                     if (child == null) continue;
                     Item item = child.GetComponent<Item>();
-                    if (item != null) yield return item;
+                    if (item != null && seen.Add(item.GetInstanceID())) list.Add(item);
                 }
             }
+            for (int c = 0; c < containers.Length; c++)
+            {
+                Container cont = containers[c];
+                if (cont == null) continue;
+                for (int i = 0; i < cont.transform.childCount; i++)
+                {
+                    Transform child = cont.transform.GetChild(i);
+                    if (child == null) continue;
+                    Item item = child.GetComponent<Item>();
+                    if (item != null && seen.Add(item.GetInstanceID())) list.Add(item);
+                }
+            }
+            return list;
         }
     }
 }
-
-
