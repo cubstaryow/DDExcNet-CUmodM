@@ -20,7 +20,7 @@ namespace DsToolExtension
     /// 第二件：实验性等离子束发射器（Experimentalplasmaemitter）——等离子切割器升级版。
     /// CCL 前置、多人兼容、DDEN L1 软接入（实验性 + 中英双语）。
     /// </summary>
-    [BepInPlugin(Guid, "DS Tool Extension", "1.3.3")]
+    [BepInPlugin(Guid, "DS Tool Extension", "1.3.4")]
     [BepInDependency("net.cucorelib", BepInDependency.DependencyFlags.HardDependency)]
     [BepInDependency("com.a4kk.enhancedtools", BepInDependency.DependencyFlags.SoftDependency)]
     public class Plugin : BaseUnityPlugin
@@ -361,7 +361,7 @@ namespace DsToolExtension
 
             RecipeRegistry.Register(new Recipe
             {
-                INT = 14,
+                INT = 15,
                 category = (Recipes.RecipeCategory)1,
                 result = new RecipeResult
                 {
@@ -516,7 +516,7 @@ namespace DsToolExtension
 
             RecipeRegistry.Register(new Recipe
             {
-                INT = 14,
+                INT = 15,
                 category = (Recipes.RecipeCategory)1,
                 result = new RecipeResult
                 {
@@ -556,35 +556,7 @@ namespace DsToolExtension
         }
     }
 
-    /// <summary>
-    /// 低概率掉落：CCL 正常抽完后，按来源与类别再摇一次；命中则替换为 DS 物品。
-    /// 钻机/等离子 20%，腿包 10%（每件独立摇，先后顺序固定）。
-    /// 仅主机/单机判定，客机不摇，避免与主机结果不一致。
-    /// </summary>
-    [HarmonyPatch]
-    internal static class LootPoolPatches
-    {
-        internal const double DrillChance = 0.20;
-        internal const double PlasmaChance = 0.20;
-        internal const double LegPackChance = 0.10;
 
-        private static MethodBase TargetMethod() => AccessTools.Method(
-            AccessTools.TypeByName("CUCoreLib.Registries.DropPoolRegistry"), "TryGetRandomItemId");
-
-        private static void Postfix(DropPool source, string fallbackCategory, ref string itemId, ref bool __result)
-        {
-            if (!__result || string.IsNullOrWhiteSpace(itemId)) return;
-            if (Plugin.Enabled != null && !Plugin.Enabled.Value) return;
-            if (!Plugin.LootSourceEligible((int)source, fallbackCategory)) return;
-
-            double roll = UnityEngine.Random.value;
-            if (roll < DrillChance) { itemId = Plugin.DrillItemId; return; }
-            roll -= DrillChance;
-            if (roll < PlasmaChance) { itemId = Plugin.PlasmaItemId; return; }
-            roll -= PlasmaChance;
-            if (roll < LegPackChance) { itemId = Plugin.LegPackItemId; }
-        }
-    }
     // DDEN CUmodM 的 L1 接入（零引用，反射约定）：实验性 + 中英双语
     public static class DdenBridge
     {
@@ -693,6 +665,7 @@ namespace DsToolExtension
         }
     }
 }
+
 
 
 
