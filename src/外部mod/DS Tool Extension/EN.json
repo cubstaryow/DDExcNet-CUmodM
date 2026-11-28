@@ -5,6 +5,8 @@
     "Experimentalplasmaemitter": "Experimental plasma emitter",
     "Experimentalplasmaemitterdsc": "The plasma flow limiter has been removed, and the cooling system has been rebuilt with titanium alloy so that more plasma beams can be fired in the same amount of time.",
     "Experimentalspeciallegpack": "Experimental special leg pack",
-    "Experimentalspeciallegpackdsc": "An expanded upgrade of the special leg pack, fitted with experimental electronic components that provide protection when it matters."
+    "Experimentalspeciallegpackdsc": "An expanded upgrade of the special leg pack, fitted with experimental electronic components that provide protection when it matters.",
+    "Autoreloadingammobelt": "Auto-reloading ammo belt",
+    "Autoreloadingammobeltdsc": "An advanced experimental ammo belt: its capacity has been expanded, and it can automatically reload the magazines inside."
   }
 }

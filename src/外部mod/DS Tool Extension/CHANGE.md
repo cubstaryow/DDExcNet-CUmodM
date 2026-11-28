@@ -1,5 +1,20 @@
 ﻿# DS Tool Extension 变更记录
 
+## v1.3.1 · 2026-11-28
+
+- 自动装填优化：childCount 未变时跳过扫描；每 2 秒检查一次；找到未满弹夹后只装一发；
+- 新增弹药转移：每 10 秒把玩家其他容器里的三种子弹转移到本子弹带（主机/单机）；
+- 两者都要求子弹带穿在身上（bandolier 槽）执行，未穿戴时不做任何处理；
+- csproj 增加 UnityEngine.Physics2DModule 引用（转移时访问 rb.simulated）。
+## v1.3.0 · 2026-11-28
+
+- 新增第四件装备：自动装填子弹带（Autoreloadingammobelt），实验性容器：
+  - 容量 9.0、单件 0.55（步枪弹夹 0.5 可放入）、无电池负重倍率 0.4、有电池 0；
+  - Large 电池（300），不随电池爆炸、耐久归零不销毁；
+  - 可穿戴 UpTorso / bandolier，视觉偏移 8；
+  - 只收三种子弹（9mmround/556round/12gauge）与手枪/步枪弹夹（smallmagazine/riflemagazine），Container.CanHoldItem 后置白名单校验；
+  - 容器内弹夹每 1 秒自动装填一颗同口径子弹（仅主机/单机执行）；
+  - 图标暂用原版子弹带贴图占位，正式贴图待补。
 ## v1.2.13 · 2026-11-27
 
 - 稀有度改为概率替换（同 DDEN.LoongNova 的 LootPoolPatches）：三件物品 DropPool=None 移出类别池，改为 CCL TryGetRandomItemId 后置 Postfix，命中才替换；
@@ -93,4 +108,6 @@
 - 循环音效 `drillLoop`（重型钻机同款，手持且攻击时播放）；
 - 中英文本走 `zh-CN.json` / `EN.json`；
 - DDEN L1 接入：实验性标记 + `DdenLocalize` 双语。
+
+
 
