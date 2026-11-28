@@ -11,8 +11,8 @@ namespace DsToolExtension
     {
         internal static readonly HashSet<string> Allowed = new HashSet<string>
         {
-            "9mmround", "556round", "12gauge",   // 三种子弹
-            "smallmagazine", "riflemagazine"      // 手枪弹夹 / 步枪弹夹
+            "9mmround", "556round", "12gauge",
+            "smallmagazine", "riflemagazine"
         };
 
         internal static bool IsAllowed(Item item)
@@ -57,9 +57,9 @@ namespace DsToolExtension
     }
 
     /// <summary>
-    /// 自动装填 + 弹药转移：
-    ///  - 每 2 秒检查容器（childCount 未变时直接跳过），把一颗同口径子弹装入未满弹夹；
-    ///  - 每 10 秒把玩家其他容器里的三种子弹转移到本子弹带（仅主机/单机）。
+    /// 自动装填 + 弹药转移（仅子弹带穿在身上时）：
+    ///  - 每 2 秒把容器内所有未满弹夹装满（同口径）；
+    ///  - 每 10 秒把玩家其他容器里的子弹转移到子弹带。
     /// </summary>
     public class AmmoBeltAutoReload : MonoBehaviour
     {
@@ -67,11 +67,10 @@ namespace DsToolExtension
         private const float TransferInterval = 10f;
 
         private Container _container;
+        private Item _item;
         private float _nextReload;
         private float _nextTransfer;
-        private int _lastCount = -1;
 
-        private Item _item;
         private static Type _netType;
         private static PropertyInfo _isRunning;
         private static PropertyInfo _isClient;
@@ -79,11 +78,11 @@ namespace DsToolExtension
         private void Awake()
         {
             _container = GetComponent<Container>();
+            _item = GetComponent<Item>();
             _nextReload = Time.unscaledTime + ReloadInterval;
             _nextTransfer = Time.unscaledTime + TransferInterval;
         }
 
-        /// <summary>只有穿在身上（bandolier 槽）时才执行装填/转移。</summary>
         private bool IsWorn()
         {
             Transform parent = transform.parent;
@@ -142,29 +141,10 @@ namespace DsToolExtension
         private void TryReload()
         {
             if (_container == null || !IsWorn() || IsRemoteClient()) return;
-            int count = _container.transform.childCount;
-            if (count < 2 || count == _lastCount) return;   // 内容没变：上一轮已处理过
-            _lastCount = count;
-
             try
             {
-                AmmoScript mag = null;
                 Transform root = _container.transform;
-                for (int i = 0; i < root.childCount; i++)
-                {
-                    Transform child = root.GetChild(i);
-                    if (child == null) continue;
-                    Item item = child.GetComponent<Item>();
-                    if (item == null) continue;
-                    AmmoScript ammo = item.GetComponent<AmmoScript>();
-                    if (ammo != null && ammo.itemType == AmmoScript.AmmoItemType.Magazine && ammo.rounds < ammo.maxRounds)
-                    {
-                        mag = ammo;
-                        break;
-                    }
-                }
-                if (mag == null) return;
-
+                var mags = new List<AmmoScript>();
                 var rounds = new List<AmmoScript>();
                 for (int i = 0; i < root.childCount; i++)
                 {
@@ -173,16 +153,33 @@ namespace DsToolExtension
                     Item item = child.GetComponent<Item>();
                     if (item == null) continue;
                     AmmoScript ammo = item.GetComponent<AmmoScript>();
-                    if (ammo == null || ammo.itemType != AmmoScript.AmmoItemType.Round) continue;
-                    if (ammo.ammoType != mag.ammoType) continue;
-                    rounds.Add(ammo);
+                    if (ammo == null) continue;
+                    if (ammo.itemType == AmmoScript.AmmoItemType.Magazine)
+                    {
+                        if (ammo.rounds < ammo.maxRounds) mags.Add(ammo);
+                    }
+                    else if (ammo.itemType == AmmoScript.AmmoItemType.Round)
+                    {
+                        rounds.Add(ammo);
+                    }
                 }
-                for (int i = 0; i < rounds.Count && mag != null && mag.rounds < mag.maxRounds; i++)
+                if (mags.Count == 0 || rounds.Count == 0) return;
+
+                int loaded = 0;
+                for (int m = 0; m < mags.Count; m++)
                 {
-                    AmmoScript round = rounds[i];
-                    if (round == null) continue;
-                    mag.LoadRound(round);   // 装满弹夹
+                    AmmoScript mag = mags[m];
+                    if (mag == null) continue;
+                    for (int r = 0; r < rounds.Count && mag.rounds < mag.maxRounds; r++)
+                    {
+                        AmmoScript round = rounds[r];
+                        if (round == null || round.ammoType != mag.ammoType) continue;
+                        mag.LoadRound(round);
+                        loaded++;
+                    }
                 }
+                if (loaded > 0 && Plugin.DebugLog != null && Plugin.DebugLog.Value)
+                    Plugin.LogInfo("[DS Tool Extension] auto reload: loaded " + loaded + " round(s).");
             }
             catch (Exception ex)
             {
@@ -197,12 +194,19 @@ namespace DsToolExtension
             {
                 Body body = PlayerCamera.main != null ? PlayerCamera.main.body : null;
                 if (body == null) return;
-                var rules = body.GetComponentsInChildren<AmmoBeltRules>(true);
-                if (rules.Length == 0) return;
-                Container belt = rules[0].GetComponent<Container>();
-                if (belt == null) return;
 
                 Container[] containers = body.GetComponentsInChildren<Container>(true);
+                Container belt = null;
+                for (int i = 0; i < containers.Length; i++)
+                {
+                    Container cont = containers[i];
+                    if (cont == null) continue;
+                    Item it = cont.GetComponent<Item>();
+                    if (it != null && it.id == Plugin.AutoBeltItemId) { belt = cont; break; }
+                }
+                if (belt == null) return;
+
+                int moved = 0;
                 for (int c = 0; c < containers.Length; c++)
                 {
                     Container cont = containers[c];
@@ -212,17 +216,21 @@ namespace DsToolExtension
                         Transform child = cont.transform.GetChild(i);
                         if (child == null) continue;
                         Item item = child.GetComponent<Item>();
-                        if (item == null || !AmmoBeltRules.IsAllowed(item)) continue;
+                        if (item == null || item.id == null) continue;
+                        if (item.id != "9mmround" && item.id != "556round" && item.id != "12gauge") continue;
                         AmmoScript ammo = item.GetComponent<AmmoScript>();
                         if (ammo == null || ammo.itemType != AmmoScript.AmmoItemType.Round) continue;
-                        if (!belt.CanHoldItem(item)) return;   // 容量满了就停
+                        if (!belt.CanHoldItem(item)) { moved += 0; break; }
 
                         item.transform.SetParent(null, false);
                         item.transform.position = belt.transform.position;
                         item.rb.simulated = true;
                         belt.LoadItem(item);
+                        moved++;
                     }
                 }
+                if (moved > 0 && Plugin.DebugLog != null && Plugin.DebugLog.Value)
+                    Plugin.LogInfo("[DS Tool Extension] ammo transfer: moved " + moved + " round(s).");
             }
             catch (Exception ex)
             {
@@ -231,6 +239,3 @@ namespace DsToolExtension
         }
     }
 }
-
-
-
