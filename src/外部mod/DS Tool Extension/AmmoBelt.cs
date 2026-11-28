@@ -19,6 +19,11 @@ namespace DsToolExtension
         {
             return item != null && item.Stats != null && Allowed.Contains(item.id);
         }
+
+        internal static bool IsRound(Item item)
+        {
+            return item != null && (item.id == "9mmround" || item.id == "556round" || item.id == "12gauge");
+        }
     }
 
     [HarmonyPatch(typeof(Container), "CanHoldItem")]
@@ -58,13 +63,14 @@ namespace DsToolExtension
 
     /// <summary>
     /// 自动装填 + 弹药转移（仅子弹带穿在身上时）：
-    ///  - 每 2 秒把容器内所有未满弹夹装满（同口径）；
-    ///  - 每 10 秒把玩家其他容器里的子弹转移到子弹带。
+    ///  - 每 2 秒把所有未满弹夹装满；
+    ///  - 每 10 秒把玩家身上（槽位、穿戴、容器内）的子弹转移到子弹带，并拆开 12 号霰弹盒。
     /// </summary>
     public class AmmoBeltAutoReload : MonoBehaviour
     {
         private const float ReloadInterval = 2f;
         private const float TransferInterval = 10f;
+        private const int MaxUnloadPerPass = 30;
 
         private Container _container;
         private Item _item;
@@ -205,36 +211,89 @@ namespace DsToolExtension
                     if (it != null && it.id == Plugin.AutoBeltItemId) { belt = cont; break; }
                 }
                 if (belt == null) return;
+                Item beltItem = belt.GetComponent<Item>();
 
-                int moved = 0;
-                for (int c = 0; c < containers.Length; c++)
+                // 1) 拆开 12 号霰弹盒（boxof12gauge 的 rounds 就是里面的霰弹）
+                int unloaded = 0;
+                foreach (Item owner in PlayerItems(body))
                 {
-                    Container cont = containers[c];
-                    if (cont == null || cont == belt) continue;
+                    if (owner == null || owner.id != "boxof12gauge") continue;
+                    AmmoScript box = owner.GetComponent<AmmoScript>();
+                    if (box == null || box.rounds <= 0) continue;
+                    while (box.rounds > 0 && unloaded < MaxUnloadPerPass)
+                    {
+                        box.UnloadRound();
+                        unloaded++;
+                    }
+                    break;
+                }
+
+                // 2) 槽位/穿戴里的子弹 + 各容器内子弹
+                int moved = 0;
+                foreach (Item item in PlayerItems(body))
+                {
+                    if (item == null || item == beltItem) continue;
+                    if (AmmoBeltRules.IsRound(item)) moved += MoveToBelt(belt, item);
+                    Container cont = item.GetComponent<Container>();
+                    if (cont == null) continue;
                     for (int i = cont.transform.childCount - 1; i >= 0; i--)
                     {
                         Transform child = cont.transform.GetChild(i);
                         if (child == null) continue;
-                        Item item = child.GetComponent<Item>();
-                        if (item == null || item.id == null) continue;
-                        if (item.id != "9mmround" && item.id != "556round" && item.id != "12gauge") continue;
-                        AmmoScript ammo = item.GetComponent<AmmoScript>();
-                        if (ammo == null || ammo.itemType != AmmoScript.AmmoItemType.Round) continue;
-                        if (!belt.CanHoldItem(item)) { moved += 0; break; }
-
-                        item.transform.SetParent(null, false);
-                        item.transform.position = belt.transform.position;
-                        item.rb.simulated = true;
-                        belt.LoadItem(item);
-                        moved++;
+                        Item inner = child.GetComponent<Item>();
+                        if (inner == null || inner == beltItem) continue;
+                        if (AmmoBeltRules.IsRound(inner)) moved += MoveToBelt(belt, inner);
+                        else if (inner.GetComponentsInChildren<Container>(true).Length > 0)
+                        {
+                            foreach (Container nested in inner.GetComponentsInChildren<Container>(true))
+                            {
+                                if (nested == null) continue;
+                                for (int k = nested.transform.childCount - 1; k >= 0; k--)
+                                {
+                                    Transform nc = nested.transform.GetChild(k);
+                                    if (nc == null) continue;
+                                    Item ni = nc.GetComponent<Item>();
+                                    if (ni != null && AmmoBeltRules.IsRound(ni)) moved += MoveToBelt(belt, ni);
+                                }
+                            }
+                        }
                     }
                 }
-                if (moved > 0 && Plugin.DebugLog != null && Plugin.DebugLog.Value)
-                    Plugin.LogInfo("[DS Tool Extension] ammo transfer: moved " + moved + " round(s).");
+
+                if ((moved > 0 || unloaded > 0) && Plugin.DebugLog != null && Plugin.DebugLog.Value)
+                    Plugin.LogInfo("[DS Tool Extension] ammo transfer: moved " + moved + ", unloaded " + unloaded + ".");
             }
             catch (Exception ex)
             {
                 Plugin.LogWarning("[DS Tool Extension] ammo transfer failed: " + ex.Message);
+            }
+        }
+
+        private static int MoveToBelt(Container belt, Item item)
+        {
+            if (belt == null || item == null || !belt.CanHoldItem(item)) return 0;
+            item.transform.SetParent(null, false);
+            item.transform.position = belt.transform.position;
+            item.rb.simulated = true;
+            belt.LoadItem(item);
+            return 1;
+        }
+
+        private static IEnumerable<Item> PlayerItems(Body body)
+        {
+            for (int i = 0; i < body.slots.Length; i++)
+            {
+                Item item = body.GetItem(i);
+                if (item != null) yield return item;
+            }
+            for (int i = 0; i < body.limbs.Length; i++)
+            {
+                foreach (Transform child in body.limbs[i].transform)
+                {
+                    if (child == null) continue;
+                    Item item = child.GetComponent<Item>();
+                    if (item != null) yield return item;
+                }
             }
         }
     }
