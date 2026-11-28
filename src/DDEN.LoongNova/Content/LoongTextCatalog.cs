@@ -10,7 +10,7 @@ namespace DDEN.LoongNova
         internal const string Prefix = "dden.loongnova.";
         internal static readonly IReadOnlyDictionary<string, string> Items = new Dictionary<string, string>
         {
-            ["gun"] = Registration.GunId, ["cell"] = Registration.CellId, ["belt"] = Registration.BeltId,
+            ["tacticalGoggles"] = Registration.TacticalGogglesId, ["gun"] = Registration.GunId, ["cell"] = Registration.CellId, ["belt"] = Registration.BeltId,
             ["matter"] = Registration.MatterId, ["dragon"] = Registration.DragonId, ["wrench"] = Registration.WrenchId,
             ["pickaxe"] = Registration.PickaxeId, ["charge"] = Registration.ChargeGunId,
             ["bio"] = CannonAmmoState.BioId, ["demo"] = CannonAmmoState.DemolitionId, ["explosive"] = CannonAmmoState.ExplosiveId,

@@ -116,7 +116,7 @@ Unity支持按计时器收集阶段数据，并提示计时可能延迟数帧、
 
 ## 2026-11-24 · 2.3.0／增强0.2.1-alpha
 
-基础模块保持零Harmony；增强模块需基础跟踪器2.3.1的64行容量声明才激活，旧基础不会被喂入过长窗口。新增FixInvSync.Sweep、Net.DoUpdate、Steam轮询／LiteNetLib传输、LES基础／客机更新与主客机逻辑tick、SyncInfo更新／写包／应用、Together插件与ServerMain循环、Item.Update／HandleDecay、Body.Update／FixedUpdate／HandlePhysics、CpuOptimizationAdv.CullWorld.Tick，共45个固定槽。均只钩已存在的无参托管void方法，缺失明确不可用，实例汇总到方法槽，非主线程排除。父子含时不可相加，函数异常计数不包含函数自己已捕获的异常。
+基础模块保持零Harmony；增强模块需基础跟踪器2.3.1的64行容量声明才激活，旧基础不会被喂入过长窗口。FixInvSync.Sweep、Net.DoUpdate、Steam轮询／LiteNetLib传输、LES基础／客机更新与主客机逻辑tick、SyncInfo更新／写包／应用、Together插件与ServerMain循环、Item.Update／HandleDecay、Body.Update／FixedUpdate／HandlePhysics、CpuOptimizationAdv.CullWorld.Tick，以及检查点、诊断扫描、可见性／唤醒、距离检查和NetObjectRegistry／HostRegister路径，共53个固定槽。仅钩已核对的托管void入口，除精确签名 `_ObjectSyncUpdateLoopUniversal(bool)` 外均无参；不读取或改写其业务参数。缺失明确不可用，实例汇总到方法槽，非主线程排除。父子含时不可相加，函数异常计数不包含函数自己已捕获的异常。
 
 高频物体逐函数插桩可能显著增加观测开销；只在复现时临时启用增强模块，关闭后按自身owner撤钩，再比较无插桩基线。基础分阶段采样另尝试Physics2D固定更新阶段及脚本Update／FixedUpdate／LateUpdate原生marker，导出实际来源和有效读取数；标记缺失保持-1。物理固定更新阶段不等于精确Physics2D.Simulate，旧physics2dAvgMs口径不变。
 

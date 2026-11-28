@@ -1,4 +1,5 @@
 {
+  "手动导出包含逐帧编号、GC计数、固定步数和任务耗时；保留最近256帧及128帧长帧上下文，前2秒预热不计入分位数。": "Manual export includes frame IDs, GC counts, fixed steps and method times; retains 256 recent frames and 128 spike-context frames. The first 2 seconds are warmup and excluded from percentiles.",
   "性能跟踪器增强": "Performance tracker enhancement",
   "正在细分计时": "Collecting detailed timings",
   "等待性能采样与Together探针": "Waiting for performance sampling and the Together probe",

@@ -9,48 +9,46 @@ using UnityEngine;
 
 namespace DDEN.MoreThreadOnMP
 {
-    [BepInPlugin(Guid, "DDEN MoreThreadOnMP", "0.1.0")]
+    [BepInPlugin(Guid, "DDEN MoreThreadOnMP", "0.2.0")]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
     public sealed class MoreThreadPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleVersion, IDdenModuleGate, IDdenModuleActivity, IDdenModuleHealth
     {
         public const string Guid = "com.dden.morethreadonmp";
         private static readonly DdenTextCatalog Text = new DdenTextCatalog(typeof(MoreThreadPlugin).Assembly, "DDEN.MoreThreadOnMP.Resources.localization.en.json");
-        private ConfigEntry<bool> _enabled, _receive, _send, _prepare, _pin;
-        private ConfigEntry<float> _budget, _sampleInterval;
-        private ConfigEntry<int> _cap;
-        private readonly TransportHooks _hooks = new TransportHooks();
-        private readonly WindowsAffinity _affinity = new WindowsAffinity();
-        private MpBindings _bindings;
-        private MpThreadRuntime _runtime;
+        private ConfigEntry<bool> _enabled, _observe, _suppress;
+        private ConfigEntry<int> _radius;
+        private ConfigEntry<float> _sampleInterval;
+        private RegressionValidationHooks _validation;
         private ThreadSampler _sampler;
         private LogChannel _log;
-        private bool _bindFailed, _wasEnabled;
         private string _failure;
-        private double _nextAffinity;
+        private (int Radius, int Effective, bool Suppress, bool Observer, bool Host)? _reportedMode;
+        private bool _wasEnabled, _showAllThreads, _cachedShowAll;
         private int _mainId;
-        private bool _showAllThreads, _cachedShowAll;
+        private double _nextReport;
         private ThreadSnapshot _heatSnapshot;
         private ThreadLoad[] _heatRows = Array.Empty<ThreadLoad>();
         private static readonly float[] SampleChoices = { 0.5f, 1f, 3f };
+        private static readonly int[] RadiusChoices = { 4, 2, 1 };
         private GUIStyle _heatBadge;
+        private Vector2 _cardsScroll;
         public string Id => "morethreadonmp";
-        public string DisplayName => L("实验性联机线程优化");
-        public string Version => "0.1.0-alpha";
+        public string DisplayName => L("联机性能验证（MTOMP）");
+        public string Version => "0.2.0-alpha";
         public string MinimumManagerVersion => "2.0.0";
         public string TestedManagerVersion => "2.1.0";
         public string MinimumSharedVersion => "2.0.1";
         public string TestedSharedVersion => "2.0.1";
         public int RequiredSharedApiVersion => DdenApi.Version;
-        public bool Ready => Mp.TogetherReady && !_bindFailed;
+        public bool Ready => Mp.TogetherReady;
         public bool ModuleEnabled => _enabled?.Value == true;
         public string MasterKey => "实验线程/Enabled";
-        public bool IsRunning => _runtime != null && (_runtime.Receiving || _runtime.Sending || _runtime.Preparing || _affinity.Locked);
-        public DdenHealth Health => !string.IsNullOrEmpty(_failure) ? DdenHealth.Severe
-            : ModuleEnabled && (_runtime?.ReceiveProblem != null || _runtime?.SendProblem != null || _runtime?.PrepareProblem != null
-                || (_pin.Value && _affinity.State != "off" && _affinity.State != "locked")) ? DdenHealth.Warn : DdenHealth.Ok;
-        public string HealthNote => Health == DdenHealth.Ok ? "" : (_failure ?? Summary);
-        public string Summary => _failure != null ? L("适配失败，保留原MP行为") : !ModuleEnabled ? (IsRunning ? L("正在交接回原MP") : L("实验功能关闭"))
-            : !Mp.IsRunning ? L("等待联机") : Health == DdenHealth.Warn ? L("部分功能降级，请查看卡片") : L("线程优化运行中");
+        public bool IsRunning => ModuleEnabled && (_sampler != null || (_validation != null && Mp.IsRunning && Mp.IsServer
+            && ((_radius.Value != 4 && _validation.RadiusProblem == null) || (_suppress.Value && _validation.DiagnosticProblem == null))));
+        public DdenHealth Health => !ModuleEnabled ? DdenHealth.Ok : _failure != null || _validation?.Problem != null || _validation?.SampleProblem != null || _sampler?.Snapshot.Error != null ? DdenHealth.Warn : DdenHealth.Ok;
+        public string HealthNote => Health == DdenHealth.Ok ? "" : (_failure ?? _validation?.Problem ?? _validation?.SampleProblem ?? _sampler?.Snapshot.Error ?? "");
+        public string Summary => !ModuleEnabled ? L("验证关闭") : Health != DdenHealth.Ok ? L("部分验证不可用，保留原逻辑")
+            : !Mp.IsRunning || !Mp.IsServer ? L("等待主机开服") : _radius.Value == 4 && !_suppress.Value ? L("原版基线") : L("对照条件已启用");
         public IEnumerable<ConfigEntryBase> ConfigEntries => Config.Entries();
         private static string L(string text) => Text.Text(text);
         private void Awake()
@@ -58,103 +56,130 @@ namespace DDEN.MoreThreadOnMP
             _log = DDEN.Shared.Log.For(Logger, "MoreThreadOnMP");
             _mainId = ThreadRoles.Register("main");
             DdenLocalization.Register(Config, Text);
-            _enabled = Bind("Enabled", false, "启用实验性联机线程优化。默认关闭。");
-            _receive = Bind("ReceiveThread", true, "独立线程收包、复制数据并释放Steam消息。");
-            _send = Bind("SendThread", true, "独立线程发包，保持原投递标志和连接内顺序。");
-            _prepare = Bind("PrepareThread", true, "后台预解压可识别的gzip数据；仅逐字节匹配时复用结果。");
-            _pin = Bind("MainThreadPerformanceCores", true, "识别混合架构性能核并约束游戏主线程，关闭时恢复。");
-            _budget = Config.Bind("实验线程", "DispatchBudgetMs", 4f, new ConfigDescription("主线程每轮消息处理的软预算（毫秒），无法中断单个处理器。", new AcceptableValueRange<float>(0.5f, 20f)));
-            _cap = Config.Bind("实验线程", "MessagesPerPeer", 32, new ConfigDescription("每轮每个连接最多处理的消息数。", new AcceptableValueRange<int>(1, 255)));
-            _sampleInterval = Config.Bind("实验线程", "ThreadSampleSeconds", 3f, new ConfigDescription("线程负载采样间隔：0.5、1或3秒，默认3秒；仅影响负载显示。", new AcceptableValueList<float>(0.5f, 1f, 3f)));
+            _enabled = Config.Bind("实验线程", "Enabled", false, "启用联机性能验证。默认关闭。");
+            _radius = Config.Bind("回归验证", "HostSimulationRadius", 4,
+                new ConfigDescription("主机模拟半径：4为原版9×9，2为5×5，1为旧版3×3。默认保留原版。", new AcceptableValueList<int>(4, 2, 1)));
+            _suppress = Config.Bind("回归验证", "SuppressDiagnosticScans", false, "跳过MP主机的周期诊断扫描；不停止同步注册。默认关闭。");
+            _observe = Config.Bind("线程观察", "Enabled", false, "显示线程CPU负载。默认关闭，进行帧率对照时保持同一设置。");
+            _sampleInterval = Config.Bind("实验线程", "ThreadSampleSeconds", 3f,
+                new ConfigDescription("线程负载采样间隔：0.5、1或3秒，默认3秒；仅影响负载显示。", new AcceptableValueList<float>(0.5f, 1f, 3f)));
+            DdenDocs.AddStructured("实验线程", "Enabled", "启用独立的主机性能对照。", "定位版本更新后的性能回退。",
+                "默认保留原版模拟范围与诊断扫描。每次只改变一个条件。", true, DdenPerformanceImpact.Medium);
+            DdenDocs.AddStructured("回归验证", "HostSimulationRadius", "比较不同模拟范围的主机负担。", "验证5.5.3之后模拟范围扩大的影响。",
+                "仅主机生效，所有玩家位置仍参与计算。缩小范围会减少屏外模拟，需检查远处机关及分散玩家行为；关闭恢复原范围，唤醒由原MP预算处理。", true, DdenPerformanceImpact.High);
+            DdenDocs.AddStructured("回归验证", "SuppressDiagnosticScans", "隔离周期诊断扫描造成的开销。", "观察周期长帧是否减少。",
+                "暂停周期诊断扫描与其腐坏计数，清空旧诊断历史；物品腐坏、存档、收发与同步注册保持原版。", true, DdenPerformanceImpact.Medium);
+            DdenDocs.AddStructured("线程观察", "Enabled", "观察各线程CPU负载。", "辅助比较主线程与其他线程的占用。",
+                "只读本进程线程时间，不修改CPU亲和性；线程采样本身有开销。", false, DdenPerformanceImpact.Low);
             DdenDocs.AddStructured("实验线程", "ThreadSampleSeconds", "调整线程负载显示的采样间隔。", "按需要平衡显示更新速度与采样开销。",
                 "只调整负载显示，不改变网络收发、游戏更新和消息处理频率。", false, DdenPerformanceImpact.Low);
-            DdenHub.Register(this); _sampler = new ThreadSampler((int)(_sampleInterval.Value * 1000));
-        }
-        private ConfigEntry<bool> Bind(string key, bool value, string description)
-        {
-            DdenDocs.AddStructured("实验线程", key, description, "缓解联机主线程的数据处理和突发消息开销。", description,
-                true, DdenPerformanceImpact.Medium, performanceNote: "实验功能；需要相同场景对照验证，可能增加消息延迟。");
-            return Config.Bind("实验线程", key, value, description);
+            DdenHub.Register(this);
         }
         private void Update()
         {
+            if (ModuleEnabled && !_wasEnabled) { _failure = null; _reportedMode = null; }
+            _wasEnabled = ModuleEnabled;
+            if (!ModuleEnabled) { StopValidation(); StopSampler(); return; }
             try
             {
-                if (_sampler != null && _sampler.IntervalMilliseconds != (int)(_sampleInterval.Value * 1000)) _sampler.SetInterval((int)(_sampleInterval.Value * 1000));
-                if (ModuleEnabled && !_wasEnabled) { _bindFailed = false; _failure = null; }
-                _wasEnabled = ModuleEnabled;
-                if (ModuleEnabled && Mp.TogetherReady && !_bindFailed && !_hooks.Active)
+                if (!_observe.Value) StopSampler();
+                else if (_sampler == null) _sampler = new ThreadSampler((int)(_sampleInterval.Value * 1000));
+                else if (_sampler.IntervalMilliseconds != (int)(_sampleInterval.Value * 1000)) _sampler.SetInterval((int)(_sampleInterval.Value * 1000));
+                if (!Ready) { StopValidation(); return; }
+                if (_validation == null && _failure == null)
                 {
-                    try
+                    _validation = new RegressionValidationHooks(report: message => _log.Warn(message));
+                    _validation.Install();
+                }
+                if (_validation == null) return;
+                _validation.Configure(true, _radius.Value, _suppress.Value);
+                _validation.Tick();
+                var mode = (Radius: _radius.Value, Effective: _validation.EffectiveRadius, Suppress: _suppress.Value,
+                    Observer: _observe.Value, Host: Mp.IsRunning && Mp.IsServer);
+                bool changed = mode != _reportedMode;
+                bool report = mode.Host && Time.realtimeSinceStartupAsDouble >= _nextReport;
+                if (changed || report)
+                {
+                    string description = "radius=" + mode.Radius + "; effective=" + mode.Effective
+                        + "; suppressScans=" + mode.Suppress + "; observer=" + mode.Observer + "; host=" + mode.Host;
+                    if (changed) { _reportedMode = mode; _log.Info("Regression validation mode: " + description); }
+                    if (report)
                     {
-                        _bindings = new MpBindings(); _runtime = new MpThreadRuntime(_bindings, _log);
-                        TransportHooks.Runtime = _runtime; _hooks.Install(_bindings);
+                        _nextReport = Time.realtimeSinceStartupAsDouble + 30;
+                        _log.Info("Regression validation: " + description + "; simulatedChunks=" + _validation.SimulatedChunks
+                            + "; skippedScans=" + _validation.SkippedScans + "; samplePeakMs=" + _validation.PeakSampleMs.ToString("0.00"));
                     }
-                    catch (Exception error)
-                    { _bindFailed = true; _failure = error.Message; _log.Exception(error, "Transport adapter disabled"); StopRuntime(); }
                 }
-                if (_runtime != null)
-                {
-                    _runtime.Configure(ModuleEnabled && Mp.TogetherReady, _receive.Value, _send.Value, _prepare.Value, _budget.Value, _cap.Value);
-                    _runtime.Tick();
-                    if (!ModuleEnabled && !_runtime.Receiving && !_runtime.Sending && !_runtime.Preparing && _runtime.Incoming == 0) StopRuntime();
-                }
-                if (ModuleEnabled && Ready && Mp.IsRunning && _pin.Value)
-                {
-                    if (Time.realtimeSinceStartupAsDouble >= _nextAffinity)
-                    { _nextAffinity = Time.realtimeSinceStartupAsDouble + 1; _affinity.Apply(); }
-                }
-                else _affinity.Restore();
             }
-            catch (Exception error) { _failure = error.Message; _bindFailed = true; _log.Exception(error, "Thread runtime stopped"); StopRuntime(); _affinity.Restore(); }
+            catch (Exception error)
+            { _failure = error.GetType().Name + ": " + error.Message; _log.Exception(error, "Regression validation disabled"); StopValidation(); }
         }
-        private void StopRuntime()
+        private void StopValidation()
         {
-            _runtime?.Dispose(); _runtime = null; TransportHooks.Runtime = null;
-            _hooks.Uninstall();
+            var validation = _validation; _validation = null;
+            try { validation?.Dispose(); }
+            catch (Exception error) { _failure = error.Message; _log.Exception(error, "Regression validation cleanup failed"); }
+            _nextReport = 0;
         }
+        private void StopSampler()
+        { var sampler = _sampler; _sampler = null; sampler?.Dispose(); }
         public void DrawPage(Rect area)
         {
-            GUI.Label(new Rect(area.x, area.y, area.width - 330, 27), DisplayName + " · " + Version, DdenUI.Title);
-            var intervals = SampleChoices;
-            for (int i = 0; i < intervals.Length; i++)
-            {
-                var choice = new Rect(area.xMax - 321 + i * 45, area.y, 42, 27);
-                if (DdenUI.Button(choice, intervals[i].ToString("0.#") + "s", _sampleInterval.Value == intervals[i])) _sampleInterval.Value = intervals[i];
-                DdenUI.Hover(choice, L("线程负载采样间隔；仅影响显示，不改变收发包和游戏更新频率。"));
-            }
+            GUI.Label(new Rect(area.x, area.y, area.width - 200, 27), DisplayName + " · " + Version, DdenUI.Title);
             if (DdenUI.Button(new Rect(area.xMax - 178, area.y, 178, 27), ModuleEnabled ? L("总开关：已启用") : L("总开关：已关闭"), ModuleEnabled)) _enabled.Value = !ModuleEnabled;
-            GUI.Label(new Rect(area.x, area.y + 31, area.width, 23), Summary + (_failure == null ? "" : " · " + _failure), DdenUI.Wrap);
-            float threadHeight = DrawThreads(new Rect(area.x, area.y + 62, area.width, Mathf.Clamp(area.height * .28f, 110, 190)));
-            float gap = 12, width = (area.width - gap) / 2, top = area.y + 62 + threadHeight + 12;
-            float height = Mathf.Clamp((area.yMax - top - gap) / 2, 100, 210);
-            bool live = ModuleEnabled && Ready && Mp.IsRunning;
-            Card(new Rect(area.x, top, width, height), L("独立收包线程"), _receive, _runtime?.Receiving == true, _runtime?.ReceiveProblem,
-                string.Format(L("待处理 {0} 包 · {1:0.00} MiB\n接收／复制峰值 {2:0.00} ms\n主线程处理峰值 {3:0.00} ms"), _runtime?.Incoming ?? 0,
-                    (_runtime?.IncomingBytes ?? 0) / 1048576.0, _runtime?.PeakReceiveMs ?? 0, _runtime?.Pacer.PeakPollMs ?? 0), live);
-            Card(new Rect(area.x + width + gap, top, width, height), L("独立发包线程"), _send, _runtime?.Sending == true, _runtime?.SendProblem,
-                string.Format(L("待发送 {0} 包 · {1:0.00} MiB\n实际发送成功 {2} · 异步失败 {3}\n队列满 {4}"), _runtime?.Outgoing ?? 0,
-                    (_runtime?.OutgoingBytes ?? 0) / 1048576.0, _runtime?.SendsCompleted ?? 0, _runtime?.SendErrors ?? 0, _runtime?.SendFull ?? 0), live);
-            Card(new Rect(area.x, top + height + gap, width, height), L("客机数据预处理"), _prepare, _runtime?.Preparing == true, _runtime?.PrepareProblem,
-                string.Format(L("后台预解压 {0} · 主线程命中 {1}\n最长排队 {2:0.0} ms\n角色、背包和世界状态由原MP主线程处理。"), _runtime?.PreparedCount ?? 0,
-                    _runtime?.DecoderHits ?? 0, _runtime?.PeakQueueAgeMs ?? 0), live && _receive.Value);
-            bool affinityProblem = live && _pin.Value && _affinity.State != "locked";
-            Card(new Rect(area.x + width + gap, top + height + gap, width, height), L("主线程性能核"), _pin, _affinity.Locked,
-                affinityProblem ? (string.IsNullOrEmpty(_affinity.Detail) ? CpuState(_affinity.State) : _affinity.Detail) : null, L("状态：") + CpuState(_affinity.State) + "\n" + _affinity.Detail + "\n"
-                    + L("只约束游戏主线程；每秒核验，关闭后恢复原掩码。"), live);
+            GUI.Label(new Rect(area.x, area.y + 32, area.width - 140, 23), Summary, DdenUI.Wrap);
+            if (DdenUI.Button(new Rect(area.xMax - 130, area.y + 31, 130, 25), L("原版基线")))
+            { _radius.Value = 4; _suppress.Value = false; _observe.Value = false; }
+            var observe = new Rect(area.x, area.y + 62, 170, 25);
+            if (DdenUI.Button(observe, L("线程观察") + ": " + (_observe.Value ? L("已启用") : L("已关闭")), _observe.Value)) _observe.Value = !_observe.Value;
+            for (int i = 0; i < SampleChoices.Length; i++)
+                if (DdenUI.Button(new Rect(area.x + 181 + i * 48, area.y + 62, 44, 25), SampleChoices[i].ToString("0.#") + "s", _sampleInterval.Value == SampleChoices[i])) _sampleInterval.Value = SampleChoices[i];
+            float top = area.y + 98;
+            if (_observe.Value) top += DrawThreads(new Rect(area.x, top, area.width, Mathf.Clamp(area.height * .26f, 110, 190))) + 12;
+            float height = 190, contentWidth = Mathf.Max(100, area.width - 12);
+            _cardsScroll = DdenUI.BeginScrollView(new Rect(area.x, top, area.width, Mathf.Max(40, area.yMax - top)), _cardsScroll, new Rect(0, 0, contentWidth, height * 2 + 12));
+            try
+            {
+                DrawRadiusCard(new Rect(0, 0, contentWidth, height));
+                DrawScanCard(new Rect(0, height + 12, contentWidth, height));
+            }
+            finally { DdenUI.EndScrollView(); }
         }
-        private void Card(Rect rect, string title, ConfigEntry<bool> entry, bool active, string problem, string details, bool eligible)
+        private void CardBase(Rect rect, string title, string problem)
         {
             DdenUI.Fill(rect, DdenUI.Panel);
-            bool draining = active && (!ModuleEnabled || !entry.Value);
-            Color stripe = !string.IsNullOrEmpty(_failure) && ModuleEnabled ? DdenUI.Bad : !string.IsNullOrEmpty(problem) || draining ? DdenUI.Warn : active ? DdenUI.Good : DdenUI.TextDim;
-            DdenUI.Fill(new Rect(rect.x, rect.y, 5, rect.height), stripe);
-            GUI.Label(new Rect(rect.x + 16, rect.y + 10, rect.width - 115, 24), title, DdenUI.Title);
-            if (DdenUI.Button(new Rect(rect.xMax - 89, rect.y + 10, 76, 24), entry.Value ? L("已启用") : L("已关闭"), entry.Value)) entry.Value = !entry.Value;
-            string state = !string.IsNullOrEmpty(_failure) && ModuleEnabled ? L("适配失败") : !string.IsNullOrEmpty(problem) ? L("降级")
-                : draining ? L("交接中") : active ? L("运行中") : !ModuleEnabled ? L("总开关已关闭") : !entry.Value ? L("已关闭") : eligible ? L("等待数据") : L("等待联机或依赖");
-            GUI.Label(new Rect(rect.x + 16, rect.y + 40, rect.width - 30, 21), state, DdenUI.Row);
-            GUI.Label(new Rect(rect.x + 16, rect.y + 67, rect.width - 30, rect.height - 71), details + (string.IsNullOrEmpty(problem) ? "" : "\n" + problem), DdenUI.Wrap);
+            DdenUI.Fill(new Rect(rect.x, rect.y, 5, rect.height), problem != null ? DdenUI.Warn : DdenUI.TextDim);
+            GUI.Label(new Rect(rect.x + 16, rect.y + 10, rect.width - 32, 25), title, DdenUI.Title);
+        }
+        private void DrawRadiusCard(Rect rect)
+        {
+            string problem = _failure ?? _validation?.RadiusProblem ?? _validation?.SampleProblem;
+            CardBase(rect, L("主机模拟范围对照"), problem);
+            float width = (rect.width - 44) / 3;
+            for (int i = 0; i < RadiusChoices.Length; i++)
+            {
+                int radius = RadiusChoices[i];
+                string label = radius == 4 ? L("原版9×9") : radius == 2 ? "5×5" : L("旧版3×3");
+                if (DdenUI.Button(new Rect(rect.x + 16 + i * (width + 6), rect.y + 43, width, 26), label, _radius.Value == radius)) _radius.Value = radius;
+            }
+            int effective = _validation?.EffectiveRadius ?? 4;
+            int chunks = _validation?.SimulatedChunks ?? -1;
+            string details = string.Format(L("实际窗口 {0}×{0} · 模拟表区块 {1}\n采样峰值 {2:0.00} ms"), effective * 2 + 1,
+                chunks < 0 ? L("不可用") : chunks.ToString(), _validation?.PeakSampleMs ?? 0)
+                + "\n" + L("仅主机生效。缩小范围会减少屏外模拟；每次只改变一个条件。")
+                + (problem == null ? "" : "\n" + problem);
+            GUI.Label(new Rect(rect.x + 16, rect.y + 79, rect.width - 32, rect.height - 83), details, DdenUI.Wrap);
+        }
+        private void DrawScanCard(Rect rect)
+        {
+            string problem = _failure ?? _validation?.DiagnosticProblem;
+            CardBase(rect, L("跳过MP周期诊断扫描"), problem);
+            if (DdenUI.Button(new Rect(rect.x + 16, rect.y + 43, 155, 26), _suppress.Value ? L("已启用") : L("保留原扫描"), _suppress.Value)) _suppress.Value = !_suppress.Value;
+            string details = string.Format(L("已跳过 {0} 次诊断入口"), _validation?.SkippedScans ?? 0) + "\n"
+                + L("仅主机生效；保留物体同步与业务注册。不会跳过整个服务器更新。")
+                + "\n" + L("先记录原版基线，再单独启用此项；切换开服状态前先导出性能记录。")
+                + (problem == null ? "" : "\n" + problem);
+            GUI.Label(new Rect(rect.x + 16, rect.y + 79, rect.width - 32, rect.height - 83), details, DdenUI.Wrap);
         }
         private float DrawThreads(Rect rect)
         {
@@ -164,7 +189,7 @@ namespace DDEN.MoreThreadOnMP
             {
                 _heatRows = ThreadHeatmap.Select(snapshot, _showAllThreads); _heatSnapshot = snapshot; _cachedShowAll = _showAllThreads;
             }
-            GUI.Label(new Rect(rect.x, rect.y, rect.width - 116, 23), snapshot.Rows.Length == 0 ? L(snapshot.Error == null ? "正在采样线程负载…" : "线程负载采样不可用")
+            GUI.Label(new Rect(rect.x, rect.y, rect.width - 116, 23), _sampler == null ? L("线程观察已关闭") : snapshot.Rows.Length == 0 ? L(snapshot.Error == null ? "正在采样线程负载…" : "线程负载采样不可用")
                 : string.Format(L("显示 {0}/{1} 线程 · 活跃 {2} · 工作线程 {3} · {4:0.#}s采样"), _heatRows.Length, snapshot.Rows.Length, snapshot.Active, snapshot.Workers, _sampleInterval.Value), DdenUI.Row);
             if (snapshot.Error != null) { GUI.Label(new Rect(rect.x, rect.y + 27, rect.width, 40), snapshot.Error, DdenUI.Wrap); return 70; }
             var grid = new ThreadGrid(_heatRows.Length, rect.width, rect.height - 52);
@@ -190,43 +215,17 @@ namespace DDEN.MoreThreadOnMP
                 hovered = "TID " + row.Id + " · " + Role(row.Role) + " · " + name + " · CPU " + load;
             }
             var legend = new Rect(rect.x, rect.y + 33 + grid.Height, rect.width, 21);
-            string explanation = L("每格代表线程；默认显示主线程、收发与预处理，以及近期CPU达到1%的其他线程。");
+            string explanation = L("每格代表线程；默认显示主线程和近期CPU达到1%的其他线程。");
             GUI.Label(legend, DdenUI.ElideToWidth(hovered ?? explanation, legend.width, DdenUI.Sub), DdenUI.Sub);
             if (hovered == null) DdenUI.Hover(legend, explanation);
             return grid.Height + 57;
         }
-        private static string Badge(string role) => role == "main" ? L("主") : role == "receive" ? L("收") : role == "send" ? L("发") : L("预");
+        private static string Badge(string role) => L("主");
+        private static string Role(string role) => role == "main" ? L("游戏主线程") : role == "monitor" ? L("负载采样线程") : L("游戏线程");
         public bool DrawSettings(Rect area) => false;
-        private static string CpuState(string state)
-        {
-            switch (state)
-            {
-                case "locked": return L("已核验：仅性能核");
-                case "uniform": return L("系统未区分核类型，未修改亲和性");
-                case "unsupported": return L("系统不支持此接口");
-                case "unavailable": return L("没有允许使用的性能核");
-                case "failed": return L("约束或核验失败");
-                case "conflict": return L("处理器组发生冲突");
-                default: return L("未启用");
-            }
-        }
-        private static string Role(string role)
-        {
-            switch (role)
-            {
-                case "main": return L("游戏主线程");
-                case "receive": return L("收包线程");
-                case "send": return L("发包线程");
-                case "prepare": return L("预处理线程");
-                case "monitor": return L("负载采样线程");
-                default: return L("游戏线程");
-            }
-        }
-        private void OnDisable() { StopRuntime(); _affinity.Restore(); }
+        private void OnDisable() { StopValidation(); StopSampler(); }
+        private void OnApplicationQuit() { StopValidation(); StopSampler(); }
         private void OnDestroy()
-        {
-            StopRuntime(); _affinity.Restore(); _sampler?.Dispose(); _sampler = null;
-            ThreadRoles.Remove(_mainId); DdenLocalization.Unregister(Config);
-        }
+        { StopValidation(); StopSampler(); ThreadRoles.Remove(_mainId); DdenLocalization.Unregister(Config); }
     }
 }

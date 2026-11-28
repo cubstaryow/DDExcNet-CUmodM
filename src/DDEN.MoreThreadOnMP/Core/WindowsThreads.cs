@@ -14,114 +14,17 @@ namespace DDEN.MoreThreadOnMP.Core
         internal static int Register(string role)
         {
             int id;
-            try { id = (int)WindowsAffinity.GetCurrentThreadId(); } catch { id = 0; }
+            try { id = (int)ThreadObservationClock.GetCurrentThreadId(); } catch { id = 0; }
             if (id != 0) Names[id] = role;
             return id;
         }
         internal static void Remove(int id) { Names.TryRemove(id, out _); }
     }
-    internal readonly struct CpuDescription
+    // Read-only native identity and monotonic sampling time; no affinity control.
+    internal static class ThreadObservationClock
     {
-        internal readonly ushort Group;
-        internal readonly byte Index, Efficiency, Flags;
-        internal CpuDescription(ushort group, byte index, byte efficiency, byte flags)
-        { Group = group; Index = index; Efficiency = efficiency; Flags = flags; }
-    }
-    internal static class CpuSelection
-    {
-        internal static ulong PerformanceMask(IEnumerable<CpuDescription> cpus, ushort group, ulong allowed, out bool hybrid)
-        {
-            var entries = cpus.ToArray();
-            hybrid = entries.Select(cpu => cpu.Efficiency).Distinct().Count() > 1;
-            if (!hybrid) return 0; // Do not guess core classes from processor numbers or SMT layout.
-            byte maximum = entries.Max(cpu => cpu.Efficiency);
-            ulong mask = 0;
-            foreach (var cpu in entries)
-                if (cpu.Group == group && cpu.Index < 64 && cpu.Efficiency == maximum
-                    && ((cpu.Flags & 2) == 0 || (cpu.Flags & 4) != 0)) mask |= 1UL << cpu.Index;
-            return mask & allowed;
-        }
-    }
-    internal sealed class WindowsAffinity
-    {
-        [StructLayout(LayoutKind.Sequential)]
-        private struct GroupAffinity { internal UIntPtr Mask; internal ushort Group, R0, R1, R2; }
         [DllImport("kernel32.dll")] internal static extern uint GetCurrentThreadId();
-        [DllImport("kernel32.dll")] private static extern IntPtr GetCurrentThread();
-        [DllImport("kernel32.dll")] private static extern IntPtr GetCurrentProcess();
-        [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GetSystemCpuSetInformation(IntPtr info, uint length, out uint returned, IntPtr process, uint flags);
-        [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GetProcessAffinityMask(IntPtr process, out UIntPtr processMask, out UIntPtr systemMask);
-        [DllImport("kernel32.dll", SetLastError = true)] private static extern bool GetThreadGroupAffinity(IntPtr thread, out GroupAffinity affinity);
-        [DllImport("kernel32.dll", SetLastError = true)] private static extern UIntPtr SetThreadAffinityMask(IntPtr thread, UIntPtr mask);
-        private ulong _saved, _applied;
-        private ushort _group;
-        private uint _owner;
-        internal bool Locked { get; private set; }
-        internal string State { get; private set; } = "off";
-        internal string Detail { get; private set; } = "";
-        internal ulong Mask => _applied;
-        internal void Apply()
-        {
-            try
-            {
-                if (_owner != 0 && _owner != GetCurrentThreadId()) throw new InvalidOperationException("Affinity called outside Unity main thread");
-                if (_owner != 0) { Verify(); return; }
-                if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || IntPtr.Size != 8) { State = "unsupported"; return; }
-                var process = GetCurrentProcess(); var thread = GetCurrentThread();
-                if (!GetThreadGroupAffinity(thread, out var current) || !GetProcessAffinityMask(process, out var allowed, out _)) throw new System.ComponentModel.Win32Exception();
-                GetSystemCpuSetInformation(IntPtr.Zero, 0, out uint bytes, process, 0);
-                if (bytes == 0 || bytes > 1024 * 1024) throw new InvalidOperationException("CPU topology unavailable");
-                var data = Marshal.AllocHGlobal((int)bytes);
-                var cpus = new List<CpuDescription>();
-                try
-                {
-                    if (!GetSystemCpuSetInformation(data, bytes, out uint returned, process, 0)) throw new System.ComponentModel.Win32Exception();
-                    for (int at = 0; at + 8 <= returned;)
-                    {
-                        int size = Marshal.ReadInt32(data, at);
-                        if (size < 8 || size > returned - at) throw new InvalidOperationException("Invalid CPU topology record");
-                        if (Marshal.ReadInt32(data, at + 4) == 0 && size >= 20)
-                            cpus.Add(new CpuDescription((ushort)Marshal.ReadInt16(data, at + 12), Marshal.ReadByte(data, at + 14), Marshal.ReadByte(data, at + 18), Marshal.ReadByte(data, at + 19)));
-                        at += size;
-                    }
-                }
-                finally { Marshal.FreeHGlobal(data); }
-                ulong target = CpuSelection.PerformanceMask(cpus, current.Group, allowed.ToUInt64(), out bool hybrid);
-                if (!hybrid) { State = "uniform"; return; }
-                if (target == 0) { State = "unavailable"; Detail = "No permitted performance cores in current processor group"; return; }
-                var previous = SetThreadAffinityMask(thread, new UIntPtr(target));
-                if (previous == UIntPtr.Zero) throw new System.ComponentModel.Win32Exception();
-                _saved = previous.ToUInt64(); _applied = target; _group = current.Group; _owner = GetCurrentThreadId();
-                Verify();
-            }
-            catch (Exception error) { Locked = false; State = "failed"; Detail = error.GetType().Name + ": " + error.Message; }
-        }
-        internal void Verify()
-        {
-            if (_owner == 0) return;
-            if (GetCurrentThreadId() != _owner) throw new InvalidOperationException("Wrong affinity owner");
-            if (!GetThreadGroupAffinity(GetCurrentThread(), out var current)) throw new System.ComponentModel.Win32Exception();
-            if (current.Group != _group) { Locked = false; State = "conflict"; Detail = "Processor group changed"; return; }
-            if (current.Mask.ToUInt64() != _applied && SetThreadAffinityMask(GetCurrentThread(), new UIntPtr(_applied)) == UIntPtr.Zero)
-                throw new System.ComponentModel.Win32Exception();
-            Locked = GetThreadGroupAffinity(GetCurrentThread(), out current) && current.Group == _group && current.Mask.ToUInt64() == _applied;
-            State = Locked ? "locked" : "failed";
-            Detail = Locked ? "0x" + _applied.ToString("X") : "Affinity verification failed";
-        }
-        internal void Restore()
-        {
-            if (_owner == 0) { Locked = false; State = "off"; return; }
-            try
-            {
-                if (GetCurrentThreadId() != _owner) throw new InvalidOperationException("Wrong affinity owner");
-                if (!GetThreadGroupAffinity(GetCurrentThread(), out var current)) throw new System.ComponentModel.Win32Exception();
-                // Preserve another component's later affinity choice instead of overwriting it on unload.
-                if (current.Group == _group && current.Mask.ToUInt64() == _applied
-                    && SetThreadAffinityMask(GetCurrentThread(), new UIntPtr(_saved)) == UIntPtr.Zero) throw new System.ComponentModel.Win32Exception();
-                _owner = 0; Locked = false; State = "off"; Detail = ""; _applied = 0;
-            }
-            catch (Exception error) { Locked = false; State = "failed"; Detail = error.Message; }
-        }
+        internal static double Now => Stopwatch.GetTimestamp() * 1000.0 / Stopwatch.Frequency;
     }
     internal sealed class ThreadLoad
     {
@@ -214,7 +117,7 @@ namespace DDEN.MoreThreadOnMP.Core
         private void Run()
         {
             int ownId = ThreadRoles.Register("monitor");
-            var previous = new Dictionary<int, (long Start, double Cpu)>(); double last = WireClock.Now;
+            var previous = new Dictionary<int, (long Start, double Cpu)>(); double last = ThreadObservationClock.Now;
             var history = new ThreadActivityWindow(); var waits = new WaitHandle[] { _stop, _reschedule };
             try
             {
@@ -223,7 +126,7 @@ namespace DDEN.MoreThreadOnMP.Core
                 _snapshot = new ThreadSnapshot { Rows = baseline.Select(row => new ThreadLoad { Id = row.Id, Started = row.Created, Name = row.Name,
                     Role = ThreadRoles.Names.TryGetValue(row.Id, out var role) ? role : "game" }).OrderBy(row => row.Id).ToArray(),
                     Workers = baseline.Count(row => ThreadRoles.Names.TryGetValue(row.Id, out var role) && role != "main") };
-                last = WireClock.Now;
+                last = ThreadObservationClock.Now;
             }
             catch (Exception error) { _snapshot = new ThreadSnapshot { Error = error.Message }; }
             try
@@ -236,7 +139,7 @@ namespace DDEN.MoreThreadOnMP.Core
                     try
                     {
                         var rows = new List<ThreadLoad>(); var next = new Dictionary<int, (long, double)>();
-                        double now = WireClock.Now, elapsed = now - last;
+                        double now = ThreadObservationClock.Now, elapsed = now - last;
                         foreach (var thread in WindowsThreadTimes.Read())
                         {
                                 int id = thread.Id; long birth = thread.Created; double cpu = thread.CpuMs;

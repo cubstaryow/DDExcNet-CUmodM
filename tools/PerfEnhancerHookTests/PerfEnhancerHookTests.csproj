@@ -12,6 +12,8 @@
     <Compile Remove="Fixture/**/*.cs" />
     <Compile Include="../../src/DDEN.NetPerfTracker.Enhanced/DeepHooks.cs" Link="DeepHooks.cs" />
     <Compile Include="../../src/DDEN.NetPerfTracker.Enhanced/TimingLedger.cs" Link="TimingLedger.cs" />
+    <Compile Include="../../src/DDEN.NetPerfTracker.Enhanced/FrameTrace.cs" Link="FrameTrace.cs" />
+    <Compile Include="../../src/DDEN.NetPerfTracker.Enhanced/RenderedFrameLoop.cs" Link="RenderedFrameLoop.cs" />
     <Compile Include="../../src/DDEN.NetPerfTracker.Enhanced/DeepPatchEvidence.cs" Link="DeepPatchEvidence.cs" />
     <Compile Include="../../src/DDEN.NetPerfTracker/DeepTimingData.cs" Link="DeepTimingData.cs" />
   </ItemGroup>

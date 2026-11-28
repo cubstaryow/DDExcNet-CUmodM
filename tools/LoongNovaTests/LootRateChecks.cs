@@ -95,7 +95,7 @@ internal static class LootRateChecks
         check(postfix.Parameters.Any(p => p.Name == "__state")
             && postfix.Body.Instructions.Any(i => i.Operand is MethodReference m && m.DeclaringType.Name == "LootRules" && m.Name == "Select"),
             "The existing direct rare-item roll must remain installed alongside the bonus branch");
-        using var ccl = AssemblyDefinition.ReadAssembly(@"L:\SteamLibrary\steamapps\common\Casualties Unknown\BepInEx\plugins\CUCoreLib.dll");
+        using var ccl = AssemblyDefinition.ReadAssembly(File.Exists(@"L:\SteamLibrary\steamapps\common\Casualties Unknown\BepInEx\plugins\CUCoreLib.dll") ? @"L:\SteamLibrary\steamapps\common\Casualties Unknown\BepInEx\plugins\CUCoreLib.dll" : @"L:\SteamLibrary\steamapps\common\Casualties Unknown\BepInEx\plugins\Together\CUCoreLib.dll");
         var registry = ccl.MainModule.Types.Single(t => t.FullName == "CUCoreLib.Registries.DropPoolRegistry");
         check(registry.Fields.Any(f => f.Name == "ExplicitPools" && f.IsStatic && f.FieldType.FullName.Contains("DropPool"))
             && registry.Methods.Any(m => m.Name == "TryGetRandomItemId" && m.Parameters.Count == 3 && m.Parameters[2].IsOut),

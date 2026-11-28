@@ -81,6 +81,7 @@ namespace DDEN.LoongNova
                 RegisterMedical();
                 RegisterSupplyCrates();
                 RegisterSpatialItems();
+                RegisterTacticalGoggles();
             }
             using (RecipeRegistry.BeginOwnerRegistration(LoongNovaPlugin.Guid)) RegisterRecipes();
         }

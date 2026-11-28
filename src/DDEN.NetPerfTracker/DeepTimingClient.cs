@@ -10,7 +10,7 @@ namespace DDEN.NetPerfTracker
     {
         private Func<bool> _present, _enabled;
         private Action<bool> _setEnabled;
-        private Func<string> _capture, _evidence;
+        private Func<string> _capture, _evidence, _frames;
         private Action _stop, _clear;
         private long _nextResolve;
         private bool _failed;
@@ -32,6 +32,8 @@ namespace DDEN.NetPerfTracker
                 _clear = (Action)Delegate.CreateDelegate(typeof(Action), type.GetMethod("Clear"));
                 var evidence = type.GetMethod("CaptureEvidence");
                 if (evidence != null) _evidence = (Func<string>)Delegate.CreateDelegate(typeof(Func<string>), evidence);
+                var frames = type.GetMethod("CaptureFrames");
+                if (frames != null) _frames = (Func<string>)Delegate.CreateDelegate(typeof(Func<string>), frames);
                 _present = present; _failed = false;
             }
             catch { _failed = true; }
@@ -42,6 +44,19 @@ namespace DDEN.NetPerfTracker
         internal void Stop() { try { if (Available) _stop(); } catch { _failed = true; } }
         internal void Clear() { try { if (Available) _clear(); } catch { _failed = true; } }
         internal bool Failed => _failed;
+        internal string FrameEvidence()
+        {
+            if (!Available || _frames == null) return null;
+            try
+            {
+                string json = _frames(); if (string.IsNullOrEmpty(json) || json.Length > 4194304) return null;
+                var data = JsonConvert.DeserializeObject<DeepFrameTrace>(json, new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.None, MaxDepth = 8 });
+                if (data?.Schema != 1 || data.Targets == null || data.Targets.Length > 64 || data.Recent == null || data.Recent.Length > 256
+                    || data.SpikeContext == null || data.SpikeContext.Length > 128) return null;
+                return json;
+            }
+            catch { return null; }
+        }
         internal string Evidence()
         {
             if (!Available || _evidence == null) return null;

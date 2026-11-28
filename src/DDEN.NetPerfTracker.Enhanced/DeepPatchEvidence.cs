@@ -14,7 +14,7 @@ namespace DDEN.NetPerfTracker.Enhanced
         {
             var methods = new List<object>();
             var targets = new List<TargetSpec>(TimingTargets.All);
-            // Evidence only: these non-void/argument-taking methods are never instrumented here.
+            // Evidence-only entries may include other signatures; timed entries use their exact allowlisted signature.
             targets.Add(new TargetSpec("Together.SyncInfo", "CreateObject", "evidence", instance: true));
             targets.Add(new TargetSpec("PlayerCamera", "TryPerformInventoryAction", "evidence", assembly: "Assembly-CSharp", instance: true));
             targets.Add(new TargetSpec("Body", "DropItem", "evidence", assembly: "Assembly-CSharp", instance: true));
@@ -26,7 +26,8 @@ namespace DDEN.NetPerfTracker.Enhanced
                     var assembly = Reflect.FindAssembly(target.Assembly);
                     var type = assembly?.GetType(target.Type, false);
                     var candidates = type?.GetMethods(BindingFlags.DeclaredOnly | BindingFlags.Public | BindingFlags.NonPublic
-                        | (target.Instance ? BindingFlags.Instance : BindingFlags.Static)).Where(method => method.Name == target.Method).Take(4).ToArray();
+                        | (target.Instance ? BindingFlags.Instance : BindingFlags.Static)).Where(method => method.Name == target.Method
+                            && (target.Group == "evidence" || method.GetParameters().Select(parameter => parameter.ParameterType).SequenceEqual(target.Parameters))).Take(4).ToArray();
                     if (candidates == null || candidates.Length == 0)
                     { methods.Add(new { Name = target.Name, Available = false }); continue; }
                     foreach (var method in candidates)

@@ -8,8 +8,9 @@ namespace DDEN.NetPerfTracker.Enhanced
         internal readonly string Type, Method, Group, Assembly;
         internal readonly bool Instance;
         internal readonly bool Inclusive;
-        internal TargetSpec(string type, string method, string group, bool inclusive = false, string assembly = "CasualtiesMP", bool instance = false)
-        { Type = type; Method = method; Group = group; Inclusive = inclusive; Assembly = assembly; Instance = instance; }
+        internal readonly Type[] Parameters;
+        internal TargetSpec(string type, string method, string group, bool inclusive = false, string assembly = "CasualtiesMP", bool instance = false, Type[] parameters = null)
+        { Type = type; Method = method; Group = group; Inclusive = inclusive; Assembly = assembly; Instance = instance; Parameters = parameters ?? System.Type.EmptyTypes; }
         internal string Name => Type + "." + Method;
     }
     internal static class TimingTargets
@@ -60,7 +61,15 @@ namespace DDEN.NetPerfTracker.Enhanced
             new TargetSpec("Item", "OnDestroy", "lifecycle", true, "Assembly-CSharp", true),
             new TargetSpec("Together.SyncInfo", "DestroyTrackedGameObject", "lifecycle", true, instance: true),
             new TargetSpec("Wearable", "Awake", "lifecycle", true, "Assembly-CSharp", true),
-            new TargetSpec("Together.SyncInfoGameObjectTracker", "FlushFrameSamples", "objectSync", true)
+            new TargetSpec("Together.SyncInfoGameObjectTracker", "FlushFrameSamples", "objectSync", true),
+            new TargetSpec("Together.PlayerCheckpoint", "Tick", "checkpoint", true),
+            new TargetSpec("Together.FindTheBugReports", "Tick", "diagnostics", true),
+            new TargetSpec("Together.ChunkSleep", "EnsureRenderers", "visibility", true),
+            new TargetSpec("Together.ChunkSleep", "WakeFreshChunks", "wake", true),
+            new TargetSpec("Together.SyncInfoGameObjectTracker", "UpdateDistanceChecks", "distance", true, instance: true),
+            new TargetSpec("Together.NetObjectRegistry", "Update", "registry", true, instance: true),
+            new TargetSpec("Together.NetObjectRegistry", "_ObjectSyncUpdateLoopUniversal", "registry", true, parameters: new[] { typeof(bool) }),
+            new TargetSpec("Together.LayerBuildingStream", "HostRegister", "registry", true)
         };
     }
     internal struct CallStamp
@@ -78,12 +87,15 @@ namespace DDEN.NetPerfTracker.Enhanced
         private readonly string[] _notes;
         private readonly double _tickMs;
         private int _generation, _frames;
+        private bool _renderOpen;
         private double _started, _ended;
+        internal readonly FrameTrace Trace;
         internal bool Active { get; private set; }
         internal TimingLedger(long frequency)
         {
             if (frequency <= 0) throw new ArgumentOutOfRangeException(nameof(frequency));
             _tickMs = 1000.0 / frequency;
+            Trace = new FrameTrace(frequency);
             int count = TimingTargets.All.Length;
             _frame = new Accumulator[count]; _window = new Accumulator[count];
             _available = new bool[count]; _notes = new string[count];
@@ -93,9 +105,11 @@ namespace DDEN.NetPerfTracker.Enhanced
         internal void Start(double now)
         { _generation++; Active = true; Clear(now); }
         internal void Stop(double now)
-        { _generation++; Active = false; Clear(now); }
+        { _generation++; Active = false; _renderOpen = false; Array.Clear(_frame, 0, _frame.Length); ResetWindow(now); }
         internal void Clear(double now)
-        { _generation++; Array.Clear(_frame, 0, _frame.Length); ResetWindow(now); }
+        { _generation++; _renderOpen = false; Array.Clear(_frame, 0, _frame.Length); ResetWindow(now); Trace.Clear(); }
+        internal void BeginRenderedFrame()
+        { if (Active) { _generation++; _renderOpen = true; Array.Clear(_frame, 0, _frame.Length); } }
         private void ResetWindow(double now)
         { Array.Clear(_window, 0, _window.Length); _frames = 0; _started = _ended = now; }
         internal CallStamp Begin(int slot, long now) => new CallStamp
@@ -109,18 +123,26 @@ namespace DDEN.NetPerfTracker.Enhanced
             if (ticks > frame.PeakCall) frame.PeakCall = ticks;
         }
         internal void CompleteFrame(double now)
+        { Complete(now, default, false); }
+        internal void CompleteRenderedFrame(FrameMeta meta)
+        { if (_renderOpen) { _renderOpen = false; Complete(meta.T, meta, true); } }
+        private void Complete(double now, FrameMeta meta, bool trace)
         {
             if (!Active) return;
+            if (trace) Trace.Begin(meta);
             for (int i = 0; i < _frame.Length; i++)
             {
                 ref var frame = ref _frame[i]; ref var window = ref _window[i];
                 window.Calls += frame.Calls; window.Errors += frame.Errors; window.Ticks += frame.Ticks;
                 window.PeakCall = Math.Max(window.PeakCall, frame.PeakCall);
                 window.PeakFrame = Math.Max(window.PeakFrame, frame.Ticks);
+                if (trace) Trace.Method(i, frame.Calls, _available[i] ? frame.Ticks : -1, _available[i] && frame.Calls > 0 ? frame.PeakCall : -1);
                 frame = default;
             }
             _frames++; _ended = now;
+            if (trace) Trace.Commit();
         }
+        internal DeepFrameTrace CaptureFrames(string status) => Trace.Capture(Active, status, _available);
         internal DeepWindow Drain(double now)
         {
             var snapshot = new DeepWindow { Active = Active, Frames = _frames, Started = _started, Ended = _ended,

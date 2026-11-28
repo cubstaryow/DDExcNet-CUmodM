@@ -15,6 +15,8 @@ namespace Together
         private static readonly List<object> Entries = new List<object>();
         [MethodImpl(MethodImplOptions.NoInlining)] public static void Tick()
         { Trace.Calls.Add("ChunkSleep"); if (Trace.Throw) throw Trace.Failure; }
+        [MethodImpl(MethodImplOptions.NoInlining)] public static void EnsureRenderers() { }
+        [MethodImpl(MethodImplOptions.NoInlining)] public static void WakeFreshChunks() { }
     }
     public static class BagSleep
     {
@@ -24,6 +26,8 @@ namespace Together
     }
     public static class HeaterMultiplayerRewrite { [MethodImpl(MethodImplOptions.NoInlining)] public static void Tick() => Trace.Calls.Add("Heater"); }
     public static class FallCatch { [MethodImpl(MethodImplOptions.NoInlining)] public static void Tick() => Trace.Calls.Add("FallCatch"); }
+    public static class PlayerCheckpoint { [MethodImpl(MethodImplOptions.NoInlining)] public static void Tick() { } }
+    public static class FindTheBugReports { [MethodImpl(MethodImplOptions.NoInlining)] public static void Tick() { } }
     public static class BodyViewParticles { [MethodImpl(MethodImplOptions.NoInlining)] public static void Tick() => Trace.Calls.Add("Particles"); }
     public static class WallholeZones
     {
@@ -86,6 +90,28 @@ namespace Together
         [MethodImpl(MethodImplOptions.NoInlining)] public void Update() {}
         [MethodImpl(MethodImplOptions.NoInlining)] public void LateUpdate() {}
     }
+    public class NetObjectRegistry
+    {
+        [MethodImpl(MethodImplOptions.NoInlining)] public void Update()
+        { _ObjectSyncUpdateLoopUniversal(false); _ObjectSyncUpdateLoopUniversal(true); }
+        [MethodImpl(MethodImplOptions.NoInlining)] public static void _ObjectSyncUpdateLoopUniversal(bool slow)
+        {
+            Trace.Calls.Add(slow ? "registry:true" : "registry:false");
+            if (Trace.Throw) throw Trace.Failure;
+#if !LEGACY_TARGETS
+            if (slow) LayerBuildingStream.HostRegister();
+#endif
+        }
+        // An unrelated overload must never be selected by the timing or evidence allowlist.
+        [MethodImpl(MethodImplOptions.NoInlining)] public static void _ObjectSyncUpdateLoopUniversal(int value)
+        { Trace.Calls.Add("registry:int"); }
+    }
+#if !LEGACY_TARGETS
+    public static class LayerBuildingStream
+    {
+        [MethodImpl(MethodImplOptions.NoInlining)] public static void HostRegister() { Trace.Calls.Add("building"); }
+    }
+#endif
 }
 
 namespace Together
@@ -95,5 +121,6 @@ namespace Together
         [MethodImpl(MethodImplOptions.NoInlining)] public void FixedUpdate() { TickSync(); }
         [MethodImpl(MethodImplOptions.NoInlining)] public void TickSync() {}
         [MethodImpl(MethodImplOptions.NoInlining)] public static void FlushFrameSamples() {}
+        [MethodImpl(MethodImplOptions.NoInlining)] public void UpdateDistanceChecks() {}
     }
 }

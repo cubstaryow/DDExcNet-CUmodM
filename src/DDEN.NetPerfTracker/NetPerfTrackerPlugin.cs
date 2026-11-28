@@ -619,6 +619,8 @@ namespace DDEN.NetPerfTracker
                     PluginEvidence.Write(writer);
                     string patchEvidence = _deep.Evidence();
                     if (patchEvidence != null) writer.WriteLine("DEEP_EVIDENCE payload=" + patchEvidence);
+                    string frameEvidence = _deep.FrameEvidence();
+                    if (frameEvidence != null) writer.WriteLine("DEEP_FRAMES payload=" + frameEvidence);
                     writer.WriteLine("# DEEP_WINDOW: optional Enhanced module, completed rendered frames only, main-thread inclusive method wall times (other patches and waits included). Parent/child rows overlap; missing=-1. Setup and hook overhead are not included in base observer timing.");
                     for (int i = 0; i < _buf.Count; i++)
                         if (_buf[i].Deep != null) writer.WriteLine("DEEP_WINDOW t=" + _buf[i].T.ToString("0.000", CultureInfo.InvariantCulture)

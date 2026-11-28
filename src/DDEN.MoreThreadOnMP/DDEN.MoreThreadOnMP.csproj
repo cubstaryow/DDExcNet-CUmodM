@@ -2,11 +2,10 @@
   <PropertyGroup>
     <AssemblyName>DDEN.MoreThreadOnMP</AssemblyName>
     <RootNamespace>DDEN.MoreThreadOnMP</RootNamespace>
-    <Version>0.1.0-alpha</Version>
-    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <Version>0.2.0-alpha</Version>
+    <AssemblyVersion>0.2.0.0</AssemblyVersion>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="com.rlabrecque.steamworks.net"><HintPath>$(ManagedDir)/com.rlabrecque.steamworks.net.dll</HintPath><Private>false</Private></Reference>
     <ProjectReference Include="../DDEN.Shared/DDEN.Shared.csproj" />
     <EmbeddedResource Include="Resources/localization.en.json"><WithCulture>false</WithCulture></EmbeddedResource>
   </ItemGroup>

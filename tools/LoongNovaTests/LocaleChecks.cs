@@ -73,6 +73,7 @@ internal static class LocaleChecks
         var text = types.Single(t => t.Name == "Registration").Methods.Single(m => m.Name == "Text").Body.Instructions;
         check(text.Any(i => i.Operand is MethodReference m && m.DeclaringType.Name == "LoongLocalization" && m.Name == "Text"),
             "The actual item/UI/Buff text accessor must call the localized catalog");
+        check(types.Single(t=>t.Name=="LoongLocalization").Methods.Single(m=>m.Name=="Text").Body.Instructions.Any(i=>i.Operand is MethodReference m&&m.DeclaringType.Name=="DdenLocalization"&&m.Name=="get_Language"),"LoongNova follows the manager language rather than a conflicting game table");
         var hooks = types.Single(t => t.Name == "LoongLocalePatches");
         check(hooks.Methods.Single(m => m.Name == "LanguageLoaded").Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name == "RefreshItems")
             && hooks.Methods.Single(m => m.Name == "ItemText").Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name == "RefreshItem"),
@@ -94,7 +95,7 @@ internal static class LocaleChecks
         var cannon = types.Single(t => t.Name == "CannonService").Methods.Where(m => m.HasBody).SelectMany(m => m.Body.Instructions);
         check(cannon.Any(i => i.Operand is float value && value == 0.002f) && !cannon.Any(i => i.Operand is float value && value == 0.0025f),
             "Changing beam-rifle wear must not change cannon ammunition firing wear");
-        using var ccl = AssemblyDefinition.ReadAssembly(@"L:\SteamLibrary\steamapps\common\Casualties Unknown\BepInEx\plugins\CUCoreLib.dll");
+        using var ccl = AssemblyDefinition.ReadAssembly(File.Exists(@"L:\SteamLibrary\steamapps\common\Casualties Unknown\BepInEx\plugins\CUCoreLib.dll") ? @"L:\SteamLibrary\steamapps\common\Casualties Unknown\BepInEx\plugins\CUCoreLib.dll" : @"L:\SteamLibrary\steamapps\common\Casualties Unknown\BepInEx\plugins\Together\CUCoreLib.dll");
         check(ccl.MainModule.Types.Single(t => t.FullName == "CUCoreLib.Helpers.LocaleLoader").Methods.Any(m => m.Name == "FindEmbeddedOverlayResources"),
             "The installed CCL must support the chosen native-format embedded locale overlays");
     }

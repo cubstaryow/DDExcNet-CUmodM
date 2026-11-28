@@ -53,7 +53,9 @@
     "dden.loongnova.micro-space-supply-crate": "龙域武库-微空间补给箱",
     "dden.loongnova.micro-space-supply-cratedsc": "一个内置了空间六面体，龙的智慧与力量无与伦比，空间内无时间流速，还做到了电池缺失时不会让你的物品进入空间乱流！",
     "dden.loongnova.spatial-recharger": "龙域武库-再充能模组",
-    "dden.loongnova.spatial-rechargerdsc": "使用空间乱流作为介质进行能量提取，也只有强如龙族才能做了吧。\n安装在上面的能量单元也只是紧急维持力场用，它自己就能自持循环并且额外输出恐怖的能源。"
+    "dden.loongnova.spatial-rechargerdsc": "使用空间乱流作为介质进行能量提取，也只有强如龙族才能做了吧。\n安装在上面的能量单元也只是紧急维持力场用，它自己就能自持循环并且额外输出恐怖的能源。",
+    "dden.loongnova.tactical-goggles": "龙域武库：战术护目镜",
+    "dden.loongnova.tactical-gogglesdsc": "眼部装备，提供佩戴者专属地形轮廓、危险高亮、夜视与可变焦效果。以当前画面为主要检测范围，对远程火力、声波炮和正下方陷阱提供额外范围预警；无芯片模式下移除本机视线黑色遮罩。 在脊背兽长老原生层级内可定位范围内存活且活跃的长老。 提供500米内商人指引。"
   },
   "other": {
     "dden.loongnova.module": "龙域武库",
@@ -161,6 +163,11 @@
     "dden.loongnova.rechargerCard": "容量1u · 仅存电池 · 减重100%\n充电站4倍速度 · 启动消耗200能源",
     "dden.loongnova.rechargerRecipe": "LN-二元性空间组件×2、LN-龙息物质×1、钛板×2、手摇充电器×1，需要可龙化100单位。先拖入1节龙息能量单元安装，再放入待充电池；支持龙息能量单元。以原版充电站4倍速度充电，每次安装需消耗200能源启动，单元不足200能源时不能安装；启动后安装单元自身每秒回充1能源；拖到中央“使用”可取出安装单元。基础价值60，商人不愿出售；以狙击炮同等概率稀有刷新。",
     "dden.loongnova.unlockNeedsSupplyCrate": "获得普通龙域武库-补给箱后，为当前角色解锁微空间补给箱配方。",
-    "dden.loongnova.rechargerActivationNeed": "能量单元剩余能源不足\n无法启动内置力场"
+    "dden.loongnova.rechargerActivationNeed": "能量单元剩余能源不足\n无法启动内置力场",
+    "dden.loongnova.tacticalGogglesCard": "个人战术覆盖层\n地形／危险／夜视／变焦",
+    "dden.loongnova.tacticalGogglesRecipe": "暂不可制作，仅可直接生成。",
+    "dden.loongnova.tacticalElderSignal": "长老 · {0:0}m",
+    "dden.loongnova.tacticalTraderSignal": "商人 · {0:0}m",
+    "dden.loongnova.tacticalSoundCharging": "声波炮蓄能"
   }
 }

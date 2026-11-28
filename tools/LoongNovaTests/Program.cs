@@ -34,6 +34,7 @@ CannonRoundRegistry.Register(CannonAmmoState.BioId, new CannonRound(1, 750, 1, 0
 CannonRoundRegistry.Register(CannonAmmoState.DemolitionId, new CannonRound(200, 25, 30, 20, 5, 1).Parameters());
 CannonRoundRegistry.Register(CannonAmmoState.ExplosiveId, new CannonRound(500,400,1,0,1,1,12).Parameters());
 CannonRoundRegistry.Register(CannonAmmoState.RevivalId, new CannonRound(0,0,1,0,1,effect:CannonEffect.Revive).Parameters());
+TacticalChecks.Run(Check);
 MinuteSyncChecks.Run(Check);
 SpatialChecks.Run(Check);
 ProgressionChecks.Run(Check);
@@ -750,6 +751,7 @@ Check(bossWins == 2500, "Elder dragon reward must have exactly a 25 percent roll
 string root = args.Length == 0 ? Path.GetFullPath(".") : args[0];
 using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(root, "src/DDEN.LoongNova/bin/Release/DDEN.LoongNova.dll")))
 {
+    TacticalChecks.Inspect(assembly,Check);
     UtilityAmmoChecks.Inspect(assembly,Check);
     MedicalChecks.Inspect(assembly,Check);
     RegrowthChecks.Inspect(assembly,Check);
@@ -956,9 +958,9 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
     var page = types.Single(t => t.Name == "ModuleItemPage");
     var cards = page.Methods.Single(m => m.Name == ".cctor");
     var catalogIds = cards.Body.Instructions.Where(i => i.Operand is string s && s.StartsWith("dden.loongnova.")).Select(i => (string)i.Operand).ToList();
-    Check(catalogIds.Count == 26 && catalogIds.Contains(SupplyCrateRules.SealedId) && catalogIds.Contains(SupplyCrateRules.OpenId)
+    Check(catalogIds.Count == 27 && catalogIds.Contains(SupplyCrateRules.SealedId) && catalogIds.Contains(SupplyCrateRules.OpenId)
         && catalogIds.Contains(CannonAmmoState.RevivalId) && catalogIds.Contains(MedicalCatalog.EmptyId) && !catalogIds.Contains("dden.loongnova.dragon-claw-refitted-wrench"),
-        "Catalog must include both supply crates among twenty-two active items and exclude the deferred wrench");
+        "Catalog must include both supply crates among twenty-seven active items and exclude the deferred wrench");
     var drawing = page.Methods.Single(m => m.Name == "Draw");
     Check(drawing.Body.ExceptionHandlers.Any(h => h.HandlerType == Mono.Cecil.Cil.ExceptionHandlerType.Finally),
         "Module page must always close its scroll view even if drawing fails");
@@ -1088,7 +1090,7 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
     Check(equipment.Body.Instructions.Any(instruction => instruction.Operand is string text && text == "cutting")
         && equipment.Body.Instructions.Any(instruction => instruction.Operand is string text && text == "hammering")
         && equipment.Body.Instructions.Any(instruction => instruction.Operand is string text && text == "loongnova.dragonization"), "Wrench must provide cutting, hammering and dragonization");
-    Check(assembly.MainModule.Resources.Count(resource => resource.Name.EndsWith(".png")) == 32, "Thirty-two small sprites must include both user-provided supply crate images while excluding superseded art");
+    Check(assembly.MainModule.Resources.Count(resource => resource.Name.EndsWith(".png")) == 33, "Thirty-three small sprites must include both user-provided supply crate images while excluding superseded art");
     Check(assembly.MainModule.Resources.Any(r => r.Name.EndsWith("dragon-scorch-rifle-v2.png"))
         && definition.Body.Instructions.Any(i => i.Operand is string s && s == "dragon-scorch-rifle-v2.png"),
         "Gun registration must use the new sprite without an external magazine");
@@ -1178,7 +1180,7 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
         "Boss rewards must use the normal CCL factory and one shared death claim, independently of the optional dragon roll");
     Check(!assembly.MainModule.Resources.Any(r => r.Name.EndsWith("dragon-wing-back-side.png"))
         && assembly.MainModule.Resources.Any(r => r.Name.EndsWith("dragon-wing-open-side.png")), "Only the newly redrawn single visible open wing must ship");
-    using var ccl = Mono.Cecil.AssemblyDefinition.ReadAssembly(@"L:\SteamLibrary\steamapps\common\Casualties Unknown\BepInEx\plugins\CUCoreLib.dll");
+    using var ccl = Mono.Cecil.AssemblyDefinition.ReadAssembly(File.Exists(@"L:\SteamLibrary\steamapps\common\Casualties Unknown\BepInEx\plugins\CUCoreLib.dll") ? @"L:\SteamLibrary\steamapps\common\Casualties Unknown\BepInEx\plugins\CUCoreLib.dll" : @"L:\SteamLibrary\steamapps\common\Casualties Unknown\BepInEx\plugins\Together\CUCoreLib.dll");
     var poolEnum = ccl.MainModule.Types.Single(t => t.FullName == "CUCoreLib.Data.DropPool");
     foreach (var expected in new[] { ("Trader1", 16), ("Trader2", 32), ("Trader3", 64), ("AllTraders", 112), ("ContainerCrate", 8), ("DropCapsule", 128), ("CapsuleContainer", 256) })
         Check(Convert.ToInt32(poolEnum.Fields.Single(f => f.Name == expected.Item1).Constant) == expected.Item2, "Loot source mapping must match the installed CCL API");

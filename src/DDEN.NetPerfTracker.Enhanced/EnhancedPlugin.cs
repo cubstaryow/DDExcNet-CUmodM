@@ -22,6 +22,9 @@ namespace DDEN.NetPerfTracker.Enhanced
         private bool _lastWanted;
         private LogChannel _log;
         private float _nextResolve;
+        private float _nextBoundaryCheck;
+        private RenderedFrameLoop _frameLoop;
+        private string _frameStatus = "disabled";
         public string Id => "perfdeep";
         public string DisplayName => L("性能跟踪器增强");
         public string Version => "0.2.1-alpha";
@@ -34,10 +37,11 @@ namespace DDEN.NetPerfTracker.Enhanced
         public bool ModuleEnabled => EnabledEntry != null && EnabledEntry.Value;
         public bool IsRunning => Hooks.Active;
         public string MasterKey => "诊断/启用深层计时";
-        public string Summary => Hooks.Status == "unpatch_failed" ? L("计时未能停止，请重启游戏")
+        public string Summary => _frameStatus == "boundary_cleanup_failed" || Hooks.Status == "unpatch_failed" ? L("计时未能停止，请重启游戏")
+            : _frameStatus.StartsWith("boundary_") ? L("计时方法不可用")
             : Hooks.Status == "unavailable" ? L("计时方法不可用") : Hooks.Status == "partial" ? L("部分方法可用")
             : Hooks.Active ? L("正在细分计时") : ModuleEnabled ? L("等待性能采样与Together探针") : L("深层计时已关闭");
-        public DdenHealth Health => Hooks.Status == "unpatch_failed" || Hooks.Status == "unavailable" || Hooks.Status == "partial" ? DdenHealth.Warn : DdenHealth.Ok;
+        public DdenHealth Health => _frameStatus.StartsWith("boundary_") || Hooks.Status == "unpatch_failed" || Hooks.Status == "unavailable" || Hooks.Status == "partial" ? DdenHealth.Warn : DdenHealth.Ok;
         public string HealthNote => Health == DdenHealth.Warn ? Summary : "";
         public IEnumerable<ConfigEntryBase> ConfigEntries => Config.Entries();
         private void Awake()
@@ -68,26 +72,42 @@ namespace DDEN.NetPerfTracker.Enhanced
                 _lastWanted = wanted;
                 try
                 {
-                    if (wanted) Hooks.Start(Time.realtimeSinceStartupAsDouble);
-                    else Hooks.Stop(Time.realtimeSinceStartupAsDouble);
+                    if (wanted)
+                    {
+                        Hooks.Start(Time.realtimeSinceStartupAsDouble);
+                        if (Hooks.Active) { _frameLoop = new RenderedFrameLoop(Hooks.Ledger); _frameLoop.Install(); _frameStatus = "active"; }
+                    }
+                    else StopCapture();
                 }
-                catch (Exception error) { Hooks.Stop(Time.realtimeSinceStartupAsDouble); _log.Warn("Deep timing unavailable: " + error.GetType().Name); }
+                catch (Exception error) { StopCapture(); _lastWanted = wanted; _frameStatus = "boundary_failed"; _log.Warn("Deep timing unavailable: " + error.GetType().Name); }
+            }
+            if (Hooks.Active && Time.realtimeSinceStartup >= _nextBoundaryCheck)
+            {
+                _nextBoundaryCheck = Time.realtimeSinceStartup + 1;
+                if (_frameLoop?.BoundaryPresent() != true)
+                { StopCapture(); _lastWanted = wanted; _frameStatus = "boundary_lost"; _log.Warn("Frame timing boundary was removed; capture stopped until toggled."); }
             }
         }
-        private void LateUpdate() { if (Hooks.Active) Hooks.Ledger.CompleteFrame(Time.realtimeSinceStartupAsDouble); }
         public void DrawPage(Rect area)
         {
             GUI.Label(new Rect(area.x, area.y, area.width, 26), DisplayName + " · " + Version, DdenUI.Title);
             if (DdenUI.Button(new Rect(area.x, area.y + 32, 245, 25), ModuleEnabled ? L("深层计时：开") : L("深层计时：关"), ModuleEnabled))
                 EnabledEntry.Value = !EnabledEntry.Value;
             GUI.Label(new Rect(area.x, area.y + 65, area.width, 190), L("先启用性能采样和Together探针，再开启深层计时。数据在“告警与联机反馈”页查看。\n切换后等待几秒，再比较相同场景。各项耗时可能互相包含，请勿相加。")
-                + "\n" + Summary, DdenUI.Wrap);
+                + "\n" + Summary + "\n" + L("手动导出包含逐帧编号、GC计数、固定步数和任务耗时；保留最近256帧及128帧长帧上下文，前2秒预热不计入分位数。"), DdenUI.Wrap);
         }
         public bool DrawSettings(Rect area) => false;
 
-        internal void StopCapture() { _lastWanted = false; Hooks.Stop(Time.realtimeSinceStartupAsDouble); }
+        internal DDEN.Diagnostics.DeepFrameTrace CaptureFrames() { _frameLoop?.MarkManualExport(); return Hooks.Ledger.CaptureFrames(_frameStatus); }
+        internal void StopCapture()
+        {
+            _lastWanted = false;
+            try { _frameLoop?.Dispose(); _frameLoop = null; _frameStatus = "disabled"; }
+            catch (Exception error) { _frameStatus = "boundary_cleanup_failed"; _log.Warn("Frame markers could not be removed: " + error.Message); }
+            finally { Hooks.Stop(Time.realtimeSinceStartupAsDouble); }
+        }
         private void OnDisable() { StopCapture(); DdenHub.SetPanelVisible(Id, false); }
-        private void OnDestroy() { Hooks.Stop(Time.realtimeSinceStartupAsDouble); DdenLocalization.Unregister(Config); Instance = null; }
+        private void OnDestroy() { StopCapture(); DdenLocalization.Unregister(Config); Instance = null; }
     }
     // Reflection-only bridge: absence or a schema mismatch never prevents the base tracker from loading.
     public static class DeepProbeBridge
@@ -99,6 +119,8 @@ namespace DDEN.NetPerfTracker.Enhanced
         public static void Stop() { if (Present) EnhancedPlugin.Instance.StopCapture(); }
         public static void Clear() { if (Present) EnhancedPlugin.Instance.Hooks.Ledger.Clear(Time.realtimeSinceStartupAsDouble); }
         public static string CaptureEvidence() => Present ? DeepPatchEvidence.Capture() : null;
+        public static string CaptureFrames() => Present ? JsonConvert.SerializeObject(EnhancedPlugin.Instance.CaptureFrames(),
+            new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.None, MaxDepth = 8 }) : null;
         public static string CaptureWindow() => Present ? JsonConvert.SerializeObject(
             EnhancedPlugin.Instance.Hooks.Capture(Time.realtimeSinceStartupAsDouble, Enabled),
             new JsonSerializerSettings { TypeNameHandling = TypeNameHandling.None, MaxDepth = 8 }) : null;

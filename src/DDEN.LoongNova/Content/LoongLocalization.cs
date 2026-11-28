@@ -1,4 +1,5 @@
 using System;
+using DDEN.Shared;
 using System.Collections.Generic;
 using System.IO;
 using CUCoreLib.Registries;
@@ -31,10 +32,11 @@ namespace DDEN.LoongNova
         }
         internal static string Text(string key)
         {
-            string text = Catalog.Text(key, Locale.currentLangName, Current);
+            string language=DdenLocalization.Language==DdenLanguage.English?"EN":"zh-CN";
+            bool same=string.Equals(Locale.currentLangName,language,StringComparison.OrdinalIgnoreCase);
+            string text = Catalog.Text(key, language, same?Current:null);
             if (key != "wrenchDescription") return text;
-            string capsule = Locale.currentLang != null ? Locale.GetBuilding("dropcapsule")
-                : Locale.currentLangName != null && Locale.currentLangName.StartsWith("zh", StringComparison.OrdinalIgnoreCase) ? "空投舱" : "drop capsule";
+            string capsule = same && Locale.currentLang != null ? Locale.GetBuilding("dropcapsule") : language=="zh-CN" ? "空投舱" : "drop capsule";
             return string.Format(text, capsule);
         }
         internal static void RefreshItem(string id, ItemInfo info)

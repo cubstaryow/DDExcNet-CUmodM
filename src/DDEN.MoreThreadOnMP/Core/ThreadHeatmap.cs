@@ -7,8 +7,8 @@ namespace DDEN.MoreThreadOnMP.Core
     internal static class ThreadHeatmap
     {
         internal const double ActivityThreshold = 0.01;
-        internal static bool IsCore(string role) => role == "main" || role == "receive" || role == "send" || role == "prepare";
-        private static int Order(string role) => role == "main" ? 0 : role == "receive" ? 1 : role == "send" ? 2 : role == "prepare" ? 3 : 4;
+        internal static bool IsCore(string role) => role == "main";
+        private static int Order(string role) => role == "main" ? 0 : 1;
         internal static ThreadLoad[] Select(ThreadSnapshot snapshot, bool showAll) => snapshot.Rows
             .Where(row => showAll || IsCore(row.Role) || row.RecentLoad >= ActivityThreshold)
             .OrderBy(row => Order(row.Role)).ThenBy(row => row.Id).ToArray();

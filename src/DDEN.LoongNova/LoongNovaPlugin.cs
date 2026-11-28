@@ -44,6 +44,7 @@ namespace DDEN.LoongNova
             try
             {
                 Registration.Register();
+                DdenLocalization.Changed += LoongLocalization.RefreshItems;
                 SaveRegistry.RegisterItemProvider(Guid + ".energy.v1", new GunSaveProvider());
                 SaveRegistry.RegisterBodyProvider(Guid + ".recipes.v1", new RecipeUnlocks.SaveProvider());
                 _harmony = new Harmony(Guid);
@@ -51,6 +52,8 @@ namespace DDEN.LoongNova
                 _harmony.PatchAll(typeof(ChargeHudPatch));
                 _harmony.PatchAll(typeof(CannonRackControls));
                 _harmony.PatchAll(typeof(CannonSightPatch));
+                _harmony.PatchAll(typeof(TacticalGogglesPatches));
+                gameObject.AddComponent<TacticalGogglesOverlay>();
                 _harmony.PatchAll(typeof(CannonInterruption));
                 _harmony.PatchAll(typeof(CellRefillMatching));
                 _harmony.PatchAll(typeof(EquipmentPatches));
@@ -107,6 +110,7 @@ namespace DDEN.LoongNova
 
         private void OnDestroy()
         {
+            DdenLocalization.Changed -= LoongLocalization.RefreshItems;
             SpatialDecayGuard.Stop();
             RecipeUnlockPatches.Stop();
             RecipeUnlocks.ResetView();

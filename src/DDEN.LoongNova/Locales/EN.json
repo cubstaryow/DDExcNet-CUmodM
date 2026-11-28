@@ -53,7 +53,9 @@
     "dden.loongnova.micro-space-supply-crate": "DDArsenal-Microspace Supply Crate",
     "dden.loongnova.micro-space-supply-cratedsc": "A spatial hexahedron lies within. The Dragon's wisdom and power are unrivaled: time does not flow inside, and even without a battery your belongings will not be lost to spatial turbulence!",
     "dden.loongnova.spatial-recharger": "DDArsenal-Recharging Module",
-    "dden.loongnova.spatial-rechargerdsc": "Extracting energy through spatial turbulence—perhaps only the mighty dragons could achieve this.\nThe installed energy cell is merely an emergency support for the field; the module sustains its own cycle and still outputs an astonishing amount of energy."
+    "dden.loongnova.spatial-rechargerdsc": "Extracting energy through spatial turbulence—perhaps only the mighty dragons could achieve this.\nThe installed energy cell is merely an emergency support for the field; the module sustains its own cycle and still outputs an astonishing amount of energy.",
+    "dden.loongnova.tactical-goggles": "DDArsenal-Tactical Goggles",
+    "dden.loongnova.tactical-gogglesdsc": "Eye equipment providing wearer-only terrain outlines, hazard highlights, night vision and adjustable zoom. Detection follows the current screen, with extra-range warnings for ranged weapons, sonic cannons and traps directly below. Disables the local line-of-sight blackout in unchipped mode. Locates living, active elders within range on their native layer. Provides trader guidance within 500 meters."
   },
   "other": {
     "dden.loongnova.module": "DDArsenal",
@@ -161,6 +163,11 @@
     "dden.loongnova.rechargerCard": "1u · Batteries only · 100% lighter\n4× station speed · 200 energy to activate",
     "dden.loongnova.rechargerRecipe": "LN-Duality Space Component ×2, LN-Dragonbreath Matter ×1, Titanium Sheet ×2, Hand Crank Charger ×1. Requires 100 Dragonization units. Install a Dragonbreath Energy Cell first, then store batteries to recharge, including Dragonbreath Energy Cells. Charges at four times the native station rate after spending 200 energy from the cell on each installation; cells below 200 energy cannot be installed. The installed cell then recharges itself at 1 energy/s. Use the central inventory Use slot to eject the installed cell. Base value 60; traders prefer to keep it. Spawns as rarely as the sniper cannon.",
     "dden.loongnova.unlockNeedsSupplyCrate": "Acquire an ordinary DDArsenal-Supply Crate to unlock the Microspace Supply Crate recipe for this character.",
-    "dden.loongnova.rechargerActivationNeed": "Insufficient energy in the cell\nCannot start the internal field"
+    "dden.loongnova.rechargerActivationNeed": "Insufficient energy in the cell\nCannot start the internal field",
+    "dden.loongnova.tacticalGogglesCard": "Personal tactical overlay\nTerrain / Hazards / Night vision / Zoom",
+    "dden.loongnova.tacticalGogglesRecipe": "Not craftable; direct spawning only.",
+    "dden.loongnova.tacticalElderSignal": "Elder · {0:0}m",
+    "dden.loongnova.tacticalTraderSignal": "Trader · {0:0}m",
+    "dden.loongnova.tacticalSoundCharging": "SONIC CANNON CHARGING"
   }
 }

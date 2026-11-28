@@ -63,7 +63,7 @@ namespace DDEN.NetPerfTracker.Enhanced
                 Ledger.SetAvailable(i, false, "missing method");
                 var targetAssembly = Reflect.FindAssembly(target.Assembly);
                 MethodInfo method = targetAssembly?.GetType(target.Type, false)?.GetMethod(target.Method,
-                    (target.Instance ? Instance : Static) | BindingFlags.DeclaredOnly, null, Type.EmptyTypes, null);
+                    (target.Instance ? Instance : Static) | BindingFlags.DeclaredOnly, null, target.Parameters, null);
                 if (method == null || method.ReturnType != typeof(void) || method.ContainsGenericParameters || method.IsAbstract || method.GetMethodBody() == null) continue;
                 try
                 {

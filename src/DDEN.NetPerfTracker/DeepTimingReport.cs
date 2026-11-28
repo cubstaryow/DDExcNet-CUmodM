@@ -57,6 +57,9 @@ namespace DDEN.NetPerfTracker
                 case "Together.SyncInfo.DestroyTrackedGameObject": return L("同步对象销毁");
                 case "Wearable.Awake": return L("装备唤醒");
                 case "Together.SyncInfoGameObjectTracker.FlushFrameSamples": return L("物体同步每帧汇总");
+                case "Together.NetObjectRegistry.Update": return L("网络对象注册更新");
+                case "Together.NetObjectRegistry._ObjectSyncUpdateLoopUniversal": return L("网络对象注册扫描");
+                case "Together.LayerBuildingStream.HostRegister": return L("主机建筑注册扫描");
                 case "Together.ChunkSleep.Entries": return L("区块休眠记录数");
                 case "Together.BagSleep.Rows": return L("背包休眠记录数");
                 case "KrokV5Optimization.SlowStamp.Jobs": return L("延迟任务数");
