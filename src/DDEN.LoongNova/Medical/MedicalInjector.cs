@@ -12,7 +12,7 @@ namespace DDEN.LoongNova
         private readonly PendingActions _pending = new PendingActions();
         internal Item Item { get; private set; }
         internal bool Known;
-        private float _nextRead, _nextAction;
+        private float _nextRead, _nextAction, _nextBackgroundRead;
         private object _connection;
         private SpriteRenderer _renderer;
         private Sprite _visibleSprite;
@@ -52,7 +52,8 @@ namespace DDEN.LoongNova
         {
             if (Item == null || Item.id != MedicalCatalog.InjectorId || body == null || _pending.Count > 0
                 || Time.unscaledTime < _nextAction) return;
-            _nextRead = Time.unscaledTime + 2; _nextAction = Time.unscaledTime + 0.15f;
+            if (operation == "read" && Mp.IsRunning && !Mp.IsServer && !NetworkReadBudget.TryAcquire(Time.unscaledTime, NetworkAccess.Connection)) return;
+            _nextRead = Time.unscaledTime + (Known ? 60 : 2); _nextAction = Time.unscaledTime + 0.15f;
             if (!Mp.IsRunning || Mp.IsServer)
             {
                 try { ApplyReply(Execute(operation, material, body)); }
@@ -64,6 +65,7 @@ namespace DDEN.LoongNova
             var connection = NetworkAccess.Connection;
             var packet = new JObject { ["request"] = request, ["operation"] = operation, ["gun"] = NetworkAccess.Id(Item),
                 ["cell"] = material != null ? NetworkAccess.Id(material) : 0 };
+            if (operation == "read") packet["knownRevision"] = Known ? State.Revision : -1;
             _pending.Add(request, operation, Time.unscaledTime);
             bool sent = Mp.RequestServer(WeaponService.Channel, packet, reply =>
             {
@@ -76,10 +78,10 @@ namespace DDEN.LoongNova
         private void Update()
         {
             object connection = NetworkAccess.Connection;
-            if (!ReferenceEquals(connection, _connection)) { _connection = connection; _pending.Clear(); Known = !Mp.IsRunning || Mp.IsServer; _nextRead = 0; }
+            if (!ReferenceEquals(connection, _connection)) { _connection = connection; _pending.Clear(); Known = !Mp.IsRunning || Mp.IsServer; _nextRead = _nextBackgroundRead = 0; }
             if (_pending.Expire(Time.unscaledTime, out _)) _nextRead = Time.unscaledTime + 1;
-            if (!Mp.IsRunning || Mp.IsServer || Time.unscaledTime < _nextRead) return;
-            _nextRead = Time.unscaledTime + 2;
+            if (!Mp.IsRunning || Mp.IsServer || Time.unscaledTime < _nextRead || Time.unscaledTime < _nextBackgroundRead) return;
+            _nextBackgroundRead = Time.unscaledTime + (Known ? 60 : 2);
             var body = PlayerCamera.main != null ? PlayerCamera.main.body : null;
             if (body != null && NetworkAccess.Carries(body, Item)) Request("read", body);
         }
@@ -89,7 +91,7 @@ namespace DDEN.LoongNova
         internal void ApplyState(JToken payload)
         {
             if ((payload?.Value<long?>("revision") ?? -1) < State.Revision) return;
-            if (State.Restore(payload)) { Known = true; RefreshSprite(); }
+            if (State.Restore(payload)) { Known = true; _nextRead = Time.unscaledTime + (Known ? 60 : 2); RefreshSprite(); }
         }
         internal JObject Execute(string operation, Item material, Body body)
         {

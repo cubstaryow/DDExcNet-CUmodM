@@ -245,6 +245,7 @@ namespace DDExcNet.CUmodM
 
         private void OnDestroy()
         {
+            ReleaseScrollSkin();
             DDEN.Shared.Log.UnregisterSink(Guid);
             DdenHub.OpenRequested -= OnOpenRequested;
             DdenLocalization.Changed -= OnLanguageChanged;
@@ -324,7 +325,7 @@ namespace DDExcNet.CUmodM
             DrawModuleVersionWarning();
 
             if (!_visible) return;
-            Matrix4x4 old = GUI.matrix; int oldDepth = GUI.depth;
+            Matrix4x4 old = GUI.matrix; int oldDepth = GUI.depth; GUISkin oldSkin = GUI.skin;
             try
             {
                 float scale = Mathf.Clamp(CfgScale.Value, 0.75f, 2f);
@@ -339,6 +340,7 @@ namespace DDExcNet.CUmodM
                 _rect.y = Mathf.Clamp(_rect.y, 0f, Mathf.Max(0f, h - _rect.height));
 
                 // 用无皮肤窗口：标题栏/边框全部自己画，避免 Unity 默认窗框压住第一行文字
+                GUI.skin = ScrollSkin(oldSkin);
                 _rect = GUI.Window(WindowId, _rect, DrawWindow, GUIContent.none, GUIStyle.none);
             }
             catch (Exception ex)
@@ -346,7 +348,7 @@ namespace DDExcNet.CUmodM
                 Log.Exception(ex, "OnGUI");
                 _visible = false;
             }
-            finally { GUI.matrix = old; GUI.depth = oldDepth; }
+            finally { GUI.skin = oldSkin; GUI.matrix = old; GUI.depth = oldDepth; }
         }
 
         /// <summary>

@@ -26,3 +26,6 @@ backup/
 
 # 发布打包产物（本地生成，随 Release 上传）
 dist/
+
+# 本地美术源文件
+/arts/

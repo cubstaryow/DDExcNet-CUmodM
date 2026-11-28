@@ -3,7 +3,7 @@ namespace DDEN.LoongNova
     // Cosmetic state only. Missing/reordered updates must never leave another player's wings permanently open.
     internal sealed class WingFlightLease
     {
-        internal const double Lifetime = 2;
+        internal const double Lifetime = 70;
         private long _sequence = -1;
         private bool _flying;
         private double _until;

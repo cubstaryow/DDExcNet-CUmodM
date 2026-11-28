@@ -10,6 +10,9 @@ namespace DDEN.LoongNova
         internal const int GrowthLimit = 2;
         internal const float RadiationRecoveryPerSecond = 1;
         internal const float BloodRecoveryPerSecond = 2.5f;
+        internal const float RapidBloodPerSecond = 20;
+        internal const float RapidPressurePerSecond = 20;
+        internal const float NormalBlood = 100, NormalPressure = 120;
         internal const float BloodCostFraction = 0.2f;
         internal const float InjectionRetained = 0.25f;
         internal const float NewLimbHealth = 10;

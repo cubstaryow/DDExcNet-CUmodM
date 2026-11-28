@@ -94,10 +94,30 @@ internal static class MedicalChecks
             elapsed=0;while(elapsed<120){float step=Math.Min(frame,120-elapsed);UnityEngine.Time.deltaTime=step;DragonLifeBlessingPatch.Bless(body);elapsed+=step;}
             check(Math.Abs(distant.muscleHealth-80)<0.02&&Math.Abs(distant.skinHealth-85)<0.02&&Math.Abs(distant.infectionAmount-30)<0.02&&distant.pain<0.001,
                 "Dragon Life Blessing must heal all present organic limbs at 0.5/s and provide analgesia for 120 seconds");
-            check(local.muscleHealth==100&&local.skinHealth==100&&prosthetic.muscleHealth==20&&severed.muscleHealth==0&&body.bloodVolume==37,
-                "Healing must cap at full limb health, skip prostheses/missing limbs, and never alter blood volume");
+            check(local.muscleHealth==100&&local.skinHealth==100&&prosthetic.muscleHealth==20&&severed.muscleHealth==0&&body.bloodVolume==100,
+                "Healing caps limb health, skips prostheses/missing limbs, and finishes rapid circulation recovery at normal volume");
             float ended=distant.muscleHealth;UnityEngine.Time.deltaTime=5;DragonLifeBlessingPatch.Bless(body);
             check(Math.Abs(distant.muscleHealth-ended)<0.02,"Blessing must expire without an extra tick beyond its duration");
+        }
+        foreach(float volume in new[]{-90f,37f,100f,180f})
+        foreach(float pressure in new[]{20f,120f,220f})
+        foreach(float frame in new[]{0.02f,1f,5f})
+        {
+            DDEN.Shared.Mp.IsRunning=false;
+            var circulation=new Body{bloodVolume=volume,bloodPressure=pressure};
+            var site=new Limb{body=circulation};circulation.limbs=new[]{site};
+            MedicalEffects.Apply(site,MedicalCatalog.MedicalId);
+            float elapsed=0;while(elapsed<10){float step=Math.Min(frame,10-elapsed);UnityEngine.Time.deltaTime=step;DragonLifeBlessingPatch.Bless(circulation);elapsed+=step;}
+            check(circulation.bloodVolume==100&&circulation.bloodPressure==120,
+                "Rapid treatment normalizes low/high circulation without overshoot at every frame rate");
+            circulation.bloodVolume=37;circulation.bloodPressure=40;
+            UnityEngine.Time.deltaTime=5;DragonLifeBlessingPatch.Bless(circulation);
+            check(Math.Abs(circulation.bloodVolume-37)<0.002&&Math.Abs(circulation.bloodPressure-40)<0.002,
+                "Aftereffect must not refill blood or correct pressure after rapid treatment expires");
+            DDEN.Shared.Mp.IsRunning=true;DDEN.Shared.Mp.IsServer=false;
+            MedicalEffects.RecoverCirculation(circulation,10);
+            check(Math.Abs(circulation.bloodVolume-37)<0.002&&Math.Abs(circulation.bloodPressure-40)<0.002,
+                "A multiplayer client cannot apply circulation recovery independently");
         }
         var clientBody=new Body{NetworkBody=new OfflineNetBody(),bloodVolume=50};
         var clientLimb=new Limb{body=clientBody,muscleHealth=10,skinHealth=10,infectionAmount=90,pain=50};clientBody.limbs=new[]{clientLimb};
@@ -148,7 +168,7 @@ internal static class MedicalChecks
         }
         foreach(var name in new[]{"MedicalTreatmentPatch","DragonLifeBlessingPatch"})
             check(!types.Single(t=>t.Name==name).Methods.Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions).Any(i=>i.Operand is FieldReference f&&f.Name=="bloodVolume"),
-                "Medical healing BUFFs must never refill or drain blood: "+name);
+                "Blood-volume changes must stay in the authority-guarded circulation helper: "+name);
         var register=types.Single(t=>t.Name=="Registration");
         var medicalRegister=register.Methods.Single(m=>m.Name=="RegisterMedical");
         var spriteCalls=medicalRegister.Body.Instructions.ToList();

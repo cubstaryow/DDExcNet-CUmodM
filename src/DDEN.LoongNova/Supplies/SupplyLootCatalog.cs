@@ -14,7 +14,7 @@ namespace DDEN.LoongNova
             foreach (var pair in Item.GlobalItems.OrderBy(p => p.Key, StringComparer.Ordinal))
             {
                 string id = pair.Key; var info = pair.Value;
-                if (id == SupplyCrateRules.SealedId || id == SupplyCrateRules.OpenId || info == null
+                if (id == SupplyCrateRules.SealedId || id == SupplyCrateRules.OpenId || SpatialCatalog.IsDevice(id) || info == null
                     || info.category == "unobtainable" || info.category == "nospawn"
                     || float.IsNaN(info.weight) || float.IsInfinity(info.weight) || info.weight < 0 || info.weight > SupplyCrateRules.MaxItemWeight) continue;
                 bool container = info.category == "container";

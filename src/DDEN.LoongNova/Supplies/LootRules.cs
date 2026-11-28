@@ -63,6 +63,8 @@ namespace DDEN.LoongNova
                 if (roll < GunChance) return Registration.GunId;
                 if (roll < GunChance * 2) return Registration.ChargeGunId;
                 if (roll < GunChance * 2 + CellChance) return Registration.CellId;
+                double chargerStart = GunChance * 2 + CellChance + AmmoChance * 6 + RevivalAmmoChance;
+                if (roll >= chargerStart && roll < chargerStart + GunChance) return SpatialCatalog.ChargerId;
                 return SelectAmmo(roll - (GunChance * 2 + CellChance));
             }
             else if (category == "ammo") return SelectAmmo(roll);

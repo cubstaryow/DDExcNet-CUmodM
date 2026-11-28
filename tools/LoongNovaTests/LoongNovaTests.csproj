@@ -1,6 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings></PropertyGroup>
   <ItemGroup>
+    <Compile Include="../../src/DDEN.LoongNova/Equipment/BeltActivitySession.cs" Link="BeltActivitySession.cs" />
+    <Compile Include="../../src/DDEN.LoongNova/Integration/StateDelta.cs" Link="StateDelta.cs" />
+    <Compile Include="../../src/DDEN.LoongNova/Integration/NetworkReadBudget.cs" Link="NetworkReadBudget.cs" />
     <Reference Remove="@(Reference)" />
     <Reference Include="Newtonsoft.Json"><HintPath>$(ManagedDir)/Newtonsoft.Json.dll</HintPath><Private>true</Private></Reference>
     <Reference Include="Mono.Cecil"><HintPath>$(BepInExCoreDir)/Mono.Cecil.dll</HintPath><Private>true</Private></Reference>
@@ -13,8 +16,10 @@
     <Compile Include="../../src/DDEN.LoongNova/Weapons/Charge/ChargeTone.cs" Link="ChargeTone.cs" />
     <Compile Include="../../src/DDEN.LoongNova/Weapons/Charge/ChargeAudioLease.cs" Link="ChargeAudioLease.cs" />
     <Compile Include="../../src/DDEN.LoongNova/Weapons/Ammo/CannonRoundRegistry.cs" Link="CannonRoundRegistry.cs" />
+    <Compile Include="../../src/DDEN.LoongNova/Progression/RecipeUnlockRules.cs" Link="RecipeUnlockRules.cs" />
     <Compile Include="../../src/DDEN.LoongNova/Content/ArsenalRecipes.cs" Link="ArsenalRecipes.cs" />
     <Compile Include="../../src/DDEN.LoongNova/Content/ContentResources.cs" Link="ContentResources.cs" />
+    <Compile Include="../../src/DDEN.LoongNova/Content/LoongTextCatalog.cs" Link="LoongTextCatalog.cs" />
     <Compile Include="../../src/DDEN.LoongNova/Weapons/Ammo/CannonSpawnWeights.cs" Link="CannonSpawnWeights.cs" />
     <Compile Include="../../src/DDEN.LoongNova/Medical/MedicalMarket.cs" Link="MedicalMarket.cs" />
     <Compile Include="../../src/DDEN.LoongNova/Supplies/DrillExchange.cs" Link="DrillExchange.cs" />
@@ -23,6 +28,8 @@
     <Compile Include="../../src/DDEN.LoongNova/Weapons/Ammo/CannonAmmoState.cs" Link="CannonAmmoState.cs" />
     <Compile Include="../../src/DDEN.LoongNova/Weapons/Ammo/CannonSaveState.cs" Link="CannonSaveState.cs" />
     <Compile Include="../../src/DDEN.LoongNova/Weapons/Charge/ChargeCycle.cs" Link="ChargeCycle.cs" />
+    <Compile Include="../../src/DDEN.LoongNova/Spatial/SpatialChargeRules.cs" Link="SpatialChargeRules.cs" />
+    <Compile Include="../../src/DDEN.LoongNova/Spatial/SpatialPowerState.cs" Link="SpatialPowerState.cs" />
     <Compile Include="../../src/DDEN.LoongNova/Equipment/EnergyState.cs" Link="EnergyState.cs" />
     <Compile Include="../../src/DDEN.LoongNova/Equipment/BeltPowerState.cs" Link="BeltPowerState.cs" />
     <Compile Include="../../src/DDEN.LoongNova/UI/ItemCardLayout.cs" Link="ItemCardLayout.cs" />

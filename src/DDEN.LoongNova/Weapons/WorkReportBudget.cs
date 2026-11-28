@@ -8,12 +8,12 @@ namespace DDEN.LoongNova
         private string _epoch;
         private double _clock, _budget;
 
-        internal bool Apply(BeltPowerState state, string epoch, double total, double now)
+        internal bool Apply(BeltPowerState state, string epoch, double total, double now, double limit = BeltPowerState.MaxUnconfirmedWork)
         {
             if (!state.Cell.Loaded || epoch != state.Epoch || !BeltPowerState.Finite(total)
                 || !BeltPowerState.Finite(now) || total < state.WorkTotal - 1e-6) return false;
             if (_epoch != state.Epoch) { _epoch = state.Epoch; _clock = now; _budget = BeltPowerState.MaxUnconfirmedWork; }
-            _budget = Math.Min(BeltPowerState.MaxUnconfirmedWork, _budget + Math.Max(0, now - _clock) * BeltPowerState.FlightWorkRate);
+            _budget = Math.Min(limit, _budget + Math.Max(0, now - _clock) * BeltPowerState.FlightWorkRate);
             _clock = now;
             double difference = Math.Max(0, total - state.WorkTotal);
             if (difference > _budget + 0.05) return false;

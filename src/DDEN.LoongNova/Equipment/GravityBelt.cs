@@ -13,9 +13,14 @@ namespace DDEN.LoongNova
         internal bool Known;
         internal string Status = "";
         private bool _boosting, _ejectQueued;
+        private int _activityMode, _reportedMode;
+        private bool _streaming;
+        private readonly BeltActivitySession _activity = new BeltActivitySession();
+        private Body _streamOwner;
+        private double UnconfirmedLimit => _streaming ? BeltPowerState.FlightWorkRate * 65 : BeltPowerState.MaxUnconfirmedWork;
         private readonly PendingActions _requests = new PendingActions();
         private bool Pending => _requests.Count > 0;
-        private float _nextReport, _nextRead, _protectedUntil;
+        private float _nextReport, _nextRead, _protectedUntil, _nextActionReport;
         private double _confirmedWork;
         private long _serverRevision = -1;
         private object _connection;
@@ -58,7 +63,7 @@ namespace DDEN.LoongNova
         }
         internal static bool Local(Body body) => body != null && (!Mp.IsRunning || PlayerCamera.main != null && PlayerCamera.main.body == body);
         internal bool Powered => State.Remaining > 0 && (!Mp.IsRunning || LoongNovaPlugin.Service.Ready)
-            && (!Mp.IsRunning || Mp.IsServer || Known && State.WorkTotal - _confirmedWork < BeltPowerState.MaxUnconfirmedWork - 1e-6);
+            && (!Mp.IsRunning || Mp.IsServer || Known && State.WorkTotal - _confirmedWork < UnconfirmedLimit - 1e-6);
         internal bool WingsOpen
         {
             get
@@ -71,7 +76,7 @@ namespace DDEN.LoongNova
         internal long NextWingSequence() => ++_wingSequence;
         internal void ReceiveWingPose(long sequence, bool flying) => _remoteWings.Apply(sequence, flying, Time.unscaledTime);
         internal bool CanBoost(Body body) => Owner == body && Local(body) && Powered
-            && (!Mp.IsRunning || Mp.IsServer || State.WorkTotal - _confirmedWork < 2 - 1e-6);
+            && (!Mp.IsRunning || Mp.IsServer || State.WorkTotal - _confirmedWork < (_streaming ? UnconfirmedLimit : 2) - 1e-6);
         internal void Boost(Body body)
         {
             if (!CanBoost(body)) return;
@@ -95,7 +100,7 @@ namespace DDEN.LoongNova
 
         private void FixedUpdate()
         {
-            _flying = false;
+            _flying = false; _activityMode = 0;
             if (Item == null || Item.id != Registration.BeltId) return;
             RefreshEncumbrance();
             var body = Owner;
@@ -109,9 +114,10 @@ namespace DDEN.LoongNova
             bool slowing = !flying && !body.grounded && rb.velocity.y <= -cap + 0.05f;
             if (!flying && !_boosting && !slowing) return;
             double budget = Mp.IsRunning && !Mp.IsServer
-                ? Math.Max(0, (flying ? BeltPowerState.MaxUnconfirmedWork : 2) - (State.WorkTotal - _confirmedWork)) : double.PositiveInfinity;
+                ? Math.Max(0, (_streaming ? UnconfirmedLimit : flying ? BeltPowerState.MaxUnconfirmedWork : 2) - (State.WorkTotal - _confirmedWork)) : double.PositiveInfinity;
             float paidSeconds = (float)State.AdvanceActivity(Time.fixedDeltaTime, flying, budget);
             if (paidSeconds <= 0) return;
+            _activityMode = flying ? 16 : 1;
             if (flying) { _flying = true; ApplyFlight(body, paidSeconds); }
             else if (slowing)
             {
@@ -154,22 +160,25 @@ namespace DDEN.LoongNova
             if (!ReferenceEquals(_connection, connection))
             {
                 _connection = connection; _requests.Clear(); _ejectQueued = false;
-                _nextRead = 0; _serverRevision = -1; _confirmedWork = 0;
+                _nextRead = 0; _serverRevision = -1; _confirmedWork = 0; _activity.Reset(); _streaming = false; _reportedMode = _activityMode = 0;
                 _remoteWings.Reset(); _lastWingReported = _lastWingPublished = false; _nextWingPublish = 0;
                 if (Mp.IsRunning && !Mp.IsServer) Known = false;
             }
             if (_requests.Expire(Time.unscaledTime, out _))
             {
-                _ejectQueued = false; _nextRead = Time.unscaledTime + 1; Status = Registration.Text("rejected");
+                _ejectQueued = false; _reportedMode = -1; _nextActionReport = Time.unscaledTime + 1; _nextRead = Time.unscaledTime + 1; Status = Registration.Text("rejected");
             }
+            if (Mp.IsRunning && Mp.IsServer && _activity.Running)
+                _activity.Tick(State, Time.time, _streamOwner != null && Owner == _streamOwner && _streamOwner.conscious);
             PublishLocalWingPose();
             UpdateFeedback();
             var body = PlayerCamera.main != null ? PlayerCamera.main.body : null;
             if (_ejectQueued && !Pending) { Request("eject", body); return; }
             if (!Mp.IsRunning || Mp.IsServer || body == null || !Known && Time.unscaledTime < _nextRead) return;
-            if (!Pending && (State.WorkTotal > _confirmedWork + 1e-7 || _flying != _lastWingReported) && Time.unscaledTime >= _nextReport)
+            if (!Pending && (_streaming ? (_activityMode != _reportedMode || State.WorkTotal > _confirmedWork + 1e-7 && Time.unscaledTime >= _nextReport)
+                : (State.WorkTotal > _confirmedWork + 1e-7 || _flying != _lastWingReported) && Time.unscaledTime >= _nextReport) && (! _streaming || Time.unscaledTime >= _nextActionReport))
             {
-                _nextReport = Time.unscaledTime + 0.5f;
+                _nextActionReport = Time.unscaledTime + 0.15f;
                 if (Owner == body || NetworkAccess.Carries(body, Item)) Request("work", body);
                 else
                 {
@@ -177,7 +186,7 @@ namespace DDEN.LoongNova
                     _confirmedWork = State.WorkTotal; // Stop retrying an item no longer carried by this player.
                 }
             }
-            else if (!Pending && Owner == body && Time.unscaledTime >= _nextRead)
+            else if (!Pending && (!_streaming || _activityMode == 0) && Owner == body && Time.unscaledTime >= _nextRead)
                 Request("read", body);
         }
 
@@ -200,16 +209,19 @@ namespace DDEN.LoongNova
             if (!LoongNovaPlugin.Service.Ready || NetworkAccess.Id(Item) == 0)
             { Status = Registration.Text("unavailable"); return; }
             if (operation == "eject") _ejectQueued = false;
+            if ((operation == "read" || operation == "work" && _streaming && _activityMode == _reportedMode)
+                && !NetworkReadBudget.TryAcquire(Time.unscaledTime, NetworkAccess.Connection)) return;
             string request = Guid.NewGuid().ToString("N");
             var packet = new JObject
             {
                 ["request"] = request, ["operation"] = operation, ["gun"] = NetworkAccess.Id(Item),
                 ["cell"] = cell != null ? NetworkAccess.Id(cell) : 0,
-                ["epoch"] = State.Epoch, ["work"] = State.WorkTotal, ["flying"] = _flying
+                ["mode"] = _activityMode, ["epoch"] = State.Epoch, ["work"] = State.WorkTotal, ["flying"] = _flying
             };
+            if (operation == "read") packet["knownRevision"] = Known ? _serverRevision : -1;
             _requests.Add(request, operation, Time.unscaledTime);
-            if (operation == "work") _lastWingReported = _flying;
-            _nextReport = Time.unscaledTime + 0.5f; _nextRead = Time.unscaledTime + 5;
+            if (operation == "work") { _nextActionReport = Time.unscaledTime + 0.15f; _lastWingReported = _flying; _reportedMode = _activityMode; }
+            _nextReport = Time.unscaledTime + (_streaming ? 60 : 0.5f); _nextRead = Time.unscaledTime + 60;
             var connection = NetworkAccess.Connection;
             bool sent = Mp.RequestServer(WeaponService.Channel, packet, response =>
             {
@@ -218,25 +230,25 @@ namespace DDEN.LoongNova
                 try
                 {
                     if (response?.Value<string>("request") != request)
-                    { _ejectQueued = false; _nextRead = Time.unscaledTime + 1; Status = Registration.Text("rejected"); return; }
+                    { _ejectQueued = false; _reportedMode = -1; _nextActionReport = Time.unscaledTime + 1; _nextRead = Time.unscaledTime + 1; Status = Registration.Text("rejected"); return; }
                     if (Mp.CoreReady && Mp.IsRunning && !Mp.IsServer) ApplyResponse(response);
                 }
                 catch (Exception error)
                 {
-                    _ejectQueued = false; _nextRead = Time.unscaledTime + 1; Status = Registration.Text("rejected");
+                    _ejectQueued = false; _reportedMode = -1; _nextActionReport = Time.unscaledTime + 1; _nextRead = Time.unscaledTime + 1; Status = Registration.Text("rejected");
                     LoongNovaPlugin.Log.Warn("LoongNova belt response: " + error.GetBaseException().Message);
                 }
             });
-            if (!sent) { _requests.Finish(request); _ejectQueued = false; _nextRead = Time.unscaledTime + 1; Status = Registration.Text("unavailable"); }
+            if (!sent) { _requests.Finish(request); _ejectQueued = false; _reportedMode = -1; _nextActionReport = Time.unscaledTime + 1; _nextRead = Time.unscaledTime + 1; Status = Registration.Text("unavailable"); }
         }
 
         private void PublishLocalWingPose()
         {
             if (!Mp.IsRunning || !Mp.IsServer || !LoongNovaPlugin.Service.Ready || !Local(Owner)) return;
             bool open = WingsOpen;
-            if (Time.unscaledTime < _nextWingPublish || open == _lastWingPublished && !open) return;
+            if (open == _lastWingPublished && (!open || Time.unscaledTime < _nextWingPublish)) return;
             _lastWingPublished = open;
-            _nextWingPublish = Time.unscaledTime + 0.5f;
+            _nextWingPublish = Time.unscaledTime + 60;
             WingVisualSync.Publish(this, open);
         }
         private void UpdateFeedback()
@@ -313,8 +325,10 @@ namespace DDEN.LoongNova
         }
         private void OnDisable()
         {
+            if (Mp.IsRunning && Mp.IsServer && _activity.Running)
+            { _activity.Tick(State, Time.time, false); WingVisualSync.Publish(this, false); }
             _requests.Clear(); _ejectQueued = false;
-            _flying = false;
+            _flying = false; _activityMode = 0;
             _remoteWings.Reset();
             if (_flightAudio != null)
             {
@@ -324,6 +338,7 @@ namespace DDEN.LoongNova
         }
         private void ApplyResponse(JToken response)
         {
+            if (response?.Value<bool?>("ok") != true) { _reportedMode = -1; _nextActionReport = Time.unscaledTime + 1; }
             var payload = response?["state"];
             long revision = payload?.Value<long?>("revision") ?? -1;
             if (revision < _serverRevision) return;
@@ -334,7 +349,7 @@ namespace DDEN.LoongNova
                 _serverRevision = revision; _confirmedWork = State.WorkTotal;
                 if (Mp.IsRunning && !Mp.IsServer && State.Epoch == epoch)
                     State.Advance(Math.Max(0, work - _confirmedWork));
-                Known = true;
+                Known = true; _streaming = response.Value<bool?>("stream") == true;
                 RefreshEncumbrance();
             }
             Status = response?.Value<bool?>("ok") == true ? "" : Registration.Text("rejected");
@@ -348,9 +363,13 @@ namespace DDEN.LoongNova
                 || (operation == "load" || operation == "eject" || operation == "read" ? !NetworkAccess.CanAccess(body, Item) : !NetworkAccess.Carries(body, Item))) return Reply(false);
             if (packet != null && (operation == "work" || operation == "eject"))
             {
-                if (!_reports.Apply(State, packet.Value<string>("epoch"), packet.Value<double?>("work") ?? double.NaN, Time.time))
+                if (!(packet["mode"] != null
+                    ? _activity.Report(State, _reports, packet.Value<string>("epoch"), packet.Value<double?>("work") ?? double.NaN,
+                        operation == "eject" ? 0 : packet.Value<int>("mode"), Time.time)
+                    : _reports.Apply(State, packet.Value<string>("epoch"), packet.Value<double?>("work") ?? double.NaN, Time.time)))
                     return Reply(false);
             }
+            if (operation == "work") _streamOwner = body;
             if (operation == "read" || operation == "work")
             {
                 if (packet != null && operation == "work")
@@ -392,7 +411,7 @@ namespace DDEN.LoongNova
         private JObject Reply(bool ok)
         {
             RefreshEncumbrance();
-            return new JObject { ["ok"] = ok, ["state"] = State.Capture() };
+            return new JObject { ["ok"] = ok, ["stream"] = true, ["state"] = State.Capture() };
         }
     }
 }

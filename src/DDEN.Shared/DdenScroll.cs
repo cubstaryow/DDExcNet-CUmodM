@@ -124,8 +124,18 @@ namespace DDEN.Shared
             else if (GUIUtility.hotControl == id && e.type == EventType.MouseUp)
             { GUIUtility.hotControl = 0; e.Use(); }
             if (horizontal) thumb.x = start + axis.Offset(value); else thumb.y = start + axis.Offset(value);
-            Fill(track, Bg); Frame(track, AccentDim);
+            if (horizontal)
+            {
+                // A thin flat rail and square thumb, matching manager-hosted legacy scroll views.
+                Fill(new Rect(track.x, track.center.y - 2, track.width, 4), PanelAlt);
+            }
+            else { Fill(track, Bg); Frame(track, AccentDim); }
             Fill(thumb, GUIUtility.hotControl == id ? new Color(.55f, .84f, 1) : pointerVisible && thumb.Contains(e.mousePosition) ? Accent : new Color(.25f, .41f, .51f));
+            if (horizontal && thumb.width >= 24)
+            {
+                Fill(new Rect(thumb.center.x - 2, thumb.y + 2, 1, Mathf.Max(1, thumb.height - 4)), Bg);
+                Fill(new Rect(thumb.center.x + 1, thumb.y + 2, 1, Mathf.Max(1, thumb.height - 4)), Bg);
+            }
             return value;
         }
         public static float HorizontalSlider(Rect area, float value, float minimum, float maximum)

@@ -26,7 +26,17 @@ namespace DDEN.LoongNova
         internal bool Ready => IsRound(Id) && Chambered;
         internal bool MagazineLoaded => IsRound(Id) && !Chambered || IsRound(_reserveId);
         internal bool CanLoad => !MagazineLoaded;
-        internal bool CanUnload => Loaded && !Chambered;
+        internal bool CanUnload => MagazineLoaded;
+        internal string MagazineId => Chambered ? _reserveId : Id;
+        internal float MagazineCondition => Chambered ? _reserveCondition : Condition;
+        internal bool MagazineFavourite => Chambered ? _reserveFavourite : Favourite;
+        internal bool UnloadMagazine()
+        {
+            if (!CanUnload) return false;
+            if (Chambered) { _reserveId = ""; _reserveCondition = 0; _reserveFavourite = false; }
+            else { Id = ""; Condition = 0; Favourite = false; }
+            Revision++; return true;
+        }
         internal static bool IsRound(string id) => CannonRoundRegistry.Contains(id);
         internal static CannonRound Profile(string id) => CannonRoundRegistry.Get(id);
         internal bool TryGrantSpawnRound(string id)

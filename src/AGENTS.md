@@ -11,6 +11,7 @@
 | `DDEN.SaveEditor` | 存档工作副本、图形化编辑与保存 |
 | `DDEN.NetPerfTracker` | 只读性能采样／图表／日志，无Harmony补丁 |
 | `DDEN.NetPerfTracker.Enhanced` | 独立可选深层诊断，承载Together／LES／物体更新的纯计时Harmony钩子，默认关闭 |
+| `DDEN.MoreThreadOnMP` | 独立可选实验性线程优化：Steam收发与gzip预处理、主线程性能核约束和线程负载显示；改变传输调度，默认关闭，非诊断模块 |
 | `外部mod/ET-Fix` | 独立ET加热笼修复，专属文档及检查在其目录内 |
 | `外部mod/JDI-DDEN` | 独立工具撬石果修复，专属文档及检查在其目录内 |
 | `外部mod/DS Tool Extension` | 独立工具扩展（CCL 物品），专属文档在其目录内 |

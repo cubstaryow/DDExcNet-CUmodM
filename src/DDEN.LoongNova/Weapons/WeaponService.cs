@@ -54,6 +54,7 @@ namespace DDEN.LoongNova
                     if (!Mp.RegisterClientHandler(WingVisualSync.Channel, WingVisualSync.Receive)) return;
                     if (!Mp.RegisterSyncModule("dden.loongnova.breach-doors.v1", CannonBreach.CaptureDoors, data => CannonBreach.ReceiveDoors(data))) return;
                     if (!Mp.RegisterSyncModule("dden.loongnova.healing-fields.v1", HealingFields.Capture, data => HealingFields.Receive(data, true))) return;
+                    SpatialDecayGuard.TryInstall();
                     MultiplayerCombat.InstallGuards();
                     _handler = receiver;
                     break;
@@ -81,20 +82,35 @@ namespace DDEN.LoongNova
                 if (peer.Completed.TryGetValue(request, out var prior)) return prior;
                 if (Time.unscaledTime - peer.Window >= 1) { peer.Window = Time.unscaledTime; peer.Count = 0; }
                 if (++peer.Count > 24) return new JObject { ["ok"] = false, ["request"] = request };
+                if (packet.Value<string>("operation") == "recipes")
+                {
+                    var reply = RecipeUnlocks.Reply(NetworkAccess.Body(sender));
+                    StateDelta.Compact(reply, packet); reply["request"] = request; Remember(peer, request, reply); return reply;
+                }
+                if (packet.Value<string>("operation") == "spatial-extract")
+                {
+                    var reply = CapsuleMembraneSource.Execute(NetworkAccess.Body(sender), PodSalvage.Building(packet.Value<int>("building")));
+                    StateDelta.Compact(reply, packet); reply["request"] = request; Remember(peer, request, reply); return reply;
+                }
                 var item = NetworkAccess.Item(packet.Value<int>("gun"));
-                if (item == null || !Registration.IsGun(item.id) && item.id != Registration.BeltId && item.id != MedicalCatalog.InjectorId)
+                if (item == null || !Registration.IsGun(item.id) && item.id != Registration.BeltId && item.id != MedicalCatalog.InjectorId && !SpatialCatalog.IsDevice(item.id))
                     return new JObject { ["ok"] = false, ["request"] = request };
+                if (SpatialCatalog.IsDevice(item.id))
+                {
+                    var reply = MicroSpaceCrate.For(item).Execute(packet.Value<string>("operation"), NetworkAccess.Item(packet.Value<int>("cell")), NetworkAccess.Body(sender));
+                    StateDelta.Compact(reply, packet); reply["request"] = request; Remember(peer, request, reply); return reply;
+                }
                 if (item.id == MedicalCatalog.InjectorId)
                 {
                     var reply = MedicalInjector.For(item).Execute(packet.Value<string>("operation"),
                         NetworkAccess.Item(packet.Value<int>("cell")), NetworkAccess.Body(sender));
-                    reply["request"] = request; Remember(peer, request, reply); return reply;
+                    StateDelta.Compact(reply, packet); reply["request"] = request; Remember(peer, request, reply); return reply;
                 }
                 if (item.id == Registration.BeltId)
                 {
                     var reply = GravityBelt.For(item).Execute(packet.Value<string>("operation"),
                         NetworkAccess.Item(packet.Value<int>("cell")), NetworkAccess.Body(sender), packet);
-                    reply["request"] = request;
+                    StateDelta.Compact(reply, packet); reply["request"] = request;
                     Remember(peer, request, reply);
                     return reply;
                 }
@@ -102,7 +118,7 @@ namespace DDEN.LoongNova
                 var body = NetworkAccess.Body(sender);
                 var result = Execute(packet.Value<string>("operation"), gun, NetworkAccess.Item(packet.Value<int>("cell")), body,
                     new Vector2(packet.Value<float>("dx"), packet.Value<float>("dy")));
-                result["request"] = request;
+                StateDelta.Compact(result, packet); result["request"] = request;
                 Remember(peer, request, result);
                 return result;
             }
@@ -164,10 +180,10 @@ namespace DDEN.LoongNova
                 if (Mp.IsRunning && NetworkAccess.NetBody(body) == null) return Reply(gun, false);
                 if (!gun.State.TrySpendShot()) return Reply(gun, false);
                 gun.NextShot = Time.unscaledTime + DragonGun.ShotInterval;
-                gun.Item.condition = Mathf.Max(0, gun.Item.condition - 0.002f);
+                gun.Item.condition = Mathf.Max(0, gun.Item.condition - 0.0025f);
                 if (gun.Item.condition < 0.00001f) gun.Item.condition = 0;
                 gun.Normalize();
-                var fire = new FireInfo { pos = origin, dir = aim, structureDamage = 625, animalDamage = 225, doTinnitus = false, ignoreBody = !Mp.IsRunning };
+                var fire = new FireInfo { pos = origin, dir = aim, structureDamage = 200, animalDamage = 175, doTinnitus = false, ignoreBody = !Mp.IsRunning };
                 PulseVisual.Begin(fire);
                 Vector2 end;
                 try

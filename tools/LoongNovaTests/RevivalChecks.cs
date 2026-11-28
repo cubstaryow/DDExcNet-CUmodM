@@ -178,10 +178,8 @@ internal static class RevivalChecks
             &&i.Previous?.Operand is sbyte n&&n==25);
         check(revival>=0&&calls[revival-2].Operand is sbyte price&&price==60,
             "The real item registration must pass recognition INT25 and base value60");
-        using(var stream=((EmbeddedResource)assembly.MainModule.Resources.Single(r=>r.Name.EndsWith("Content.json"))).GetResourceStream())
-        using(var reader=new StreamReader(stream))
         {
-            var content=JObject.Parse(reader.ReadToEnd());
+            var content=LocaleChecks.Chinese(assembly);
             check(content.Value<string>("revivalName")=="龙域武库-????弹"&&!content.Value<string>("revivalDescription").Contains("复活"),
                 "The name and item description must retain their mystery after recognition");
             check(content.Value<string>("fieldBuffName")=="????弹"&&content.Value<string>("fieldBuffDescription")=="你猜的没错，这是代表生命的亮绿色。",

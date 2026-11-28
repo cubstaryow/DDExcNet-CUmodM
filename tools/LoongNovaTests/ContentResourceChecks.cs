@@ -20,10 +20,10 @@ internal static class ContentResourceChecks
             check(bytes.ToArray().SequenceEqual(File.ReadAllBytes(Path.Combine(root,"src/DDEN.LoongNova/images",file))),
                 "The real resource loader must read the exact requested image bytes: "+file);
         }
-        using(var stream=ContentResources.Open(actual,"Content.json"))
+        using(var stream=ContentResources.Open(actual,"Locales/zh-CN.json"))
         using(var reader=new StreamReader(stream))
-            check(JObject.Parse(reader.ReadToEnd()).Value<string>("module")=="龙域武库","Root content and images must use their own exact resource paths");
-        foreach(string missing in new[]{"images/missing.png","images/source/ampoule.png","ampoule.png"})
+            check(JObject.Parse(reader.ReadToEnd())["other"]!.Value<string>("dden.loongnova.module")=="龙域武库","Native locale files and images must use their own exact resource paths");
+        foreach(string missing in new[]{"images/missing.png","images/source/ampoule.png","ampoule.png","Content.json"})
         {
             bool failed=false;
             try{using var unexpected=ContentResources.Open(actual,missing);}catch(FileNotFoundException error){failed=error.FileName=="DDEN.LoongNova."+missing.Replace('/','.');}

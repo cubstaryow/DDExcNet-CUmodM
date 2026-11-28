@@ -80,6 +80,14 @@ namespace DDEN.LoongNova
             _forceHealth.Invoke(null, new[] { netBody });
         }
 
+        internal static void RecoverCirculation(Body body, float seconds)
+        {
+            if (Mp.IsRunning && !Mp.IsServer || seconds <= 0 || float.IsNaN(seconds) || float.IsInfinity(seconds)) return;
+            // Field 100 is normal actual blood volume (100%), not the field's absolute maximum 200.
+            // MoveTowards corrects either side without adding excess volume or overshooting pressure.
+            body.bloodVolume = Mathf.MoveTowards(body.bloodVolume, MedicalRules.NormalBlood, MedicalRules.RapidBloodPerSecond * seconds);
+            body.bloodPressure = Mathf.MoveTowards(body.bloodPressure, MedicalRules.NormalPressure, MedicalRules.RapidPressurePerSecond * seconds);
+        }
         internal static void RecoverBlood(Body body, float seconds)
         {
             if (Mp.IsRunning && !Mp.IsServer || seconds <= 0 || float.IsNaN(seconds) || float.IsInfinity(seconds)) return;
@@ -144,6 +152,7 @@ namespace DDEN.LoongNova
             status.Remaining = Mathf.Max(0, status.Remaining - seconds);
             if (Mp.IsRunning && !Mp.IsServer) return;
             MedicalEffects.RecoverBlood(__instance, recovery);
+            MedicalEffects.RecoverCirculation(__instance, recovery);
             if (seconds <= 0) return;
             foreach (var limb in __instance.limbs)
             {

@@ -44,6 +44,7 @@ namespace DDEN.LoongNova
                     yield return new Entry(Registration.GunId, LootRules.GunChance);
                     yield return new Entry(Registration.ChargeGunId, LootRules.GunChance);
                     yield return new Entry(Registration.CellId, LootRules.CellChance);
+                    yield return new Entry(SpatialCatalog.ChargerId, LootRules.GunChance);
                 }
                 for (int i = 0; i < 6; i++) yield return new Entry(LootRules.BonusRound(i), LootRules.AmmoChance);
                 yield return new Entry(CannonAmmoState.RevivalId, LootRules.RevivalAmmoChance);

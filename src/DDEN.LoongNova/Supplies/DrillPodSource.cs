@@ -34,31 +34,42 @@ namespace DDEN.LoongNova
         private static void Give(Body body, DrillPod pod, Item wrench)
         {
             if (body == null || pod == null || !body.conscious || Mp.IsRunning && !Mp.IsServer) return;
-            var cases = new List<Item>(); var seen = new HashSet<Item>();
-            foreach (var item in body.GetAllItemsThorough())
-                if (item != null && item.id == CannonAmmoState.CarrierId && !item.favourited && seen.Add(item)) cases.Add(item);
-            var result = DrillExchange.Prepare(wrench.condition, cases.Count, () =>
+            var claim = PodSalvage.Begin(pod.gameObject);
+            if (claim == null) return;
+            try
             {
-                var created = CustomInstantiate.InstantiateReturn(CannonAmmoState.DrillId, pod.transform.position, Quaternion.identity, 1);
-                var round = created != null ? created.GetComponent<Item>() : null;
-                if (round == null && created != null) UnityEngine.Object.Destroy(created);
-                return round;
-            }, item => UnityEngine.Object.Destroy(item.gameObject), out float remaining, out var rounds);
-            if (result != DrillExchangeResult.Success)
-            {
-                Alert(body, Registration.Text(result == DrillExchangeResult.MissingCases ? "drillMissingCases"
-                    : result == DrillExchangeResult.InsufficientQuality ? "drillMissingQuality" : "drillExchangeFailed"));
-                return;
+                var cases = new List<Item>(); var seen = new HashSet<Item>();
+                foreach (var item in body.GetAllItemsThorough())
+                    if (item != null && item.id == CannonAmmoState.CarrierId && !item.favourited && seen.Add(item)) cases.Add(item);
+                var result = DrillExchange.Prepare(wrench.condition, cases.Count, () =>
+                {
+                    var created = CustomInstantiate.InstantiateReturn(CannonAmmoState.DrillId, pod.transform.position, Quaternion.identity, 1);
+                    var round = created != null ? created.GetComponent<Item>() : null;
+                    if (round == null && created != null) UnityEngine.Object.Destroy(created);
+                    return round;
+                }, item => UnityEngine.Object.Destroy(item.gameObject), out float remaining, out var rounds);
+                if (result != DrillExchangeResult.Success)
+                {
+                    Alert(body, Registration.Text(result == DrillExchangeResult.MissingCases ? "drillMissingCases"
+                        : result == DrillExchangeResult.InsufficientQuality ? "drillMissingQuality" : "drillExchangeFailed"));
+                    return;
+                }
+                if (!PodSalvage.Consume(pod.gameObject, claim))
+                {
+                    foreach (var round in rounds) if (round != null) UnityEngine.Object.Destroy(round.gameObject);
+                    Alert(body, Registration.Text("drillExchangeFailed")); return;
+                }
+                wrench.condition = remaining; // SyncInfo's native item state carries authoritative condition to peers.
+                for (int i = 0; i < DrillExchange.Rounds; i++) UnityEngine.Object.Destroy(cases[i].gameObject);
+                foreach (var round in rounds)
+                {
+                    if (round.GetComponent<FreshItemDrop>() == null) round.gameObject.AddComponent<FreshItemDrop>();
+                    try { body.AutoPickUpItem(round); }
+                    catch (Exception error) { LoongNovaPlugin.Log.Warn("Drill pod ammunition pickup: " + error.Message); }
+                }
+                Alert(body, Registration.Text("drillExchangeDone"));
             }
-            wrench.condition = remaining; // SyncInfo's native item state carries authoritative condition to peers.
-            for (int i = 0; i < DrillExchange.Rounds; i++) UnityEngine.Object.Destroy(cases[i].gameObject);
-            foreach (var round in rounds)
-            {
-                if (round.GetComponent<FreshItemDrop>() == null) round.gameObject.AddComponent<FreshItemDrop>();
-                try { body.AutoPickUpItem(round); }
-                catch (Exception error) { LoongNovaPlugin.Log.Warn("Drill pod ammunition pickup: " + error.Message); }
-            }
-            Alert(body, Registration.Text("drillExchangeDone"));
+            finally { if (claim != null) claim.Busy = false; }
         }
         private static void Alert(Body body, string message)
         {

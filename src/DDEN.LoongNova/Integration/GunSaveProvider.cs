@@ -12,11 +12,16 @@ namespace DDEN.LoongNova
             if (Registration.IsGun(item.id)) return DragonGun.For(item).CaptureState();
             if (item.id == MedicalCatalog.InjectorId) return MedicalInjector.For(item).State.Capture();
             if (item.id == Registration.BeltId) return GravityBelt.For(item).State.Capture();
+            if (SpatialCatalog.IsDevice(item.id)) { var box = MicroSpaceCrate.For(item); box.Settle(); return box.State.Capture(); }
             return null;
         }
         public void Restore(Item item, string key, JToken payload, int version, SaveRestoreContext context)
         {
             if (item == null || version != 1) return;
+            if (SpatialCatalog.IsDevice(item.id))
+            {
+                var box = MicroSpaceCrate.For(item); box.Known = box.State.Restore(payload); box.Refresh(); return;
+            }
             if (item.id == MedicalCatalog.InjectorId)
             {
                 var injector = MedicalInjector.For(item);

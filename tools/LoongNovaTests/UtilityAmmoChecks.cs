@@ -106,8 +106,7 @@ internal static class UtilityAmmoChecks
         var native=types.Single(t=>t.Name=="UtilityNativeSync");
         check(native.Methods.Single(m=>m.Name=="Tick").Body.Instructions.Any(i=>i.Operand as string=="Server_SendFluidChunk"),
             "Drain commits must enqueue original reliable fluid chunks rather than client-side flood fills");
-        using var contentStream=((EmbeddedResource)assembly.MainModule.Resources.Single(r=>r.Name.EndsWith("Content.json"))).GetResourceStream();
-        using var reader=new StreamReader(contentStream);var content=JObject.Parse(reader.ReadToEnd());
+        var content=LocaleChecks.Chinese(assembly);
         check(content.Value<string>("gunName")=="龙域武库-龙灼线束"&&content.Value<string>("beltName")=="龙域武库-龙翼腰带",
             "Equipment renames must be embedded with the requested arsenal names");
         foreach(var name in new[]{"drill-round.png","spatial-drain-round.png","emp-breach-round.png"})

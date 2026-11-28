@@ -8,7 +8,7 @@ namespace DDEN.LoongNova
 {
     public sealed class DragonGun : MonoBehaviour
     {
-        internal const float ShotInterval = 0.15f;
+        internal const float ShotInterval = 0.12f;
         internal readonly EnergyState State = new EnergyState();
         internal bool Known;
         internal double NextShot;
@@ -55,6 +55,7 @@ namespace DDEN.LoongNova
                 || operation == "shoot" && Time.unscaledTime < _nextRequest
                 || operation != "shoot" && Time.unscaledTime < _nextAction) return;
             if (operation == "shoot" && (Gun.safe || Item.condition <= 0 || Known && (!State.Loaded || State.Energy < EnergyState.ShotCost))) return;
+            if (operation == "read" && Mp.IsRunning && !Mp.IsServer && !NetworkReadBudget.TryAcquire(Time.unscaledTime, NetworkAccess.Connection)) return;
             if (operation == "shoot") _nextRequest = Time.unscaledTime + ShotInterval;
             else _nextAction = Time.unscaledTime + 0.15f;
             if (!Mp.IsRunning || Mp.IsServer)
@@ -78,6 +79,7 @@ namespace DDEN.LoongNova
                 ["dx"] = Gun.transform.right.x * (body.isRight ? 1 : -1),
                 ["dy"] = Gun.transform.right.y * (body.isRight ? 1 : -1)
             };
+            if (operation == "read") packet["knownRevision"] = Known ? StateRevision : -1;
             _pending.Add(request, operation, Time.unscaledTime);
             Status = Registration.Text("waiting");
             bool sent = Mp.RequestServer(WeaponService.Channel, packet, response =>
@@ -120,7 +122,7 @@ namespace DDEN.LoongNova
             if (response == null) return;
             long revision = response["state"]?.Value<long?>("revision") ?? -1;
             if (revision >= StateRevision && RestoreState(response["state"])) Known = true;
-            _nextRead = Time.unscaledTime + 5;
+            _nextRead = Time.unscaledTime + 60;
             Status = response.Value<bool?>("ok") == true ? "" : Registration.Text("rejected");
             Normalize();
         }
@@ -253,14 +255,14 @@ namespace DDEN.LoongNova
             // Native racked means the bolt is OPEN, not that a round is ready.
             Gun.racked = Gun.lastRacked = IsChargeGun && !Ammo.Chambered;
             Gun.firingPinStruck = false;
-            Gun.magCapacity = IsChargeGun ? 1 : 100;
-            Gun.structureDamage = 625; Gun.animalDamage = 225; Gun.knockBack = IsChargeGun ? 6 : 2;
+            Gun.magCapacity = IsChargeGun ? 1 : (int)(EnergyState.Capacity / EnergyState.ShotCost);
+            Gun.structureDamage = 200; Gun.animalDamage = 175; Gun.knockBack = IsChargeGun ? 6 : 2;
             if (IsChargeGun)
             {
                 var profile = CannonAmmoState.Profile(Ammo.Id);
                 Gun.structureDamage = profile.Structure; Gun.animalDamage = profile.Creature;
             }
-            Gun.conditionLossPerShot = 0.2f; Gun.desiredGasTime = IsChargeGun ? 0.5f : ShotInterval;
+            Gun.conditionLossPerShot = IsChargeGun ? 0.2f : 0.25f; Gun.desiredGasTime = IsChargeGun ? 0.5f : ShotInterval;
             if (!Mp.IsRunning || Mp.IsServer || Known)
             {
                 Gun.hasMag = IsChargeGun ? Ammo.Loaded || State.Loaded : State.Loaded;

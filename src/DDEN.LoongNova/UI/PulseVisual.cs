@@ -57,6 +57,7 @@ namespace DDEN.LoongNova
         {
             if (data == null) return;
             if (data.Value<bool?>("healingFields") == true) { HealingFields.Receive(data); return; }
+            if (data["spatial"] != null) { MicroSpaceCrate.Receive(data); return; }
             if (data["injector"] != null) { MedicalInjector.Receive(data); return; }
             if (data.Value<bool?>("breachDoors") == true) { CannonBreach.ReceiveDoors(data); return; }
             if (data.Value<bool?>("chargeAudio") == true) { CannonChargeAudio.Receive(data); return; }

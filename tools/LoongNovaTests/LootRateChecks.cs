@@ -34,6 +34,7 @@ internal static class LootRateChecks
                         expected[Registration.GunId] = 50;
                         expected[Registration.ChargeGunId] = 50;
                         expected[Registration.CellId] = 400;
+                        expected[SpatialCatalog.ChargerId] = 50;
                     }
                     for (int n = 0; n < 6; n++) expected[LootRules.BonusRound(n)] = 400;
                     expected[CannonAmmoState.RevivalId] = 50;

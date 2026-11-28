@@ -13,9 +13,9 @@ namespace DDEN.LoongNova
         {
             if (operation == "read") return Reply(gun, true);
             // A magazine command must never remove an occupied chamber or cancel its charge.
-            if (operation == "eject" && gun.Ammo.Chambered) return Reply(gun, false);
+            if (operation == "eject" && gun.Ammo.Chambered && !gun.Ammo.CanUnload) return Reply(gun, false);
             if (operation == "cancel") { if (!ForceCommitted(gun)) gun.Charge.Cancel(); return Reply(gun, true); }
-            if (operation == "load" || operation == "eject" || operation == "rack")
+            if (operation == "load" || operation == "eject" && !gun.Ammo.Chambered || operation == "rack")
             {
                 if (ForceCommitted(gun)) return Reply(gun, true);
                 gun.Charge.Cancel();
@@ -43,8 +43,8 @@ namespace DDEN.LoongNova
             else if (operation == "eject")
             {
                 if (!gun.Ammo.CanUnload && !gun.State.Loaded) return Reply(gun, false);
-                if (!CreateReturnedRound(gun, out var unloaded)) return Reply(gun, false);
-                if (gun.Ammo.Loaded) gun.Ammo.Clear(); else gun.State.Set(false, 0, false);
+                if (!CreateReturnedRound(gun, out var unloaded, gun.Ammo.CanUnload)) return Reply(gun, false);
+                if (gun.Ammo.CanUnload) gun.Ammo.UnloadMagazine(); else gun.State.Set(false, 0, false);
                 gun.Normalize();
                 try { body.AutoPickUpItem(unloaded); } catch (Exception error) { LoongNovaPlugin.Log.Warn("Cannon unload: " + error.Message); }
                 Sound.Play("gununloadmag", gun.transform.position);
@@ -107,14 +107,14 @@ namespace DDEN.LoongNova
             if (Mp.IsRunning) Mp.Broadcast(WeaponService.VisualChannel, visual);
             gun.Known = true; gun.Normalize(); return Reply(gun, true);
         }
-        private static bool CreateReturnedRound(DragonGun gun, out Item item)
+        private static bool CreateReturnedRound(DragonGun gun, out Item item, bool fromMagazine = false)
         {
             // Instantiate first: failed creation leaves both original slots untouched.
-            string id = gun.Ammo.Loaded ? gun.Ammo.Id : gun.State.Loaded ? Registration.CellId : null;
+            string id = fromMagazine ? gun.Ammo.MagazineId : gun.Ammo.Loaded ? gun.Ammo.Id : gun.State.Loaded ? Registration.CellId : null;
             item = null;
             if (id == null) return false;
-            float condition = gun.Ammo.Loaded ? gun.Ammo.Condition : gun.State.Energy / EnergyState.Capacity;
-            bool favourite = gun.Ammo.Loaded ? gun.Ammo.Favourite : gun.State.Favourite;
+            float condition = fromMagazine ? gun.Ammo.MagazineCondition : gun.Ammo.Loaded ? gun.Ammo.Condition : gun.State.Energy / EnergyState.Capacity;
+            bool favourite = fromMagazine ? gun.Ammo.MagazineFavourite : gun.Ammo.Loaded ? gun.Ammo.Favourite : gun.State.Favourite;
             var created = CustomInstantiate.InstantiateReturn(id, gun.transform.position, Quaternion.identity, condition);
             item = created != null ? created.GetComponent<Item>() : null;
             if (item == null) { if (created != null) UnityEngine.Object.Destroy(created); return false; }

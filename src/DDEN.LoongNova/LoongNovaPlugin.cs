@@ -27,9 +27,9 @@ namespace DDEN.LoongNova
         public string DisplayName => Registration.Text("module");
         public string Version => ReleaseVersion;
         public string Summary => Registration.Text("summary");
-        public bool Ready => _problem == null && (!Mp.IsRunning || Service.Ready);
+        public bool Ready => _problem == null && (!Mp.IsRunning || Service.Ready && RecipeUnlocks.MultiplayerReady);
         public DdenHealth Health => _problem != null ? DdenHealth.Severe : Ready ? DdenHealth.Ok : DdenHealth.Warn;
-        public string HealthNote => _problem != null ? "装备加载失败，请查看日志" : (Ready ? "" : Registration.Text("unavailable"));
+        public string HealthNote => _problem != null ? Registration.Text("loadFailed") : (Ready ? "" : Registration.Text("unavailable"));
         public string MinimumManagerVersion => "2.0.0";
         public string TestedManagerVersion => "2.1.0";
         public string MinimumSharedVersion => "2.0.1";
@@ -45,6 +45,7 @@ namespace DDEN.LoongNova
             {
                 Registration.Register();
                 SaveRegistry.RegisterItemProvider(Guid + ".energy.v1", new GunSaveProvider());
+                SaveRegistry.RegisterBodyProvider(Guid + ".recipes.v1", new RecipeUnlocks.SaveProvider());
                 _harmony = new Harmony(Guid);
                 _harmony.PatchAll(typeof(WeaponPatches));
                 _harmony.PatchAll(typeof(ChargeHudPatch));
@@ -53,11 +54,16 @@ namespace DDEN.LoongNova
                 _harmony.PatchAll(typeof(CannonInterruption));
                 _harmony.PatchAll(typeof(CellRefillMatching));
                 _harmony.PatchAll(typeof(EquipmentPatches));
+                _harmony.PatchAll(typeof(LoongLocalePatches));
+                _harmony.PatchAll(typeof(RecipeUnlockPatches));
                 _harmony.PatchAll(typeof(MedicalPatches));
                 _harmony.PatchAll(typeof(SupplyCratePatches));
                 _harmony.PatchAll(typeof(MedicalTradePatch));
                 _harmony.PatchAll(typeof(InjectorGrip));
                 _harmony.PatchAll(typeof(DrillPodSource));
+                _harmony.PatchAll(typeof(CapsuleMembraneSource));
+                _harmony.PatchAll(typeof(SpatialPatches));
+                _harmony.PatchAll(typeof(SpatialTradePatches));
                 _harmony.PatchAll(typeof(RegenerationComaPatch));
                 _harmony.PatchAll(typeof(LimbGrowthPatch));
                 _harmony.PatchAll(typeof(MedicalTreatmentPatch));
@@ -86,6 +92,8 @@ namespace DDEN.LoongNova
         {
             if (_problem != null) return;
             Service.Tick();
+            RecipeUnlocks.Tick();
+            MicroSpaceCrate.Tick();
             PulseVisual.Tick();
             HealingFields.Tick();
             try { CannonUtility.Tick(); }
@@ -99,6 +107,10 @@ namespace DDEN.LoongNova
 
         private void OnDestroy()
         {
+            SpatialDecayGuard.Stop();
+            RecipeUnlockPatches.Stop();
+            RecipeUnlocks.ResetView();
+            MicroSpaceCrate.ClearRegistry();
             _harmony?.UnpatchSelf();
             new Harmony(Guid + ".mp").UnpatchSelf();
             PulseVisual.Dispose();

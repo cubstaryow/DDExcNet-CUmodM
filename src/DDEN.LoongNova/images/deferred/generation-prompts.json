@@ -1,7 +1,0 @@
-{
-  "tool": "built-in image_gen",
-  "transparent_background": true,
-  "prompts": {
-    "deferred/dragon-claw-refitted-wrench.png": "Use case: compositing. Asset type: original 2D pixel-art game inventory/held tool sprite, Dragon-Claw Refitted Wrench. Reference image 1 is the existing Dragon-Claw Wrench: keep its dark charcoal titanium metal, copper reinforcement and small orange energy core, and a horizontal tool orientation with handle at left and open wrench jaws at right. Reference image 2 is Enhanced Tools' tiny refitted wrench: incorporate its recognizable reinforced mechanical adjustable wrench jaw and re-gripped handle design into a NEW original combined tool. Not a collage. One complete functional wrench, clear powerful dragon-claw shaped adjustable open jaw, sturdy long machined handle and copper bands, readable at 48 pixels wide. Crisp low resolution pixel clusters and limited gray/copper/orange palette matching reference 1; transparent background, no text, no labels, no ground, no border, no extra items, no shadow outside silhouette, no large glow, full tool uncropped. Do not reproduce the second sprite pixel for pixel."
-  }
-}

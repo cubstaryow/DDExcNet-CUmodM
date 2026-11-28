@@ -32,14 +32,12 @@ namespace DDEN.LoongNova
         internal static Sprite GunLoadedSprite { get; private set; }
         internal static Sprite WingFoldedSprite { get; private set; }
         internal static Sprite WingOpenSprite { get; private set; }
-        private static JObject _text;
-        internal static string Text(string key) => _text?.Value<string>(key) ?? key;
+        internal static string Text(string key) => LoongLocalization.Text(key);
 
         private static Stream Resource(string path) => ContentResources.Open(typeof(Registration).Assembly, path);
 
         internal static void Register()
         {
-            using (var reader = new StreamReader(Resource("Content.json"))) _text = JObject.Parse(reader.ReadToEnd());
             var gun = new CustomItemInfo
             {
                 fullName = Text("gunName"), description = Text("gunDescription"),
@@ -50,10 +48,10 @@ namespace DDEN.LoongNova
                 Gun = new GunProperties
                 {
                     AmmoType = GunScript.AmmoType.Rifle, FiringMode = GunScript.FiringMode.Auto,
-                    FeedType = GunScript.FeedType.Mag, MagCapacity = 100, KnockBack = 2,
-                    StructureDamage = 625, AnimalDamage = 225, Loudness = 2.5f,
+                    FeedType = GunScript.FeedType.Mag, MagCapacity = (int)(EnergyState.Capacity / EnergyState.ShotCost), KnockBack = 2,
+                    StructureDamage = 200, AnimalDamage = 175, Loudness = 2.5f,
                     DesiredGasTime = DragonGun.ShotInterval, ShotsPerFire = 1, VerticalSpread = 0,
-                    ConditionLossPerShot = 0.2f, BeforeAttack = Trigger
+                    ConditionLossPerShot = 0.25f, BeforeAttack = Trigger
                 }
             };
             gun.AddSpawnComponent<DragonGun>();
@@ -82,6 +80,7 @@ namespace DDEN.LoongNova
                 RegisterChargeGun(originalGun);
                 RegisterMedical();
                 RegisterSupplyCrates();
+                RegisterSpatialItems();
             }
             using (RecipeRegistry.BeginOwnerRegistration(LoongNovaPlugin.Guid)) RegisterRecipes();
         }
@@ -361,6 +360,7 @@ namespace DDEN.LoongNova
                 Material("scraptube"), Material("scraptube"), Material("scraptube"), Material("string"), Material("string"),
                 Material("canvas"), Material("canvas"), Material(DragonId), Tool("hammering"), Tool("cutting")
             }, 14);
+            RegisterSpatialRecipes();
         }
     }
 }

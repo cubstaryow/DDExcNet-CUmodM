@@ -13,6 +13,7 @@ namespace DDEN.LoongNova
         private static readonly HashSet<int> Queued = new HashSet<int>();
         private static MethodInfo _flush, _sendFluid;
         private static Type _coordinate;
+        private static float _nextFluidAt;
         internal static void FlushBlocks()
         {
             if (!Mp.IsRunning || !Mp.IsServer) return;
@@ -32,13 +33,14 @@ namespace DDEN.LoongNova
         }
         internal static void Tick()
         {
-            if (!Mp.IsRunning || !Mp.IsServer || FluidChunks.Count == 0) return;
+            if (!Mp.IsRunning || !Mp.IsServer || FluidChunks.Count == 0 || UnityEngine.Time.unscaledTime < _nextFluidAt) return;
             _coordinate = _coordinate ?? Reflect.Type("Together.Vector2UInt8");
             _sendFluid = _sendFluid ?? Reflect.Type("Together.WorldChunkSync")?.GetMethod("Server_SendFluidChunk");
             if (_coordinate == null || _sendFluid == null) throw new MissingMethodException("Together fluid chunk sync");
             var players = Reflect.GetStatic(Reflect.Type("Together.ScavPlayer"), "AllPlayers") as IEnumerable;
             if (players == null) return;
-            for (int i = 0; i < 4 && FluidChunks.Count > 0; i++)
+            _nextFluidAt = UnityEngine.Time.unscaledTime + 0.05f;
+            for (int i = 0; i < 1 && FluidChunks.Count > 0; i++)
             {
                 var cell = FluidChunks.Dequeue(); Queued.Remove(cell.X + cell.Y * 65536);
                 var coordinate = Activator.CreateInstance(_coordinate, cell.X, cell.Y);
@@ -49,6 +51,6 @@ namespace DDEN.LoongNova
                 }
             }
         }
-        internal static void Clear() { FluidChunks.Clear(); Queued.Clear(); }
+        internal static void Clear() { FluidChunks.Clear(); Queued.Clear(); _nextFluidAt = 0; }
     }
 }

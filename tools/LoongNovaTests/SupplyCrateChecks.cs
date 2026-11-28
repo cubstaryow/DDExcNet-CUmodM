@@ -195,8 +195,7 @@ internal static class SupplyCrateChecks
             check(bytes.ToArray().SequenceEqual(File.ReadAllBytes(reference)),
                 "Crate artwork must match the supplied PNG byte-for-byte: " + pair.Item2);
         }
-        using var contentStream = ((EmbeddedResource)assembly.MainModule.Resources.Single(r => r.Name == "DDEN.LoongNova.Content.json")).GetResourceStream();
-        using var reader = new StreamReader(contentStream); var content = JObject.Parse(reader.ReadToEnd());
+        var content = LocaleChecks.Chinese(assembly);
         check(content.Value<string>("supplySealedName") == "龙域武库-封闭补给箱" && content.Value<string>("supplyOpenName") == "龙域武库-补给箱",
             "Both requested crate names must be present in shipped content");
         using var mp = AssemblyDefinition.ReadAssembly(@"L:\SteamLibrary\steamapps\common\Casualties Unknown\BepInEx\plugins\Together\CasualtiesMP.dll");

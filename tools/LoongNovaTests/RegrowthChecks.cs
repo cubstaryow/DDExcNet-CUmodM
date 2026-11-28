@@ -78,8 +78,8 @@ internal static class RegrowthChecks
             var limb=new Limb{body=body};body.limbs=new[]{limb};MedicalEffects.Apply(limb,MedicalCatalog.MedicalId);
             float elapsed=0;while(elapsed<10){float step=Math.Min(frame,10-elapsed);Time.deltaTime=step;DragonLifeBlessingPatch.Bless(body);elapsed+=step;}
             check(Math.Abs(body.venomCurrent-25)<0.01&&Math.Abs(body.venomTotal-25)<0.01&&Math.Abs(body.septicShock-25)<0.01
-                &&Math.Abs(body.bloodViscosity+20)<0.01&&Math.Abs(body.radiationSickness-40)<0.01&&body.bloodVolume==37,
-                "Rapid treatment must remove venom reservoirs/sepsis, normalize blood viscosity and reduce radiation at 1/s without adding blood");
+                &&Math.Abs(body.bloodViscosity+20)<0.01&&Math.Abs(body.radiationSickness-40)<0.01&&body.bloodVolume==100,
+                "Rapid treatment must remove venom reservoirs/sepsis, normalize blood viscosity and reduce radiation at 1/s while restoring normal blood volume");
             Time.deltaTime=5;DragonLifeBlessingPatch.Bless(body);
             check(Math.Abs(body.radiationSickness-40)<0.01&&Math.Abs(body.venomTotal-25)<0.01&&Math.Abs(body.septicShock-25)<0.01
                 &&Math.Abs(body.bloodViscosity+20)<0.01,"The aftereffect must not continue systemic detoxification, bad-blood treatment or radiation recovery");
@@ -126,8 +126,7 @@ internal static class RegrowthChecks
             &&restore.Any(i=>i.Operand as string=="RebindLimbHinges"),"Partial growth must avoid whole-arm recovery and reuse native MP physics repairs");
         var hint=types.Single(t=>t.Name=="MedicalPatches").Methods.Single(m=>m.Name=="SlotHint").Body.Instructions;
         check(hint.Any(i=>i.Operand is string text&&text.Contains("<color=#5eff00><sprite index=")),"Injector ammunition hints must use the same green battery-icon style as guns");
-        using var stream=((EmbeddedResource)assembly.MainModule.Resources.Single(r=>r.Name.EndsWith("Content.json"))).GetResourceStream();
-        using var reader=new StreamReader(stream);var text=JObject.Parse(reader.ReadToEnd());
+        var text=LocaleChecks.Chinese(assembly);
         foreach(var pair in new[]{("growthBuffName","安瓿-肢体生长"),("comaBuffName","安瓿-再生过程"),
             ("treatmentBuffName","安瓿-快速治疗"),("blessingBuffName","安瓿-治疗后效")})
             check(text.Value<string>(pair.Item1)==pair.Item2,"Medical status display names must match the requested labels");

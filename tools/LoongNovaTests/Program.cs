@@ -34,6 +34,9 @@ CannonRoundRegistry.Register(CannonAmmoState.BioId, new CannonRound(1, 750, 1, 0
 CannonRoundRegistry.Register(CannonAmmoState.DemolitionId, new CannonRound(200, 1, 20, 20, 5, 1).Parameters());
 CannonRoundRegistry.Register(CannonAmmoState.ExplosiveId, new CannonRound(500,400,1,0,1,1,12).Parameters());
 CannonRoundRegistry.Register(CannonAmmoState.RevivalId, new CannonRound(0,0,1,0,1,effect:CannonEffect.Revive).Parameters());
+MinuteSyncChecks.Run(Check);
+SpatialChecks.Run(Check);
+ProgressionChecks.Run(Check);
 UtilityAmmoChecks.Run(Check);
 MedicalChecks.Run(Check);
 RegrowthChecks.Run(Check);
@@ -135,7 +138,7 @@ foreach (string nextRound in new[] { CannonAmmoState.BioId, CannonAmmoState.Demo
         "Mixed magazine and chamber types, conditions and favourite flags must round-trip independently");
     Check(restoredMixed.Consume(out var actualRound) && actualRound == firstRound && restoredMixed.Spent
         && restoredMixed.Id == CannonAmmoState.CarrierId && restoredMixed.Chambered && !restoredMixed.Ready
-        && restoredMixed.MagazineLoaded && !restoredMixed.CanLoad && !restoredMixed.CanUnload,
+        && restoredMixed.MagazineLoaded && !restoredMixed.CanLoad && restoredMixed.CanUnload,
         "A shot consumes only the chambered round and leaves one spent shell plus an untouched magazine");
     string spentSnapshot = restoredMixed.Capture().ToString();
     Check(!restoredMixed.Consume(out _) && restoredMixed.Capture().ToString() == spentSnapshot,
@@ -149,6 +152,34 @@ foreach (string nextRound in new[] { CannonAmmoState.BioId, CannonAmmoState.Demo
     Check(savedSpent.Rack() && !savedSpent.Loaded && !savedSpent.Chambered && !savedSpent.Rack(),
         "Racking a live chamber without a reserve ejects it and leaves the weapon empty");
 }
+foreach (bool spent in new[] { false, true })
+{
+    var independent = new CannonAmmoState();
+    independent.Load(CannonAmmoState.BioId, 0.23f, true); independent.Rack();
+    if (spent) independent.Consume(out _);
+    independent.Load(CannonAmmoState.DemolitionId, 0.67f, false);
+    string chamber = independent.Id; long revision = independent.Revision;
+    Check(independent.CanUnload && independent.MagazineId == CannonAmmoState.DemolitionId
+        && independent.MagazineCondition == 0.67f && !independent.MagazineFavourite,
+        "Unload selects reserve metadata independently of a live or spent chamber");
+    Check(independent.UnloadMagazine() && independent.Id == chamber && independent.Chambered
+        && independent.Favourite == !spent && independent.CanLoad && !independent.CanUnload
+        && independent.Revision == revision + 1 && !independent.UnloadMagazine(),
+        "Unloading removes only the reserve, preserves the chamber and cannot duplicate a round");
+    var saved = new CannonAmmoState();
+    Check(saved.Restore(independent.Capture()) && saved.Id == chamber && !saved.MagazineLoaded,
+        "The independent unload survives saving without resurrecting reserve ammunition");
+}
+var budgetSession = new object();
+Check(NetworkReadBudget.TryAcquire(0, budgetSession)
+    && !NetworkReadBudget.TryAcquire(0, budgetSession), "State queries share a one-packet burst budget across items");
+Check(!NetworkReadBudget.TryAcquire(0.499, budgetSession) && NetworkReadBudget.TryAcquire(0.5, budgetSession),
+    "Optional queries refill at two packets per second without per-frame packet allocation");
+Check(NetworkReadBudget.TryAcquire(100, budgetSession)
+    && !NetworkReadBudget.TryAcquire(100, budgetSession), "Idle time cannot accumulate an unbounded packet burst");
+Check(!NetworkReadBudget.TryAcquire(double.NaN, budgetSession) && !NetworkReadBudget.TryAcquire(double.PositiveInfinity, budgetSession),
+    "Invalid clocks cannot poison or bypass the query limiter");
+Check(NetworkReadBudget.TryAcquire(0, new object()), "Connection replacement resets the optional-query budget");
 var oldSingle = new JObject { ["id"] = CannonAmmoState.BioId, ["condition"] = 0.5f, ["favourite"] = true, ["chambered"] = true, ["revision"] = 9 };
 var migratedSingle = new CannonAmmoState();
 Check(migratedSingle.Restore(oldSingle) && migratedSingle.Ready && migratedSingle.CanLoad && !migratedSingle.MagazineLoaded,
@@ -407,13 +438,13 @@ Check(chargeCell.TrySpend(15) && chargeCell.Energy == 34.5f && chargeCell.Favour
 Check(!chargeCell.TrySpend(float.NaN) && !chargeCell.TrySpend(-1) && chargeCell.Energy == 34.5f, "Invalid variable shot costs must be rejected");
 var state = new EnergyState();
 state.Set(true, 1000, true);
-for (int shot = 0; shot < 100; shot++) Check(state.TrySpendShot(), "Full cell must support one hundred shots");
+for (int shot = 0; shot < 50; shot++) Check(state.TrySpendShot(), "Full cell must support fifty shots at twenty energy each");
 Check(state.Loaded && state.Energy == 0 && state.Favourite, "Empty cell keeps its shell and favourite flag");
-Check(!state.TrySpendShot() && state.Energy == 0, "Hundred-and-first shot must fail without mutating energy");
+Check(!state.TrySpendShot() && state.Energy == 0, "Fifty-first shot must fail without mutating energy");
 var restored = new EnergyState();
 Check(restored.Restore(JObject.Parse(state.Capture().ToString())), "Empty loaded cell must survive save round-trip");
 Check(restored.Loaded && restored.Energy == 0 && restored.Favourite, "Empty cell state must be retained");
-state.Set(true, 12.375f, false);
+state.Set(true, 22.375f, false);
 Check(state.TrySpendShot() && state.Energy == 2.375f, "Fractional remainders must survive a shot");
 Check(!state.TrySpendShot(), "Insufficient fractional remainder cannot fire");
 Check(restored.Restore(JObject.Parse(state.Capture().ToString())) && restored.Energy == 2.375f, "Fractional charge must survive save round-trip");
@@ -656,7 +687,7 @@ var wingLease = new WingFlightLease();
 Check(!wingLease.IsFlying(10), "Remote wings must start folded");
 Check(wingLease.Apply(1, true, 10) && wingLease.IsFlying(10.5), "An authenticated fresh flight update must unfold remote wings");
 Check(!wingLease.Apply(1, false, 10.5) && wingLease.IsFlying(11), "Duplicate/reordered wing packets must not override the current pose");
-Check(!wingLease.IsFlying(12.01), "Lost flight updates must expire to the folded pose");
+Check(!wingLease.IsFlying(10 + WingFlightLease.Lifetime + 0.01), "Lost flight updates must expire to the folded pose");
 Check(wingLease.Apply(2, true, 13) && wingLease.IsFlying(14), "A newer heartbeat may reopen the wings");
 Check(wingLease.Apply(3, false, 14) && !wingLease.IsFlying(14), "Stopping flight must close the wings immediately on receipt");
 Check(!wingLease.Apply(2, true, 14.1) && !wingLease.IsFlying(14.1), "A delayed open packet must never reopen wings after a newer stop");
@@ -726,6 +757,9 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
     LootRateChecks.Inspect(assembly,Check);
     SupplyCrateChecks.Inspect(assembly,Check,root);
     ContentResourceChecks.Inspect(assembly,Check,root);
+    LocaleChecks.Inspect(assembly,Check,root);
+    ProgressionChecks.Inspect(assembly,Check,root);
+    SpatialChecks.Inspect(assembly,Check);
     RevivalChecks.Inspect(assembly,Check,root);
     var types = assembly.MainModule.Types;
     var pluginType = types.Single(type => type.Name == "LoongNovaPlugin");
@@ -829,9 +863,9 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
         "Sight must require the local main camera and a usable chambered round");
     Check(sightPatch.Methods.Single(m => m.Name == "Finalizer").Body.Instructions.Any(i => i.Operand is Mono.Cecil.FieldReference f && f.Name == "zoomTime"),
         "Native zoom effect must be scoped and restore the original goggles timer");
-    Check((float)controller.Fields.Single(field => field.Name == "ShotInterval").Constant == 0.15f, "Compiled shot interval must be 0.15 seconds");
+    Check((float)controller.Fields.Single(field => field.Name == "ShotInterval").Constant == 0.12f, "Compiled shot interval must be 0.12 seconds");
     var energy = types.Single(type => type.Name == "EnergyState");
-    Check((float)energy.Fields.Single(field => field.Name == "ShotCost").Constant == 10, "Compiled shot cost must be ten");
+    Check((float)energy.Fields.Single(field => field.Name == "ShotCost").Constant == 20, "Compiled shot cost must be twenty");
     var execution = types.Single(type => type.Name == "WeaponService").Methods.Single(method => method.Name == "Execute");
     float DamageBeforeStore(Mono.Cecil.MethodDefinition method, string fieldName)
     {
@@ -922,7 +956,7 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
     var page = types.Single(t => t.Name == "ModuleItemPage");
     var cards = page.Methods.Single(m => m.Name == ".cctor");
     var catalogIds = cards.Body.Instructions.Where(i => i.Operand is string s && s.StartsWith("dden.loongnova.")).Select(i => (string)i.Operand).ToList();
-    Check(catalogIds.Count == 22 && catalogIds.Contains(SupplyCrateRules.SealedId) && catalogIds.Contains(SupplyCrateRules.OpenId)
+    Check(catalogIds.Count == 26 && catalogIds.Contains(SupplyCrateRules.SealedId) && catalogIds.Contains(SupplyCrateRules.OpenId)
         && catalogIds.Contains(CannonAmmoState.RevivalId) && catalogIds.Contains(MedicalCatalog.EmptyId) && !catalogIds.Contains("dden.loongnova.dragon-claw-refitted-wrench"),
         "Catalog must include both supply crates among twenty-two active items and exclude the deferred wrench");
     var drawing = page.Methods.Single(m => m.Name == "Draw");
@@ -946,21 +980,21 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
     Check(disable.Body.Instructions.Any(i => i.Operand is Mono.Cecil.MethodReference m && m.Name == "Stop"),
         "Disabling or removing the belt must stop its looping flight audio");
     var definition = types.Single(type => type.Name == "Registration").Methods.Single(method => method.Name == "Register");
-    Check(DamageBeforeStore(definition, "StructureDamage") == 625, "Registered structural damage must be 625");
-    Check(DamageBeforeStore(definition, "AnimalDamage") == 225, "Registered animal damage must be 225");
+    Check(DamageBeforeStore(definition, "StructureDamage") == 200, "Registered structural damage must be 200");
+    Check(DamageBeforeStore(definition, "AnimalDamage") == 175, "Registered animal damage must be 175");
     using var nativeLoadMp=Mono.Cecil.AssemblyDefinition.ReadAssembly(@"L:\SteamLibrary\steamapps\common\Casualties Unknown\BepInEx\plugins\Together\CasualtiesMP.dll");
     var nativeReach=nativeLoadMp.MainModule.Types.Single(t=>t.FullName=="Together.ItemSync").Methods.Single(m=>m.Name=="CheckIfBodyReachThisItem"&&m.Parameters.Count==4&&m.Parameters[0].ParameterType.Name=="Item");
     Check((float)nativeReach.Parameters[2].Constant==20f&&(bool)nativeReach.Parameters[3].Constant==false,
         "Loading must match the installed MP combine/battery method's defaults exactly");
     var normalization = controller.Methods.Single(method => method.Name == "Normalize");
-    Check(DamageBeforeStore(normalization, "structureDamage") == 625, "Runtime structural damage must be 625");
-    Check(DamageBeforeStore(normalization, "animalDamage") == 225, "Runtime animal damage must be 225");
-    Check(DamageBeforeStore(execution, "structureDamage") == 625, "Actual shot structural damage must be 625");
-    Check(DamageBeforeStore(execution, "animalDamage") == 225, "Actual shot animal damage must be 225");
+    Check(DamageBeforeStore(normalization, "structureDamage") == 200, "Runtime structural damage must be 200");
+    Check(DamageBeforeStore(normalization, "animalDamage") == 175, "Runtime animal damage must be 175");
+    Check(DamageBeforeStore(execution, "structureDamage") == 200, "Actual shot structural damage must be 200");
+    Check(DamageBeforeStore(execution, "animalDamage") == 175, "Actual shot animal damage must be 175");
     var instructions = execution.Body.Instructions;
     int tinnitus = instructions.ToList().FindIndex(instruction => instruction.Operand is Mono.Cecil.FieldReference field && field.Name == "doTinnitus");
     Check(tinnitus > 0 && instructions[tinnitus - 1].OpCode == Mono.Cecil.Cil.OpCodes.Ldc_I4_0, "Actual firing entry must disable tinnitus");
-    Check(instructions.Any(instruction => instruction.Operand is float value && value == 0.002f), "Actual shot must deduct 0.2 percent durability");
+    Check(instructions.Any(instruction => instruction.Operand is float value && value == 0.0025f), "Actual shot must deduct 0.25 percent durability");
     foreach (var type in types)
     foreach (var method in type.Methods.Where(method => method.HasBody))
     {
@@ -1054,7 +1088,7 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
     Check(equipment.Body.Instructions.Any(instruction => instruction.Operand is string text && text == "cutting")
         && equipment.Body.Instructions.Any(instruction => instruction.Operand is string text && text == "hammering")
         && equipment.Body.Instructions.Any(instruction => instruction.Operand is string text && text == "loongnova.dragonization"), "Wrench must provide cutting, hammering and dragonization");
-    Check(assembly.MainModule.Resources.Count(resource => resource.Name.EndsWith(".png")) == 27, "Twenty-seven small sprites must include both user-provided supply crate images while excluding superseded art");
+    Check(assembly.MainModule.Resources.Count(resource => resource.Name.EndsWith(".png")) == 31, "Thirty-one small sprites must include both user-provided supply crate images while excluding superseded art");
     Check(assembly.MainModule.Resources.Any(r => r.Name.EndsWith("dragon-scorch-rifle-v2.png"))
         && definition.Body.Instructions.Any(i => i.Operand is string s && s == "dragon-scorch-rifle-v2.png"),
         "Gun registration must use the new sprite without an external magazine");
@@ -1148,29 +1182,27 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
     var poolEnum = ccl.MainModule.Types.Single(t => t.FullName == "CUCoreLib.Data.DropPool");
     foreach (var expected in new[] { ("Trader1", 16), ("Trader2", 32), ("Trader3", 64), ("AllTraders", 112), ("ContainerCrate", 8), ("DropCapsule", 128), ("CapsuleContainer", 256) })
         Check(Convert.ToInt32(poolEnum.Fields.Single(f => f.Name == expected.Item1).Constant) == expected.Item2, "Loot source mapping must match the installed CCL API");
-    using var contentStream = ((Mono.Cecil.EmbeddedResource)assembly.MainModule.Resources.Single(resource => resource.Name.EndsWith("Content.json"))).GetResourceStream();
-    using var contentReader = new StreamReader(contentStream);
-    var content = JObject.Parse(contentReader.ReadToEnd());
-    Check(content.Value<string>("beltSocketEmpty") == "可安装电池：实验性龙息单元", "Empty socket wording must match the requested compact hint");
-    Check(string.Format(content.Value<string>("beltSocketLoaded")!, 1000, 100) == "龙息单元就绪：1000/1000（100%）", "Loaded wording must exactly match the requested compact hint");
-    Check(string.Format(content.Value<string>("beltSocketLoaded")!, 0, 0) == "龙息单元就绪：0/1000（0%）", "An exhausted installed cell must retain the compact status");
+    var content = LocaleChecks.Chinese(assembly);
+    Check(content.Value<string>("beltSocketEmpty") == "可安装电池：龙域武库-龙息能量单元", "Empty socket wording must match the requested compact hint");
+    Check(string.Format(content.Value<string>("beltSocketLoaded")!, 1000, 100) == "龙息能量单元就绪：1000/1000（100%）", "Loaded wording must exactly match the requested compact hint");
+    Check(string.Format(content.Value<string>("beltSocketLoaded")!, 0, 0) == "龙息能量单元就绪：0/1000（0%）", "An exhausted installed cell must retain the compact status");
     Check(content.Value<string>("beltDescription")!.Contains("每秒消耗0.5") && content.Value<string>("beltDescription")!.Contains("每秒消耗8"),
         "Compact belt description must disclose both actual energy rates");
-    Check(content.Value<string>("cellDescription")!.Contains("发射100次") && content.Value<string>("gunDescription")!.Contains("0.15秒"),
+    Check(content.Value<string>("cellDescription")!.Contains("容量1000单位能源") && content.Value<string>("gunDescription")!.Contains("0.12秒"),
         "Gun and cell descriptions must match the updated shot cost and interval");
     Check(string.Format(System.Globalization.CultureInfo.InvariantCulture, content.Value<string>("cellEnergy")!, 12.375, 1.2375)
         == "能源：12.375/1000（1.2375%）", "Loose cells must show fractional energy rather than a rounded whole percent");
     Check(string.Format(System.Globalization.CultureInfo.InvariantCulture, content.Value<string>("beltSocketLoaded")!, 12.375, 1.2375)
-        == "龙息单元就绪：12.375/1000（1.2375%）", "Installed cells must retain the same fractional display precision");
+        == "龙息能量单元就绪：12.375/1000（1.2375%）", "Installed cells must retain the same fractional display precision");
     foreach (int charge in new[] { 0, 1000 })
         Check(string.Format(content.Value<string>("cellEnergy")!, charge, charge / 10) == $"能源：{charge}/1000（{charge / 10}%）",
             "Loose-cell empty and full display must agree with the exact capacity");
     Check(content.Value<string>("beltCard")!.Contains("飞行 8/s"), "Belt card must disclose the new flight cost");
     Check(content.Value<string>("beltLowEnergy") == "龙翼单元：能源储备低", "Low-energy warning must match the requested text exactly");
     foreach (string key in new[] { "matterRecipe", "cellRecipe", "gunRecipe", "beltRecipe", "refillRecipe", "pickaxeRecipe" })
-        Check(content.Value<string>(key)!.Contains("可龙化100单位") && content.Value<string>(key)!.Contains("1%耐久"), "Every dragonization recipe must disclose the exact requirement and cost");
+        Check(content.Value<string>(key)!.Contains("可龙化100单位") && !content.Value<string>(key)!.Contains("%耐久"), "Dragonization recipes disclose required units and leave durability cost to native quality information");
     Check(content.Value<string>("dragonRecipe")!.Contains("25%") && content.Value<string>("matterDescription")!.Contains("只能"), "Catalog must disclose the exclusive dragon sources and crafted-only matter");
-    Check(content.Value<string>("refillName") == "重装填实验性龙息单元", "Refill recipe must retain the requested display name");
+    Check(content.Value<string>("refillName") == "重装填龙域武库-龙息能量单元", "Refill recipe must retain the requested display name");
     Check(content.Value<string>("beltName") == "龙域武库-龙翼腰带", "Belt display name must use the new dragon-wing name");
 }
 Console.WriteLine($"PASS {checks} LoongNova gun/belt energy/save/recipes/prices/hearing/performance checks");
