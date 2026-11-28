@@ -1,5 +1,8 @@
 ﻿# DS Tool Extension 变更记录
 
+## v1.3.2 · 2026-11-28
+
+- 自动收纳扩展：除了三种子弹，手枪弹夹（smallmagazine）与步枪弹夹（riflemagazine）也会从槽位/穿戴/其他容器转移到子弹带。
 ## v1.3.1 · 2026-11-28
 
 - 自动装填优化：childCount 未变时跳过扫描；每 2 秒检查一次；找到未满弹夹后只装一发；
@@ -108,6 +111,7 @@
 - 循环音效 `drillLoop`（重型钻机同款，手持且攻击时播放）；
 - 中英文本走 `zh-CN.json` / `EN.json`；
 - DDEN L1 接入：实验性标记 + `DdenLocalize` 双语。
+
 
 
 

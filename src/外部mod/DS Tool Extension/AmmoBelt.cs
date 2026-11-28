@@ -233,7 +233,7 @@ namespace DsToolExtension
                 foreach (Item item in PlayerItems(body))
                 {
                     if (item == null || item == beltItem) continue;
-                    if (AmmoBeltRules.IsRound(item)) moved += MoveToBelt(belt, item);
+                    if (AmmoBeltRules.IsAllowed(item)) moved += MoveToBelt(belt, item);   // 子弹与两种弹夹
                     Container cont = item.GetComponent<Container>();
                     if (cont == null) continue;
                     for (int i = cont.transform.childCount - 1; i >= 0; i--)
@@ -242,7 +242,7 @@ namespace DsToolExtension
                         if (child == null) continue;
                         Item inner = child.GetComponent<Item>();
                         if (inner == null || inner == beltItem) continue;
-                        if (AmmoBeltRules.IsRound(inner)) moved += MoveToBelt(belt, inner);
+                        if (AmmoBeltRules.IsAllowed(inner)) moved += MoveToBelt(belt, inner);
                         else if (inner.GetComponentsInChildren<Container>(true).Length > 0)
                         {
                             foreach (Container nested in inner.GetComponentsInChildren<Container>(true))
@@ -253,7 +253,7 @@ namespace DsToolExtension
                                     Transform nc = nested.transform.GetChild(k);
                                     if (nc == null) continue;
                                     Item ni = nc.GetComponent<Item>();
-                                    if (ni != null && AmmoBeltRules.IsRound(ni)) moved += MoveToBelt(belt, ni);
+                                    if (ni != null && AmmoBeltRules.IsAllowed(ni)) moved += MoveToBelt(belt, ni);
                                 }
                             }
                         }
@@ -298,3 +298,5 @@ namespace DsToolExtension
         }
     }
 }
+
+

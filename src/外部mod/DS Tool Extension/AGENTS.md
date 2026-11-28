@@ -38,3 +38,4 @@ dotnet build "DS Tool Extension.csproj" -c Release -m:1 -nodeReuse:false -p:Depl
 本文件保留独立模组的技术约束。协作方式见 [根目录 agent.md](../../../agent.md)，个人工作约定按协作者身份选择 `agent/` 中的对应文件。
 
 
+
