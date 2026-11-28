@@ -208,52 +208,49 @@ namespace DsToolExtension
 
         private void TryTransfer()
         {
-            if (!IsWorn() || IsRemoteClient()) return;
+            if (IsRemoteClient()) return;   // 主机/单机统一处理所有玩家（含客机的同步副本）
             try
             {
-                Body body = PlayerCamera.main != null ? PlayerCamera.main.body : null;
-                if (body == null) return;
-
-                Container[] containers = body.GetComponentsInChildren<Container>(true);
-                Container belt = null;
-                for (int i = 0; i < containers.Length; i++)
+                // 遍历所有穿戴中的子弹带，按各自的主人处理其容器。
+                for (int b = 0; b < Item.allItems.Count; b++)
                 {
-                    Container cont = containers[i];
-                    if (cont == null) continue;
-                    Item it = cont.GetComponent<Item>();
-                    if (it != null && it.id == Plugin.AutoBeltItemId) { belt = cont; break; }
-                }
-                if (belt == null) return;
-                Item beltItem = belt.GetComponent<Item>();
+                    Item candidate = Item.allItems[b];
+                    if (candidate == null || candidate.id != Plugin.AutoBeltItemId) continue;
+                    Container belt = candidate.GetComponent<Container>();
+                    if (belt == null) continue;
+                    Body body = candidate.GetComponentInParent<Body>();
+                    if (body == null) continue;   // 未穿戴
 
-                FillItems(body, containers);
+                    Container[] containers = body.GetComponentsInChildren<Container>(true);
+                    FillItems(body, containers);
 
-                // 1) 拆开任意位置的 12 号霰弹盒（boxof12gauge 的 rounds 就是里面的霰弹）
-                int unloaded = 0;
-                for (int i = 0; i < Items.Count && unloaded < MaxUnloadPerPass; i++)
-                {
-                    Item owner = Items[i];
-                    if (owner == null || owner.id != "boxof12gauge") continue;
-                    AmmoScript box = owner.GetComponent<AmmoScript>();
-                    if (box == null || box.rounds <= 0) continue;
-                    while (box.rounds > 0 && unloaded < MaxUnloadPerPass)
+                    // 1) 拆开任意位置的 12 号霰弹盒
+                    int unloaded = 0;
+                    for (int i = 0; i < Items.Count && unloaded < MaxUnloadPerPass; i++)
                     {
-                        box.UnloadRound();
-                        unloaded++;
+                        Item owner = Items[i];
+                        if (owner == null || owner.id != "boxof12gauge") continue;
+                        AmmoScript box = owner.GetComponent<AmmoScript>();
+                        if (box == null || box.rounds <= 0) continue;
+                        while (box.rounds > 0 && unloaded < MaxUnloadPerPass)
+                        {
+                            box.UnloadRound();
+                            unloaded++;
+                        }
                     }
-                }
 
-                // 2) 槽位/穿戴/容器内的子弹与弹夹
-                int moved = 0;
-                for (int i = 0; i < Items.Count; i++)
-                {
-                    Item item = Items[i];
-                    if (item == null || item == beltItem) continue;
-                    if (AmmoBeltRules.IsAllowed(item)) moved += MoveToBelt(belt, item);
-                }
+                    // 2) 该玩家槽位/穿戴/容器内的子弹与弹夹
+                    int moved = 0;
+                    for (int i = 0; i < Items.Count; i++)
+                    {
+                        Item item = Items[i];
+                        if (item == null || item == candidate) continue;
+                        if (AmmoBeltRules.IsAllowed(item)) moved += MoveToBelt(belt, item);
+                    }
 
-                if ((moved > 0 || unloaded > 0) && Plugin.DebugLog != null && Plugin.DebugLog.Value)
-                    Plugin.LogInfo("[DS Tool Extension] ammo transfer: moved " + moved + ", unloaded " + unloaded + ".");
+                    if ((moved > 0 || unloaded > 0) && Plugin.DebugLog != null && Plugin.DebugLog.Value)
+                        Plugin.LogInfo("[DS Tool Extension] ammo transfer: moved " + moved + ", unloaded " + unloaded + ".");
+                }
             }
             catch (Exception ex)
             {
@@ -304,3 +301,4 @@ namespace DsToolExtension
         }
     }
 }
+

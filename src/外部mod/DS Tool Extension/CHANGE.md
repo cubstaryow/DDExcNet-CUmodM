@@ -1,5 +1,8 @@
 ﻿# DS Tool Extension 变更记录
 
+## v1.3.6 · 2026-11-28
+
+- 修复客机自动收纳失效：转移改为遍历所有穿戴中的子弹带，按各自主人的容器处理（主机/单机执行），客机子弹/弹夹也能被收进子弹带。
 ## v1.3.5 · 2026-11-28
 
 - 性能：AmmoBeltCanHoldPatch 用弱表缓存“容器是否子弹带”，CanHoldItem 高频调用不再反复 GetComponent；
@@ -128,6 +131,7 @@
 - 循环音效 `drillLoop`（重型钻机同款，手持且攻击时播放）；
 - 中英文本走 `zh-CN.json` / `EN.json`；
 - DDEN L1 接入：实验性标记 + `DdenLocalize` 双语。
+
 
 
 
