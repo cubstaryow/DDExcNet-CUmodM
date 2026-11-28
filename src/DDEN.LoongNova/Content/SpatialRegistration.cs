@@ -27,9 +27,8 @@ namespace DDEN.LoongNova
             {
                 fullName = Text("spatialCrateName"), description = Text("spatialCrateDescription"),
                 category = "container", tags = "container", weight = 2.4f,
-                usable = true, useAction = MicroSpaceCrate.Unload, destroyAtZeroCondition = true,
-                value = 0, untradeable = true, decayMinutes = SupplyCrateRules.DecayMinutes,
-                decayInfo = SupplyCrateRules.DecayInfo, rotSpeed = 1.666f / SupplyCrateRules.DecayMinutes,
+                usable = true, useAction = MicroSpaceCrate.Unload, destroyAtZeroCondition = false,
+                value = 0, untradeable = true, decayMinutes = 0, decayInfo = 0, rotSpeed = 0,
                 DropPool = DropPool.None, WorldSpawnPerChunk = 0,
                 Container = new ContainerProperties
                 {

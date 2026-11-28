@@ -18,6 +18,8 @@ internal static class SupplyCrateChecks
         Add(Registration.WrenchId, 0.8f); Add(Registration.BeltId, 1.5f);
         Add("largebattery", 0.5f); Add("mediumbattery", 0.2f); Add("nutrientbar", 0.5f); Add("waterbottle", 1.25f); Add("scaffoldingpack", 2);
         Add("riflemagazine", 0.5f); Add("boxof12gauge", 0.4f); Add("smallmagazine", 0.3f);
+        Add(Registration.SmelterId, 3.5f); Add("titaniumslab", 1); Add("scrapcube", 0.5f);
+        Add("charcoal", 0.1f); Add("woodcube", 0.3f); Add("processedcopper", 0.8f);
         for (int i = 0; i < 7; i++) Add(LootRules.BonusRound(i), i == 2 ? 0.5f : 0.3f);
         Add("bandage", 0.9f, SupplyPool.Medical); Add("mod-med", 0.7f, SupplyPool.Medical); Add("too-heavy-med", 10, SupplyPool.Medical);
         Add("helmet", 0.8f, SupplyPool.Equipment); Add("mod-gear", 4.9f, SupplyPool.Equipment);
@@ -40,9 +42,11 @@ internal static class SupplyCrateChecks
                 .Concat(Enumerable.Repeat("nutrientbar", 6)).Concat(Enumerable.Repeat("waterbottle", 4)).Append("scaffoldingpack").ToArray(),
             new[] { Registration.ChargeGunId }.Concat(Enumerable.Repeat(CannonAmmoState.BioId, 10)).ToArray(),
             new[] { Registration.GunId, Registration.CellId, Registration.CellId, "riflemagazine", "riflemagazine", "boxof12gauge", "boxof12gauge", "smallmagazine", "smallmagazine" },
-            new[] { Registration.WrenchId, Registration.BeltId, Registration.CellId, "helmet", "helmet", "bag", "pickaxe" }
+            new[] { Registration.WrenchId, Registration.BeltId, Registration.CellId, "helmet", "helmet", "bag", "pickaxe" },
+            new[] { Registration.SmelterId }.Concat(Enumerable.Repeat("titaniumslab",4)).Concat(Enumerable.Repeat("scrapcube",6))
+                .Concat(Enumerable.Repeat("charcoal",2)).Concat(Enumerable.Repeat("woodcube",4)).Concat(Enumerable.Repeat("processedcopper",4)).ToArray()
         };
-        for (int variant = 0; variant < 5; variant++)
+        for (int variant = 0; variant < SupplyCrateRules.VariantCount; variant++)
         {
             int roundIndex = 0;
             var contents = SupplyCrateRules.Contents(variant, catalog, count => 0, () => { roundIndex++; return 0; });
@@ -59,8 +63,8 @@ internal static class SupplyCrateChecks
                 (target, item) => true, removed.Add, () => spent++, out var duplicate, out _)
                 && duplicate == null && spent == 1, "Repeated use callbacks must never duplicate an opened crate");
         }
-        var variantCounts = Enumerable.Range(0, 9).Select(SupplyCrateRules.PickVariant).GroupBy(v => v).OrderBy(g => g.Key).Select(g => g.Count());
-        check(variantCounts.SequenceEqual(new[] { 2, 2, 1, 2, 2 }), "Five supply weights must be exactly 2:2:1:2:2");
+        var variantCounts = Enumerable.Range(0, SupplyCrateRules.TotalVariantWeight).Select(SupplyCrateRules.PickVariant).GroupBy(v => v).OrderBy(g => g.Key).Select(g => g.Count());
+        check(variantCounts.SequenceEqual(new[] { 2, 2, 1, 2, 2, 2 }), "Six supply weights must be exactly 2:2:1:2:2:2");
         var random = new Random(174);
         for (int n = 0; n < 1000; n++)
         {
@@ -87,7 +91,7 @@ internal static class SupplyCrateChecks
             check(SupplyCrateRules.DropCount(players, extra) == players + extra, "Every elder must drop between player count and player count plus two sealed crates");
         var gate = new BossDropGate();
         check(gate.TryClaim() && !gate.TryClaim() && !gate.TryRoll(0), "The crate reward must claim each actual boss death once independently of dragon probability");
-        foreach (int variant in new[] { -1, 5 })
+        foreach (int variant in new[] { -1, SupplyCrateRules.VariantCount })
         {
             bool rejected = false;
             try { SupplyCrateRules.Contents(variant, catalog, count => 0, () => 0); } catch (ArgumentOutOfRangeException) { rejected = true; }

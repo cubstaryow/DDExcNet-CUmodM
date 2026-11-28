@@ -38,7 +38,8 @@ namespace DDEN.LoongNova
             if (_container == null) _container = GetComponent<Container>();
             if (_container != null) _container.encumberanceMult = IsCharger ? 0 : State.Multiplier;
             RefreshSprite();
-            // Item.condition remains the container's durability, never its installed battery charge.
+            // Migrate old worn crates to the new wear-free state; charge stays in State, not condition.
+            if (Item != null && Item.id == SpatialCatalog.CrateId && Item.condition != 1) Item.condition = 1;
         }
         private void LateUpdate() => RefreshSprite();
         internal void RefreshSprite()

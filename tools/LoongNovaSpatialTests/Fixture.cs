@@ -70,7 +70,7 @@ namespace UnityEngine
 }
 namespace UnityEngine.EventSystems{public struct RaycastResult{public UnityEngine.GameObject gameObject;}}
 public sealed class Recognition{public bool recognizable=true;}
-public class ItemInfo{public bool Tool;public bool HasTag(string tag)=>tag=="tool"&&Tool;public float weight=0.1f;public Recognition rec=new Recognition();public Action<Body,Item> useAction;}
+public class ItemInfo{public bool Tool;public bool HasTag(string tag)=>tag=="tool"&&Tool;public float weight=0.1f,rotSpeed=1;public Recognition rec=new Recognition();public Action<Body,Item> useAction;}
 public sealed class BatteryInfo:ItemInfo{public float maxCharge;}
 public sealed class Item:UnityEngine.Component
 {
@@ -79,7 +79,7 @@ public sealed class Item:UnityEngine.Component
     public float totalWeight=>Stats.weight;
     public static readonly Dictionary<string,ItemInfo> Registry=new Dictionary<string,ItemInfo>();
     public static ItemInfo GetItem(string id)=>Registry.TryGetValue(id,out var info)?info:new ItemInfo();
-    [MethodImpl(MethodImplOptions.NoInlining)] public void HandleDecay(){condition-=0.05f;}
+    [MethodImpl(MethodImplOptions.NoInlining)] public void HandleDecay(){if(Stats.rotSpeed>0)condition-=0.05f;}
     [MethodImpl(MethodImplOptions.NoInlining)] public TimeSpan TimeUntilDecayed()=>TimeSpan.FromHours(1);
     private void Start(){}
 }

@@ -18,7 +18,7 @@ internal static class Program
     private static BuildingEntity Pod(string id,out GameObject game)
     {game=new GameObject();var b=game.AddComponent<BuildingEntity>();b.id=id;Together.NetObjectRegistry.All.Add(new Together.SyncInfo{go=game,building=b,syncId=new Together.knetid((ushort)(Together.NetObjectRegistry.All.Count+1))});return b;}
     private static int _decayCalls;
-    private static bool MpDecay(Item __instance){_decayCalls++;if(Mp.IsRunning){__instance.condition-=0.2f;return false;}return true;}
+    private static bool MpDecay(Item __instance){_decayCalls++;if(Mp.IsRunning){if(__instance.Stats.rotSpeed>0)__instance.condition-=0.2f;return false;}return true;}
     private static void Main()
     {
         var harmony=new Harmony("fixture.spatial");var native=new Harmony("fixture.native");
@@ -35,6 +35,7 @@ internal static class Program
     private static void Run()
     {
         Item.Registry[Registration.CellId]=new BatteryInfo{maxCharge=1000};Item.Registry["smallbattery"]=new BatteryInfo{maxCharge=50};
+        Item.Registry[SpatialCatalog.CrateId]=new ItemInfo{rotSpeed=0};
         var body=new Body();PlayerCamera.main=new PlayerCamera{body=body};
         var appearance=Device(SpatialCatalog.ChargerId);var renderer=appearance.gameObject.AddComponent<SpriteRenderer>();
         appearance.RefreshSprite();Check(renderer.sprite==Registration.RechargerInactiveSprite,"New rechargers display the inactive artwork");
@@ -85,12 +86,20 @@ internal static class Program
         food.condition-=0.25f;food.HandleDecay();
         Check(food.condition==0.75f,"Skipping passive decay never reverses explicit item damage or usage wear");
         food.condition=1;
-        box.Item.HandleDecay();Check(box.Item.condition<0.75f,"The box itself retains its own ordinary durability decay");
+        box.Item.HandleDecay();Check(box.Item.condition==1,"Old worn microspace crates migrate to a wear-free state and do not decay");
         Time.timeAsDouble=10020;box.Settle();Check(box.State.Energy==0&&box.State.Multiplier==0.9f,"A full space-crate cell drains in exactly 10000 occupied seconds");
+        food.HandleDecay();Check(food.condition<1&&food.TimeUntilDecayed().TotalSeconds>0&&box.Item.condition==1,"Exhausting the card resumes stored-item decay but leaves the crate intact");
+        box.Execute("eject",null,body);food.condition=1;food.HandleDecay();
+        Check(food.condition<1&&!box.State.Cell.Loaded,"Removing the card also leaves stored items on normal decay");
+        Mp.IsRunning=true;int unpoweredDecayCalls=_decayCalls;food.condition=1;food.HandleDecay();
+        Check(food.condition<1&&_decayCalls==unpoweredDecayCalls+1,"An unpowered crate also resumes native MP decay while the item remains inside");
+        Mp.IsRunning=false;
+        box.Execute("load",Cell(1000),body);food.condition=1;
         Mp.IsRunning=true;int decayBefore=_decayCalls;food.HandleDecay();Check(_decayCalls==decayBefore&&food.condition==1,"The first-priority stasis guard also blocks native MP's inlined decay");
         box.Item.GetComponent<Container>().UnloadItem(food);food.HandleDecay();Check(food.condition<1&&food.TimeUntilDecayed().TotalSeconds>0,"Leaving stasis resumes original multiplayer decay and its countdown");
         Mp.IsRunning=false;
         var freezer=Device(SpatialCatalog.CrateId);var nested=Device(SpatialCatalog.ChargerId);
+        freezer.Execute("load",Cell(1000),body);
         nested.Execute("load",Cell(1000),body);var nestedBattery=Cell(0);nested.Item.GetComponent<Container>().LoadItem(nestedBattery);
         freezer.Item.GetComponent<Container>().LoadItem(nested.Item);
         Time.timeAsDouble+=1;nested.Settle();

@@ -33,6 +33,22 @@ internal static class SpatialChecks
                 "A full installed cell runs for precisely ten thousand occupied seconds");
         }
         check(box.Cell.Loaded, "A depleted installed cell remains available for ejection");
+        check(!box.Powered,"An exhausted installed card does not stop decay");
+        var iconItem=new Item{id=SpatialCatalog.CrateId,condition=0.2f};
+        var indicator=new InvButton{Item=iconItem};
+        var iconState=MicroSpaceCrate.For(iconItem).State;
+        foreach(float energy in new[]{1000f,123.375f,0f})
+        {
+            iconState.Load(energy,true);indicator.itemCond.fillAmount=0.8f;
+            InventoryStateVisuals.Refresh(indicator);
+            check(Math.Abs(indicator.itemCond.fillAmount-energy/1000)<0.000001f
+                &&indicator.itemCond.color==indicator.itemCond.fillAmount,"The existing microspace-crate bar shows only precise charge, not condition or container fullness");
+        }
+        iconState.Clear();InventoryStateVisuals.Refresh(indicator);
+        check(indicator.itemCond.fillAmount==0&&!iconState.Powered,"No card means empty energy indicator and no stasis");
+        indicator.Item=new Item{id=SupplyCrateRules.OpenId};indicator.itemCond.fillAmount=0.42f;
+        InventoryStateVisuals.Refresh(indicator);
+        check(indicator.itemCond.fillAmount==0.42f,"Ordinary supply containers keep their original indicator");
         box.Load(123.375f, true); box.Advance(0.125, true);
         var data = box.Capture(); var restored = new SpatialPowerState();
         check(restored.Restore(data) && Math.Abs(restored.Energy - 123.3625) < 1e-8 && restored.Cell.Favourite,
@@ -73,8 +89,8 @@ internal static class SpatialChecks
         var device = types.Single(t => t.Name == "MicroSpaceCrate");
         check(device.Methods.Single(m => m.Name == "Settle").Body.Instructions.Any(i => i.Operand is MethodReference m && m.DeclaringType.Name == "SpatialChargeRules" && m.Name == "Charge"),
             "The real device settling path executes the tested charge formula");
-        check(!device.Methods.Single(m => m.Name == "Refresh").Body.Instructions.Any(i => i.Operand is FieldReference f && f.Name == "condition" && i.OpCode == Mono.Cecil.Cil.OpCodes.Stfld),
-            "Container durability must remain independent from installed battery charge");
+        check(device.Methods.Single(m => m.Name == "Refresh").Body.Instructions.Any(i => i.Operand as string == SpatialCatalog.CrateId),
+            "Only microspace crates migrate old wear; installed energy remains in its separate state");
         var patches = types.Single(t => t.Name == "SpatialPatches");
         check(patches.Methods.Single(m => m.Name == "Decay").CustomAttributes.Any(a => a.AttributeType.Name == "HarmonyPriority")
             && patches.Methods.Single(m => m.Name == "Decay").Body.Instructions.Any(i => i.Operand is MethodReference m && m.Name == "Frozen"),

@@ -18,6 +18,7 @@ namespace DDEN.LoongNova
         internal readonly EnergyState Cell = new EnergyState();
         internal double Energy { get; private set; }
         internal bool Activated { get; private set; }
+        internal bool Powered => Cell.Loaded && Energy > 0;
         internal float Multiplier => SpatialCatalog.WeightMultiplier(Cell.Loaded, Energy);
         internal void Load(float charge, bool favourite)
         { Activated = false; Energy = Math.Max(0, Math.Min(EnergyState.Capacity, charge)); Cell.Set(true, (float)Energy, favourite); }

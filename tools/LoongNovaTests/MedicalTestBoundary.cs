@@ -109,6 +109,7 @@ namespace UnityEngine
     public struct Vector3 {public static Vector3 zero=>default;}
     public static class Mathf
     {
+        public static float Clamp01(float value)=>System.Math.Clamp(value,0,1);
         public static float Max(float a,float b)=>System.Math.Max(a,b);
         public static float Min(float a,float b)=>System.Math.Min(a,b);
         public static float Clamp(float x,float min,float max)=>System.Math.Clamp(x,min,max);
@@ -152,7 +153,11 @@ namespace DDEN.LoongNova
 {
     internal sealed class MicroSpaceCrate
     {
-        internal static MicroSpaceCrate For(Item item)=>new MicroSpaceCrate();
+        internal readonly SpatialPowerState State=new SpatialPowerState();
+        private static readonly System.Collections.Generic.Dictionary<Item,MicroSpaceCrate> Instances=new();
+        internal static MicroSpaceCrate For(Item item)
+        {if(!Instances.TryGetValue(item,out var box))Instances[item]=box=new MicroSpaceCrate();return box;}
+        internal void Settle(){}
         internal void RefreshSprite(){}
     }
 }

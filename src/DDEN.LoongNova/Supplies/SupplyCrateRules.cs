@@ -22,12 +22,12 @@ namespace DDEN.LoongNova
         internal const float EncumbranceMultiplier = 0.9f;
         internal const float DecayMinutes = 240;
         internal const int DecayInfo = 5; // Native flags: contains items (1) and carrying player is moving (4).
-        internal const int VariantCount = 5, TotalVariantWeight = 9;
+        internal const int VariantCount = 6, TotalVariantWeight = 11;
         internal const int CannonRounds = 10;
         internal static int PickVariant(int roll)
         {
             if (roll < 0 || roll >= TotalVariantWeight) throw new ArgumentOutOfRangeException(nameof(roll));
-            return roll < 2 ? 0 : roll < 4 ? 1 : roll < 5 ? 2 : roll < 7 ? 3 : 4;
+            return roll < 2 ? 0 : roll < 4 ? 1 : roll < 5 ? 2 : roll < 7 ? 3 : roll < 9 ? 4 : 5;
         }
         internal static int PlayerCount(bool multiplayer, IEnumerable players)
         {
@@ -75,6 +75,10 @@ namespace DDEN.LoongNova
                     Add(Registration.WrenchId); Add(Registration.BeltId); Add(Registration.CellId);
                     randomPools.Add(SupplyPool.Equipment); randomPools.Add(SupplyPool.Equipment);
                     randomPools.Add(SupplyPool.Container); randomPools.Add(SupplyPool.Tool);
+                    break;
+                case 5:
+                    Add(Registration.SmelterId); Add("titaniumslab", 4); Add("scrapcube", 6);
+                    Add("charcoal", 2); Add("woodcube", 4); Add("processedcopper", 4);
                     break;
                 default: throw new ArgumentOutOfRangeException(nameof(variant));
             }

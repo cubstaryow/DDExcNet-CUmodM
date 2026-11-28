@@ -17,7 +17,7 @@ namespace DDEN.LoongNova
             {
                 var device = parent.GetComponentInParent<MicroSpaceCrate>(true);
                 if (device == null) return false;
-                if (device.Item != null && device.Item.id == SpatialCatalog.CrateId) return true;
+                if (device.Item != null && device.Item.id == SpatialCatalog.CrateId && device.State.Powered) return true;
                 parent = device.transform.parent;
             }
             return false;

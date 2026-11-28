@@ -56,6 +56,7 @@ public sealed class ItemInfo
 public sealed class InvButton
 {
     public UnityEngine.UI.Image itemImg=new UnityEngine.UI.Image();
+    public UnityEngine.UI.Image itemCond=new UnityEngine.UI.Image();
     public UnityEngine.Vector2 maxImageSize;
     public void UpdateGraphic(){}
     public Item Item;
@@ -65,6 +66,7 @@ public sealed class InvButton
 }
 public sealed class PlayerCamera
 {
+    public static float ConditionToColor(float fraction)=>fraction;
     public static UnityEngine.Vector2 ImageSizeDelta(object texture,float scale,UnityEngine.Vector2 max)=>new UnityEngine.Vector2(12,20);
     public static PlayerCamera main;
     public Body body;
@@ -179,6 +181,7 @@ namespace UnityEngine.UI
     public sealed class Button { public bool enabled = true, interactable = true; }
     public sealed class Image
     {
+        public float fillAmount, color;
         public Sprite sprite;
         public RectTransform rectTransform=new RectTransform();
         public Button OwnButton, ParentButton;

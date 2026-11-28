@@ -12,6 +12,18 @@ namespace DDEN.LoongNova
             if (__instance == null || __instance.itemImg == null) return;
             var item = __instance.GetItem();
             if (item == null) return;
+            if (item.id == SpatialCatalog.CrateId)
+            {
+                var box = MicroSpaceCrate.For(item); box.Settle();
+                // Reuse the native indicator: no second wear/capacity bar or extra UI object.
+                if (__instance.itemCond != null)
+                {
+                    float charge = box.State.Cell.Loaded ? Mathf.Clamp01((float)(box.State.Energy / EnergyState.Capacity)) : 0;
+                    __instance.itemCond.fillAmount = charge;
+                    __instance.itemCond.color = PlayerCamera.ConditionToColor(charge);
+                }
+                return;
+            }
             if (Registration.IsGun(item.id)) DragonGun.For(item).RefreshSprite();
             else if (item.id == MedicalCatalog.InjectorId) MedicalInjector.For(item).RefreshSprite();
             else if (item.id == SpatialCatalog.ChargerId) MicroSpaceCrate.For(item).RefreshSprite();
