@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using HarmonyLib;
 using UnityEngine;
 
@@ -24,10 +25,22 @@ namespace DsToolExtension
     [HarmonyPatch(typeof(Container), "CanHoldItem")]
     internal static class AmmoBeltCanHoldPatch
     {
+        // 每个容器只检查一次“是不是子弹带”，之后走弱表缓存，避免 CanHoldItem 高频调用时反复 GetComponent。
+        private static readonly ConditionalWeakTable<Container, StrongBox<bool>> Cache =
+            new ConditionalWeakTable<Container, StrongBox<bool>>();
+
+        private static bool IsBelt(Container container)
+        {
+            if (Cache.TryGetValue(container, out StrongBox<bool> box)) return box.Value;
+            bool isBelt = container.TryGetComponent<AmmoBeltRules>(out _);
+            Cache.Add(container, new StrongBox<bool>(isBelt));
+            return isBelt;
+        }
+
         private static void Postfix(Container __instance, Item item, ref bool __result)
         {
             if (__instance == null || __result == false) return;
-            if (__instance.GetComponent<AmmoBeltRules>() == null) return;
+            if (!IsBelt(__instance)) return;
             __result = AmmoBeltRules.IsAllowed(item);
         }
     }
@@ -72,6 +85,10 @@ namespace DsToolExtension
         private Item _item;
         private float _nextReload;
         private float _nextTransfer;
+
+        // 复用列表，避免每轮转移重新分配。
+        private static readonly List<Item> Items = new List<Item>();
+        private static readonly HashSet<int> Seen = new HashSet<int>();
 
         private static Type _netType;
         private static PropertyInfo _isRunning;
@@ -209,13 +226,13 @@ namespace DsToolExtension
                 if (belt == null) return;
                 Item beltItem = belt.GetComponent<Item>();
 
-                List<Item> items = AllItems(body, containers);
+                FillItems(body, containers);
 
                 // 1) 拆开任意位置的 12 号霰弹盒（boxof12gauge 的 rounds 就是里面的霰弹）
                 int unloaded = 0;
-                for (int i = 0; i < items.Count && unloaded < MaxUnloadPerPass; i++)
+                for (int i = 0; i < Items.Count && unloaded < MaxUnloadPerPass; i++)
                 {
-                    Item owner = items[i];
+                    Item owner = Items[i];
                     if (owner == null || owner.id != "boxof12gauge") continue;
                     AmmoScript box = owner.GetComponent<AmmoScript>();
                     if (box == null || box.rounds <= 0) continue;
@@ -228,9 +245,9 @@ namespace DsToolExtension
 
                 // 2) 槽位/穿戴/容器内的子弹与弹夹
                 int moved = 0;
-                for (int i = 0; i < items.Count; i++)
+                for (int i = 0; i < Items.Count; i++)
                 {
-                    Item item = items[i];
+                    Item item = Items[i];
                     if (item == null || item == beltItem) continue;
                     if (AmmoBeltRules.IsAllowed(item)) moved += MoveToBelt(belt, item);
                 }
@@ -254,14 +271,14 @@ namespace DsToolExtension
             return 1;
         }
 
-        private static List<Item> AllItems(Body body, Container[] containers)
+        private static void FillItems(Body body, Container[] containers)
         {
-            var list = new List<Item>();
-            var seen = new HashSet<int>();
+            Items.Clear();
+            Seen.Clear();
             for (int i = 0; i < body.slots.Length; i++)
             {
                 Item item = body.GetItem(i);
-                if (item != null && seen.Add(item.GetInstanceID())) list.Add(item);
+                if (item != null && Seen.Add(item.GetInstanceID())) Items.Add(item);
             }
             for (int i = 0; i < body.limbs.Length; i++)
             {
@@ -269,7 +286,7 @@ namespace DsToolExtension
                 {
                     if (child == null) continue;
                     Item item = child.GetComponent<Item>();
-                    if (item != null && seen.Add(item.GetInstanceID())) list.Add(item);
+                    if (item != null && Seen.Add(item.GetInstanceID())) Items.Add(item);
                 }
             }
             for (int c = 0; c < containers.Length; c++)
@@ -281,10 +298,9 @@ namespace DsToolExtension
                     Transform child = cont.transform.GetChild(i);
                     if (child == null) continue;
                     Item item = child.GetComponent<Item>();
-                    if (item != null && seen.Add(item.GetInstanceID())) list.Add(item);
+                    if (item != null && Seen.Add(item.GetInstanceID())) Items.Add(item);
                 }
             }
-            return list;
         }
     }
 }

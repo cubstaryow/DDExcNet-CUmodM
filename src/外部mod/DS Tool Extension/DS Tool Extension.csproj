@@ -5,7 +5,7 @@
     <RootNamespace>DsToolExtension</RootNamespace>
     <LangVersion>latest</LangVersion>
     <Nullable>disable</Nullable>
-    <Version>1.3.4</Version>
+    <Version>1.3.5</Version>
     <AssemblyVersion>1.3.2.0</AssemblyVersion>
     <FileVersion>1.3.2.0</FileVersion>
     <Company>MornJor</Company>
@@ -36,6 +36,7 @@
     </None>
   </ItemGroup>
 </Project>
+
 
 
 

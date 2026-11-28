@@ -1,5 +1,9 @@
 ﻿# DS Tool Extension 变更记录
 
+## v1.3.5 · 2026-11-28
+
+- 性能：AmmoBeltCanHoldPatch 用弱表缓存“容器是否子弹带”，CanHoldItem 高频调用不再反复 GetComponent；
+- 性能：TryTransfer 复用静态 List/HashSet，每轮转移不再重新分配集合。
 ## v1.3.4 · 2026-11-28
 
 - 掉落改为保底池机制（同 DDEN.LoongNova 的 ArsenalLootPool）：
@@ -124,6 +128,7 @@
 - 循环音效 `drillLoop`（重型钻机同款，手持且攻击时播放）；
 - 中英文本走 `zh-CN.json` / `EN.json`；
 - DDEN L1 接入：实验性标记 + `DdenLocalize` 双语。
+
 
 
 
