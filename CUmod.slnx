@@ -1,7 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/DDEN.LoongNova/DDEN.LoongNova.csproj" />
-    <Project Path="src/DDEN.MoreThreadOnMP/DDEN.MoreThreadOnMP.csproj" />
+    <Project Path="src/DDEN.MPreducer/DDEN.MPreducer.csproj" />
     <Project Path="src/DDEN.MPfix/DDEN.MPfix.csproj" />
     <Project Path="src/DDEN.NetPerfTracker/DDEN.NetPerfTracker.csproj" />
     <Project Path="src/DDEN.NetPerfTracker.Enhanced/DDEN.NetPerfTracker.Enhanced.csproj" />

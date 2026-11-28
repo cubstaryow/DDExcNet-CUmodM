@@ -3,7 +3,6 @@ using DDEN.Shared;
 using System.Collections.Generic;
 using System.IO;
 using CUCoreLib.Registries;
-using HarmonyLib;
 using Newtonsoft.Json.Linq;
 
 namespace DDEN.LoongNova
@@ -34,7 +33,7 @@ namespace DDEN.LoongNova
         {
             string language=DdenLocalization.Language==DdenLanguage.English?"EN":"zh-CN";
             bool same=string.Equals(Locale.currentLangName,language,StringComparison.OrdinalIgnoreCase);
-            string text = Catalog.Text(key, language, same?Current:null);
+            string text = Catalog.Text(key, language, same && key!="dragonQuality"?Current:null);
             if (key != "wrenchDescription") return text;
             string capsule = same && Locale.currentLang != null ? Locale.GetBuilding("dropcapsule") : language=="zh-CN" ? "空投舱" : "drop capsule";
             return string.Format(text, capsule);
@@ -53,14 +52,5 @@ namespace DDEN.LoongNova
             }
             RefreshItem(Registration.CellId, Registration.CellStats);
         }
-    }
-    [HarmonyPatch]
-    internal static class LoongLocalePatches
-    {
-        [HarmonyPatch(typeof(Item), nameof(Item.GetItem)), HarmonyPostfix, HarmonyPriority(Priority.Last)]
-        private static void ItemText(string id, ref ItemInfo __result) => LoongLocalization.RefreshItem(id, __result);
-
-        [HarmonyPatch(typeof(Locale), nameof(Locale.LoadLanguage)), HarmonyPostfix, HarmonyPriority(Priority.Last), HarmonyAfter("net.cucorelib")]
-        private static void LanguageLoaded() => LoongLocalization.RefreshItems();
     }
 }

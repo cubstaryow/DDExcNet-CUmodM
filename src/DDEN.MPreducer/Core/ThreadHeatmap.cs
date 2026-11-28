@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace DDEN.MoreThreadOnMP.Core
+namespace DDEN.MPreducer.Core
 {
     internal static class ThreadHeatmap
     {

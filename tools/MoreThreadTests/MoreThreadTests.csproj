@@ -3,7 +3,7 @@
   <ItemGroup>
     <Reference Remove="@(Reference)" />
     <Reference Include="Mono.Cecil"><HintPath>$(BepInExCoreDir)/Mono.Cecil.dll</HintPath><Private>true</Private></Reference>
-    <Compile Include="../../src/DDEN.MoreThreadOnMP/Core/*.cs" Link="Core/%(Filename)%(Extension)" />
+    <Compile Include="../../src/DDEN.MPreducer/Core/*.cs" Link="Core/%(Filename)%(Extension)" />
     <Compile Remove="HookFixture/**/*.cs" />
   </ItemGroup>
 </Project>

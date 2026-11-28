@@ -15,7 +15,7 @@ $arguments = @('/nologo', '/noconfig', '/langversion:10', '/optimize+', '/debug:
     "/reference:$facades/netstandard.dll", "/reference:$facades/System.Runtime.dll", "/reference:$core/0Harmony.dll", "/reference:$core/Mono.Cecil.dll")
 $sources = @((Join-Path $PSScriptRoot 'HookFixture/RegressionFixture.cs'),
     (Join-Path $PSScriptRoot 'RegressionContractTests.cs'),
-    (Join-Path $repoRoot 'src/DDEN.MoreThreadOnMP/Integration/RegressionValidationHooks.cs'))
+    (Join-Path $repoRoot 'src/DDEN.MPreducer/Integration/RegressionValidationHooks.cs'))
 $executable = Join-Path $outputPath 'MoreThreadRegressionTests.exe'
 & $dotnetPath $compiler @arguments '/target:exe' "/out:$executable" @sources
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

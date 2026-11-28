@@ -18,7 +18,7 @@ namespace DDEN.LoongNova
         [HarmonyPatch(typeof(Recipe), "get_visible"), HarmonyPostfix]
         private static void Visible(Recipe __instance, ref bool __result)
         {
-            if (__result && RecipeUnlockRules.Required(__instance.result?.id) != 0)
+            if (__result)
                 __result = RecipeUnlocks.Allows(__instance, PlayerCamera.main != null ? PlayerCamera.main.body : null);
         }
         [HarmonyPatch(typeof(Recipe), nameof(Recipe.GetItemsForRecipe)), HarmonyPrefix]
@@ -33,7 +33,7 @@ namespace DDEN.LoongNova
             int index = __instance.selectedRecipe;
             if (Recipes.recipes == null || index < 0 || index >= Recipes.recipes.Count
                 || RecipeUnlocks.Allows(Recipes.recipes[index], __instance.body)) return true;
-            __instance.DoAlert(Registration.Text(RecipeUnlocks.LockHint(Recipes.recipes[index].result?.id, __instance.body)));
+            __instance.DoAlert(Registration.Text(RecipeUnlocks.IsSmelting(Recipes.recipes[index])?"unlockNeedsSmelter":RecipeUnlocks.LockHint(Recipes.recipes[index].result?.id, __instance.body)));
             return false;
         }
         [HarmonyPatch(typeof(Body), nameof(Body.GetAllItemsThorough)), HarmonyPostfix]

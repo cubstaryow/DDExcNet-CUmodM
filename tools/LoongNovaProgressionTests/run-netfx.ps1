@@ -17,6 +17,8 @@ $common = @('/nologo', '/noconfig', '/langversion:10', '/optimize+', '/debug:por
     "/reference:$facades/netstandard.dll", "/reference:$facades/System.Runtime.dll")
 $executable = Join-Path $outputPath 'LoongNovaProgressionTests.exe'
 $sources = @((Join-Path $repoRoot 'src/DDEN.LoongNova/Integration/NetworkReadBudget.cs'), (Join-Path $PSScriptRoot 'Fixture.cs'), (Join-Path $PSScriptRoot 'Program.cs'),
+    (Join-Path $repoRoot 'src/DDEN.LoongNova/Content/LoongLocalePatches.cs'),
+    (Join-Path $repoRoot 'src/DDEN.LoongNova/Content/SmeltingRecipePatches.cs'),
     (Join-Path $repoRoot 'src/DDEN.LoongNova/Progression/RecipeUnlockRules.cs'),
     (Join-Path $repoRoot 'src/DDEN.LoongNova/Progression/RecipeUnlocks.cs'),
     (Join-Path $repoRoot 'src/DDEN.LoongNova/Progression/RecipeUnlockPatches.cs'))

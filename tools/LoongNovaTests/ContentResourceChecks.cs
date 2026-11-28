@@ -34,6 +34,18 @@ internal static class ContentResourceChecks
             &&m.DeclaringType.Name=="ContentResources"&&m.Name=="Open"),"Registration must call the actually tested production resource loader");
         check(registration.Methods.Single(m=>m.Name=="LoadSprite").Body.Instructions.Any(i=>i.Operand as string=="images/"),
             "Sprite registration must supply full image resource paths");
+        var spriteCalls=registration.Methods.Single(m=>m.Name=="LoadSprite").Body.Instructions
+            .Select(i=>i.Operand).OfType<MethodReference>().ToArray();
+        check(!spriteCalls.Any(m=>m.Name=="SetPixels32"||m.Name=="Destroy")
+            &&spriteCalls.Any(m=>m.Name=="LoadImage")&&spriteCalls.Any(m=>m.DeclaringType.Name=="Sprite"&&m.Name=="Create"),
+            "Sprite loading must retain the decoded source texture, without resampling or destroying its pixels");
+        foreach(int resolution in new[]{8,12,16,32,64})
+            check(Math.Abs(resolution/SpritePixelScale.PixelsPerUnit(resolution,resolution,8,0.5f)-0.5f)<0.00001f,
+                "Membrane/component detail resolution must not change their half-unit world size");
+        check(SpritePixelScale.PixelsPerUnit(24,72,12,1,logicalPixelsPerUnit:36)==72,
+            "Doubling round artwork resolution must preserve its physical size, not double the displayed round");
+        check(16/SpritePixelScale.PixelsPerUnit(11,16,16,1,worldLength:2)==2,
+            "The source smelter portrait must keep its explicit two-unit world length without a raster resize");
         foreach(string file in registration.Methods.Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions)
             .Select(i=>i.Operand as string).Where(s=>s!=null&&s.EndsWith(".png",StringComparison.Ordinal)).Distinct())
         {

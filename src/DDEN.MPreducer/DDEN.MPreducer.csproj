@@ -1,9 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <AssemblyName>DDEN.MoreThreadOnMP</AssemblyName>
-    <RootNamespace>DDEN.MoreThreadOnMP</RootNamespace>
-    <Version>0.2.0-alpha</Version>
-    <AssemblyVersion>0.2.0.0</AssemblyVersion>
+    <AssemblyName>DDEN.MPreducer</AssemblyName>
+    <RootNamespace>DDEN.MPreducer</RootNamespace>
+    <Version>0.2.2-alpha</Version>
+    <AssemblyVersion>0.2.2.0</AssemblyVersion>
+    <Description>让超速的亿堆检测器减速</Description>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../DDEN.Shared/DDEN.Shared.csproj" />

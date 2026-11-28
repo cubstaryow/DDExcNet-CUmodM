@@ -1,40 +1,47 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using BepInEx;
 using BepInEx.Configuration;
-using DDEN.MoreThreadOnMP.Core;
-using DDEN.MoreThreadOnMP.Integration;
+using DDEN.MPreducer.Core;
+using DDEN.MPreducer.Integration;
 using DDEN.Shared;
 using UnityEngine;
 
-namespace DDEN.MoreThreadOnMP
+namespace DDEN.MPreducer
 {
-    [BepInPlugin(Guid, "DDEN MoreThreadOnMP", "0.2.0")]
+    [BepInPlugin(Guid, "DDEN MPreducer", "0.2.2")]
     [BepInDependency("CasualtiesMP", BepInDependency.DependencyFlags.SoftDependency)]
-    public sealed class MoreThreadPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleVersion, IDdenModuleGate, IDdenModuleActivity, IDdenModuleHealth
+    public sealed class MPreducerPlugin : BaseUnityPlugin, IDdenModule, IDdenModuleVersion, IDdenModuleGate, IDdenModuleActivity, IDdenModuleHealth
     {
         public const string Guid = "com.dden.morethreadonmp";
-        private static readonly DdenTextCatalog Text = new DdenTextCatalog(typeof(MoreThreadPlugin).Assembly, "DDEN.MoreThreadOnMP.Resources.localization.en.json");
-        private ConfigEntry<bool> _enabled, _observe, _suppress;
-        private ConfigEntry<int> _radius;
+        private static readonly DdenTextCatalog Text = new DdenTextCatalog(typeof(MPreducerPlugin).Assembly, "DDEN.MPreducer.Resources.localization.en.json");
+        private ConfigEntry<bool> _enabled, _observe, _suppress, _checkpointWorker, _extendCheckpointInterval;
+        private ConfigEntry<int> _radius, _checkpointSeconds;
         private ConfigEntry<float> _sampleInterval;
         private RegressionValidationHooks _validation;
+        private CheckpointHooks _checkpoint;
+        private CheckpointIntervalHooks _checkpointInterval;
         private ThreadSampler _sampler;
         private LogChannel _log;
         private string _failure;
-        private (int Radius, int Effective, bool Suppress, bool Observer, bool Host)? _reportedMode;
+        private string _checkpointFailure, _intervalFailure;
+        private (bool Worker, bool EffectiveWorker, bool Extend, int Seconds, int Effective, bool Host)? _reportedCheckpointMode;
+        private (int Radius, int Effective, bool Suppress, bool EffectiveSuppress, bool Observer, bool Host)? _reportedMode;
         private bool _wasEnabled, _showAllThreads, _cachedShowAll;
         private int _mainId;
         private double _nextReport;
+        private double _nextCheckpointReport;
         private ThreadSnapshot _heatSnapshot;
         private ThreadLoad[] _heatRows = Array.Empty<ThreadLoad>();
         private static readonly float[] SampleChoices = { 0.5f, 1f, 3f };
         private static readonly int[] RadiusChoices = { 4, 2, 1 };
+        private static readonly int[] CheckpointChoices = { 30, 60, 120, 300 };
         private GUIStyle _heatBadge;
         private Vector2 _cardsScroll;
         public string Id => "morethreadonmp";
-        public string DisplayName => L("联机性能验证（MTOMP）");
-        public string Version => "0.2.0-alpha";
+        public string DisplayName => "MPreducer";
+        public string Version => "0.2.2-alpha";
         public string MinimumManagerVersion => "2.0.0";
         public string TestedManagerVersion => "2.1.0";
         public string MinimumSharedVersion => "2.0.1";
@@ -44,22 +51,30 @@ namespace DDEN.MoreThreadOnMP
         public bool ModuleEnabled => _enabled?.Value == true;
         public string MasterKey => "实验线程/Enabled";
         public bool IsRunning => ModuleEnabled && (_sampler != null || (_validation != null && Mp.IsRunning && Mp.IsServer
-            && ((_radius.Value != 4 && _validation.RadiusProblem == null) || (_suppress.Value && _validation.DiagnosticProblem == null))));
-        public DdenHealth Health => !ModuleEnabled ? DdenHealth.Ok : _failure != null || _validation?.Problem != null || _validation?.SampleProblem != null || _sampler?.Snapshot.Error != null ? DdenHealth.Warn : DdenHealth.Ok;
-        public string HealthNote => Health == DdenHealth.Ok ? "" : (_failure ?? _validation?.Problem ?? _validation?.SampleProblem ?? _sampler?.Snapshot.Error ?? "");
+            && ((_radius.Value != 4 && _validation.RadiusProblem == null) || (_suppress.Value && _validation.DiagnosticProblem == null)))
+            || (_checkpoint?.Enabled == true && _checkpoint.Problem == null && Mp.IsRunning && Mp.IsServer) || _checkpointInterval?.Active == true);
+        public DdenHealth Health => !ModuleEnabled ? DdenHealth.Ok : _failure != null || _validation?.Problem != null || _validation?.SampleProblem != null
+            || _checkpointFailure != null || _intervalFailure != null || _checkpoint?.Problem != null || _checkpointInterval?.Problem != null || _sampler?.Snapshot.Error != null ? DdenHealth.Warn : DdenHealth.Ok;
+        public string HealthNote => Health == DdenHealth.Ok ? "" : (_failure ?? _validation?.Problem ?? _validation?.SampleProblem
+            ?? _checkpointFailure ?? _checkpoint?.Problem ?? _intervalFailure ?? _checkpointInterval?.Problem ?? _sampler?.Snapshot.Error ?? "");
         public string Summary => !ModuleEnabled ? L("验证关闭") : Health != DdenHealth.Ok ? L("部分验证不可用，保留原逻辑")
-            : !Mp.IsRunning || !Mp.IsServer ? L("等待主机开服") : _radius.Value == 4 && !_suppress.Value ? L("原版基线") : L("对照条件已启用");
+            : !Mp.IsRunning || !Mp.IsServer ? L("等待主机开服") : _radius.Value == 4 && !_suppress.Value
+                && !_checkpointWorker.Value && !_extendCheckpointInterval.Value ? L("原版基线") : L("对照条件已启用");
         public IEnumerable<ConfigEntryBase> ConfigEntries => Config.Entries();
         private static string L(string text) => Text.Text(text);
         private void Awake()
         {
-            _log = DDEN.Shared.Log.For(Logger, "MoreThreadOnMP");
+            _log = DDEN.Shared.Log.For(Logger, "MPreducer");
             _mainId = ThreadRoles.Register("main");
             DdenLocalization.Register(Config, Text);
             _enabled = Config.Bind("实验线程", "Enabled", false, "启用联机性能验证。默认关闭。");
             _radius = Config.Bind("回归验证", "HostSimulationRadius", 4,
                 new ConfigDescription("主机模拟半径：4为原版9×9，2为5×5，1为旧版3×3。默认保留原版。", new AcceptableValueList<int>(4, 2, 1)));
             _suppress = Config.Bind("回归验证", "SuppressDiagnosticScans", false, "跳过MP主机的周期诊断扫描；不停止同步注册。默认关闭。");
+            _checkpointWorker = Config.Bind("实验线程", "CheckpointSaveWorker", false, "合并定时检查点的重复压缩与写入，将纯数据压缩和临时文件写入放到后台。默认关闭。");
+            _extendCheckpointInterval = Config.Bind("检查点保存", "ExtendIntervalEnabled", false, "延长MP定时检查点间隔。独立于后台保存，关闭时恢复原版约30秒。默认关闭。");
+            _checkpointSeconds = Config.Bind("检查点保存", "IntervalSeconds", 60,
+                new ConfigDescription("定时检查点间隔，单位秒。每次轮流保存一名玩家；间隔越长，异常退出可能损失的近期进度越多。", new AcceptableValueRange<int>(30, 300)));
             _observe = Config.Bind("线程观察", "Enabled", false, "显示线程CPU负载。默认关闭，进行帧率对照时保持同一设置。");
             _sampleInterval = Config.Bind("实验线程", "ThreadSampleSeconds", 3f,
                 new ConfigDescription("线程负载采样间隔：0.5、1或3秒，默认3秒；仅影响负载显示。", new AcceptableValueList<float>(0.5f, 1f, 3f)));
@@ -69,6 +84,12 @@ namespace DDEN.MoreThreadOnMP
                 "仅主机生效，所有玩家位置仍参与计算。缩小范围会减少屏外模拟，需检查远处机关及分散玩家行为；关闭恢复原范围，唤醒由原MP预算处理。", true, DdenPerformanceImpact.High);
             DdenDocs.AddStructured("回归验证", "SuppressDiagnosticScans", "隔离周期诊断扫描造成的开销。", "观察周期长帧是否减少。",
                 "暂停周期诊断扫描与其腐坏计数，清空旧诊断历史；物品腐坏、存档、收发与同步注册保持原版。", true, DdenPerformanceImpact.Medium);
+            DdenDocs.AddStructured("实验线程", "CheckpointSaveWorker", "合并重复保存处理并在后台压缩纯数据。", "尝试降低定时检查点的主线程尖峰。",
+                "角色采集、模组回调和最终文件核验仍在主线程。关闭或读取存档前完成在途任务；不兼容时保留原保存。仅定时检查点生效。", true, DdenPerformanceImpact.Medium);
+            DdenDocs.AddStructured("检查点保存", "ExtendIntervalEnabled", "降低定时检查点保存频率。", "减少周期保存触发次数，可单独验证。",
+                "只改变定时轮转间隔，手动、换层与离场保存沿用原流程。关闭恢复约30秒，已累积时间不会清零。", true, DdenPerformanceImpact.Medium);
+            DdenDocs.AddStructured("检查点保存", "IntervalSeconds", "设置每次轮转保存的等待秒数。", "测试60秒或更长的保存间隔。",
+                "仅在延长间隔开启时生效。每次只保存一名玩家，同一玩家的周期还随有效玩家人数增加；异常退出可能损失更多近期进度。", true, DdenPerformanceImpact.Medium);
             DdenDocs.AddStructured("线程观察", "Enabled", "观察各线程CPU负载。", "辅助比较主线程与其他线程的占用。",
                 "只读本进程线程时间，不修改CPU亲和性；线程采样本身有开销。", false, DdenPerformanceImpact.Low);
             DdenDocs.AddStructured("实验线程", "ThreadSampleSeconds", "调整线程负载显示的采样间隔。", "按需要平衡显示更新速度与采样开销。",
@@ -77,9 +98,10 @@ namespace DDEN.MoreThreadOnMP
         }
         private void Update()
         {
-            if (ModuleEnabled && !_wasEnabled) { _failure = null; _reportedMode = null; }
+            if (ModuleEnabled && !_wasEnabled) { _failure = _checkpointFailure = _intervalFailure = null; _reportedMode = null; _reportedCheckpointMode = null; }
             _wasEnabled = ModuleEnabled;
-            if (!ModuleEnabled) { StopValidation(); StopSampler(); return; }
+            if (!ModuleEnabled) { StopCheckpoint(); StopCheckpointInterval(); StopValidation(); StopSampler(); return; }
+            UpdateCheckpoints();
             try
             {
                 if (!_observe.Value) StopSampler();
@@ -95,13 +117,17 @@ namespace DDEN.MoreThreadOnMP
                 _validation.Configure(true, _radius.Value, _suppress.Value);
                 _validation.Tick();
                 var mode = (Radius: _radius.Value, Effective: _validation.EffectiveRadius, Suppress: _suppress.Value,
+                    EffectiveSuppress: _validation.DiagnosticSuppressionActive,
                     Observer: _observe.Value, Host: Mp.IsRunning && Mp.IsServer);
                 bool changed = mode != _reportedMode;
                 bool report = mode.Host && Time.realtimeSinceStartupAsDouble >= _nextReport;
                 if (changed || report)
                 {
                     string description = "radius=" + mode.Radius + "; effective=" + mode.Effective
-                        + "; suppressScans=" + mode.Suppress + "; observer=" + mode.Observer + "; host=" + mode.Host;
+                        + "; suppressScans=" + mode.Suppress + "; effectiveSuppressScans=" + mode.EffectiveSuppress
+                        + "; observer=" + mode.Observer + "; host=" + mode.Host
+                        + "; engineTime=" + Time.realtimeSinceStartupAsDouble.ToString("0.000", CultureInfo.InvariantCulture)
+                        + "; frame=" + Time.frameCount;
                     if (changed) { _reportedMode = mode; _log.Info("Regression validation mode: " + description); }
                     if (report)
                     {
@@ -113,6 +139,77 @@ namespace DDEN.MoreThreadOnMP
             }
             catch (Exception error)
             { _failure = error.GetType().Name + ": " + error.Message; _log.Exception(error, "Regression validation disabled"); StopValidation(); }
+        }
+        private void UpdateCheckpoints()
+        {
+            if (!Ready) { StopCheckpoint(); StopCheckpointInterval(); return; }
+            if (!_checkpointWorker.Value) { StopCheckpoint(); _checkpointFailure = null; }
+            else if (_checkpointFailure == null)
+            {
+                try
+                {
+                    if (_checkpoint == null)
+                    {
+                        _checkpoint = new CheckpointHooks(report: message => _log.Warn(message));
+                        _checkpoint.Install();
+                        _checkpoint.Configure(true);
+                    }
+                    _checkpoint.Pump();
+                }
+                catch (Exception error)
+                { _checkpointFailure = error.Message; _log.Exception(error, "Checkpoint worker disabled; native saving retained"); StopCheckpoint(); }
+            }
+            if (!_extendCheckpointInterval.Value) { StopCheckpointInterval(); _intervalFailure = null; }
+            else if (_intervalFailure == null)
+            {
+                try
+                {
+                    if (_checkpointInterval == null)
+                    {
+                        _checkpointInterval = new CheckpointIntervalHooks(report: message => _log.Warn(message));
+                        _checkpointInterval.Install();
+                    }
+                    _checkpointInterval.Configure(true, _checkpointSeconds.Value);
+                    _checkpointInterval.Tick();
+                }
+                catch (Exception error)
+                { _intervalFailure = error.Message; _log.Exception(error, "Checkpoint interval disabled; native timing retained"); StopCheckpointInterval(); }
+            }
+            bool host = Mp.IsRunning && Mp.IsServer;
+            var mode = (Worker: _checkpointWorker.Value, EffectiveWorker: host && _checkpoint?.Enabled == true && _checkpoint.Problem == null,
+                Extend: _extendCheckpointInterval.Value, Seconds: _checkpointSeconds.Value, Effective: _checkpointInterval?.EffectiveSeconds ?? 30, Host: host);
+            bool changed = mode != _reportedCheckpointMode;
+            if (!changed && (!host || (!_checkpointWorker.Value && !_extendCheckpointInterval.Value) || Time.realtimeSinceStartupAsDouble < _nextCheckpointReport)) return;
+            _reportedCheckpointMode = mode; _nextCheckpointReport = Time.realtimeSinceStartupAsDouble + 30;
+            _log.Info("Checkpoint saving: worker=" + mode.Worker + "; effectiveWorker=" + mode.EffectiveWorker
+                + "; extendInterval=" + mode.Extend + "; requestedSeconds=" + mode.Seconds + "; effectiveSeconds=" + mode.Effective
+                + "; host=" + mode.Host + "; engineTime=" + Time.realtimeSinceStartupAsDouble.ToString("0.000", CultureInfo.InvariantCulture)
+                + "; frame=" + Time.frameCount + CheckpointStats(_checkpoint));
+        }
+        private static string CheckpointStats(CheckpointHooks hooks)
+        {
+            if (hooks == null) return "";
+            return "; captured=" + hooks.Captured + "; completed=" + hooks.Completed + "; mergedWrites=" + hooks.MergedWrites
+                + "; fallbacks=" + hooks.Fallbacks + "; conflicts=" + hooks.Conflicts + "; busy=" + hooks.Busy
+                + "; capturePeakMs=" + hooks.PeakCaptureMs.ToString("0.000", CultureInfo.InvariantCulture)
+                + "; preparePeakMs=" + hooks.PeakPrepareMs.ToString("0.000", CultureInfo.InvariantCulture)
+                + "; commitPeakMs=" + hooks.PeakCommitMs.ToString("0.000", CultureInfo.InvariantCulture)
+                + "; barrierPeakMs=" + hooks.PeakBarrierMs.ToString("0.000", CultureInfo.InvariantCulture);
+        }
+        private void StopCheckpoint()
+        {
+            var checkpoint = _checkpoint; _checkpoint = null;
+            if (checkpoint == null) return;
+            try { checkpoint.Dispose(); _log.Info("Checkpoint worker stopped" + CheckpointStats(checkpoint)); }
+            catch (Exception error) { _checkpointFailure = error.Message; _log.Exception(error, "Checkpoint cleanup failed"); }
+        }
+        private void StopCheckpointInterval()
+        {
+            var interval = _checkpointInterval; _checkpointInterval = null;
+            if (interval == null) return;
+            try { interval.Dispose(); _log.Info("Checkpoint interval stopped; effectiveSeconds=30; engineTime="
+                + Time.realtimeSinceStartupAsDouble.ToString("0.000", CultureInfo.InvariantCulture) + "; frame=" + Time.frameCount); }
+            catch (Exception error) { _intervalFailure = error.Message; _log.Exception(error, "Checkpoint interval cleanup failed"); }
         }
         private void StopValidation()
         {
@@ -129,19 +226,21 @@ namespace DDEN.MoreThreadOnMP
             if (DdenUI.Button(new Rect(area.xMax - 178, area.y, 178, 27), ModuleEnabled ? L("总开关：已启用") : L("总开关：已关闭"), ModuleEnabled)) _enabled.Value = !ModuleEnabled;
             GUI.Label(new Rect(area.x, area.y + 32, area.width - 140, 23), Summary, DdenUI.Wrap);
             if (DdenUI.Button(new Rect(area.xMax - 130, area.y + 31, 130, 25), L("原版基线")))
-            { _radius.Value = 4; _suppress.Value = false; _observe.Value = false; }
-            var observe = new Rect(area.x, area.y + 62, 170, 25);
+            { _radius.Value = 4; _suppress.Value = false; _observe.Value = false; _checkpointWorker.Value = false; _extendCheckpointInterval.Value = false; }
+            GUI.Label(new Rect(area.x, area.y + 59, area.width, 23), L("让超速的亿堆检测器减速"), DdenUI.Sub);
+            var observe = new Rect(area.x, area.y + 88, 170, 25);
             if (DdenUI.Button(observe, L("线程观察") + ": " + (_observe.Value ? L("已启用") : L("已关闭")), _observe.Value)) _observe.Value = !_observe.Value;
             for (int i = 0; i < SampleChoices.Length; i++)
-                if (DdenUI.Button(new Rect(area.x + 181 + i * 48, area.y + 62, 44, 25), SampleChoices[i].ToString("0.#") + "s", _sampleInterval.Value == SampleChoices[i])) _sampleInterval.Value = SampleChoices[i];
-            float top = area.y + 98;
+                if (DdenUI.Button(new Rect(area.x + 181 + i * 48, area.y + 88, 44, 25), SampleChoices[i].ToString("0.#") + "s", _sampleInterval.Value == SampleChoices[i])) _sampleInterval.Value = SampleChoices[i];
+            float top = area.y + 124;
             if (_observe.Value) top += DrawThreads(new Rect(area.x, top, area.width, Mathf.Clamp(area.height * .26f, 110, 190))) + 12;
             float height = 190, contentWidth = Mathf.Max(100, area.width - 12);
-            _cardsScroll = DdenUI.BeginScrollView(new Rect(area.x, top, area.width, Mathf.Max(40, area.yMax - top)), _cardsScroll, new Rect(0, 0, contentWidth, height * 2 + 12));
+            _cardsScroll = DdenUI.BeginScrollView(new Rect(area.x, top, area.width, Mathf.Max(40, area.yMax - top)), _cardsScroll, new Rect(0, 0, contentWidth, height * 2 + 384));
             try
             {
                 DrawRadiusCard(new Rect(0, 0, contentWidth, height));
                 DrawScanCard(new Rect(0, height + 12, contentWidth, height));
+                DrawCheckpointCard(new Rect(0, height * 2 + 24, contentWidth, 360));
             }
             finally { DdenUI.EndScrollView(); }
         }
@@ -180,6 +279,33 @@ namespace DDEN.MoreThreadOnMP
                 + "\n" + L("先记录原版基线，再单独启用此项；切换开服状态前先导出性能记录。")
                 + (problem == null ? "" : "\n" + problem);
             GUI.Label(new Rect(rect.x + 16, rect.y + 79, rect.width - 32, rect.height - 83), details, DdenUI.Wrap);
+        }
+        private void DrawCheckpointCard(Rect rect)
+        {
+            string problem = _checkpointFailure ?? _checkpoint?.Problem ?? _intervalFailure ?? _checkpointInterval?.Problem;
+            CardBase(rect, L("检查点保存"), problem);
+            float width = (rect.width - 38) / 2;
+            if (DdenUI.Button(new Rect(rect.x + 16, rect.y + 43, width, 26),
+                L("后台压缩写入") + ": " + (_checkpointWorker.Value ? L("已启用") : L("已关闭")), _checkpointWorker.Value))
+                _checkpointWorker.Value = !_checkpointWorker.Value;
+            if (DdenUI.Button(new Rect(rect.x + 22 + width, rect.y + 43, width, 26),
+                L("延长保存间隔") + ": " + (_extendCheckpointInterval.Value ? L("已启用") : L("已关闭")), _extendCheckpointInterval.Value))
+                _extendCheckpointInterval.Value = !_extendCheckpointInterval.Value;
+            float choiceWidth = (rect.width - 50) / CheckpointChoices.Length;
+            for (int i = 0; i < CheckpointChoices.Length; i++)
+                if (DdenUI.Button(new Rect(rect.x + 16 + i * (choiceWidth + 6), rect.y + 78, choiceWidth, 26),
+                    CheckpointChoices[i] + "s", _checkpointSeconds.Value == CheckpointChoices[i])) _checkpointSeconds.Value = CheckpointChoices[i];
+            string workerState = !ModuleEnabled || !_checkpointWorker.Value ? L("已关闭")
+                : _checkpointFailure != null || _checkpoint?.Problem != null ? L("已回退原保存")
+                : !Mp.IsRunning || !Mp.IsServer ? L("等待主机开服") : _checkpoint?.Enabled == true ? L("已启用") : L("等待启用");
+            string details = string.Format(L("实际定时轮转间隔：{0}秒 · 后台完成：{1}次"), _checkpointInterval?.EffectiveSeconds ?? 30, _checkpoint?.Completed ?? 0)
+                + "\n" + string.Format(L("后台状态：{0}"), workerState)
+                + "\n" + L("两个开关可独立测试；关闭后保留原保存流程。")
+                + "\n" + L("每次轮流保存一名玩家；间隔越长，异常退出可能丢失更多近期进度。手动、换层与离场保存沿用原流程。")
+                + "\n" + string.Format(L("采集／后台准备／提交峰值：{0:0.00}／{1:0.00}／{2:0.00} ms"),
+                    _checkpoint?.PeakCaptureMs ?? 0, _checkpoint?.PeakPrepareMs ?? 0, _checkpoint?.PeakCommitMs ?? 0)
+                + (problem == null ? "" : "\n" + problem);
+            GUI.Label(new Rect(rect.x + 16, rect.y + 116, rect.width - 32, rect.height - 122), details, DdenUI.Wrap);
         }
         private float DrawThreads(Rect rect)
         {
@@ -223,9 +349,9 @@ namespace DDEN.MoreThreadOnMP
         private static string Badge(string role) => L("主");
         private static string Role(string role) => role == "main" ? L("游戏主线程") : role == "monitor" ? L("负载采样线程") : L("游戏线程");
         public bool DrawSettings(Rect area) => false;
-        private void OnDisable() { StopValidation(); StopSampler(); }
-        private void OnApplicationQuit() { StopValidation(); StopSampler(); }
+        private void OnDisable() { StopCheckpoint(); StopCheckpointInterval(); StopValidation(); StopSampler(); }
+        private void OnApplicationQuit() { StopCheckpoint(); StopCheckpointInterval(); StopValidation(); StopSampler(); }
         private void OnDestroy()
-        { StopValidation(); StopSampler(); ThreadRoles.Remove(_mainId); DdenLocalization.Unregister(Config); }
+        { StopCheckpoint(); StopCheckpointInterval(); StopValidation(); StopSampler(); ThreadRoles.Remove(_mainId); DdenLocalization.Unregister(Config); }
     }
 }

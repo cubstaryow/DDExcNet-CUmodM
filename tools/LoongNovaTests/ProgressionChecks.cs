@@ -51,7 +51,10 @@ internal static class ProgressionChecks
         {
             var locale = JObject.Parse(File.ReadAllText(Path.Combine(root, "src/DDEN.LoongNova/Locales", language + ".json")));
             string all = locale.ToString();
-            check(!all.Contains("实验性龙息单元") && !all.Contains("Experimental Dragonbreath Cell") && !all.Contains("Loong Arsenal"), "Old cell names and old English branding must be absent");
+            check(!all.Contains("龙息单元") && !all.Contains("龙息能量单元") && !all.Contains("龙翼单元")
+                && !all.Contains("能量单元") && !all.Contains("Dragonbreath Energy Cell")
+                && !all.Contains("Experimental Dragonbreath Cell") && !all.Contains("Loong Arsenal"),
+                "Retired power-cell names must be absent from both locale files, including socket, charging, warning and recipe text");
             check(locale["other"]!["dden.loongnova.unlockNeedsDragon"] != null && locale["other"]!["dden.loongnova.unlockNeedsWrench"] != null, "Both stages have localized lock hints");
             string wrench = locale["item"]![Registration.WrenchId + "dsc"]!.Value<string>()!;
             check(!wrench.Contains("%"), "Wrench descriptions must leave Dragonization durability cost to native quality displays");
@@ -60,7 +63,7 @@ internal static class ProgressionChecks
         var chinese = JObject.Parse(File.ReadAllText(Path.Combine(root, "src/DDEN.LoongNova/Locales/zh-CN.json")));
         foreach (var name in ((JObject)chinese["item"]!).Properties().Where(p => !p.Name.EndsWith("dsc") && p.Value.Value<string>()!.StartsWith("龙域武库")))
             check(english["item"]![name.Name]!.Value<string>()!.StartsWith("DDArsenal-"), "Every branded item must use the requested English prefix");
-        check(chinese["item"]![Registration.CellId]!.Value<string>() == "龙域武库-龙息能量单元"
-            && english["item"]![Registration.CellId]!.Value<string>() == "DDArsenal-Dragonbreath Energy Cell", "The cell has its new Chinese and English names without changing item identity");
+        check(chinese["item"]![Registration.CellId]!.Value<string>() == "龙域-龙源心量卡"
+            && english["item"]![Registration.CellId]!.Value<string>() == "Dragon Realm-Dragonheart Energy Card", "The cell has its new Chinese and English names without changing item identity");
     }
 }

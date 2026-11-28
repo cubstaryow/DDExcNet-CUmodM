@@ -7,7 +7,7 @@ using Mono.Cecil.Cil;
 internal static class RegressionBinaryContract
 {
     // Metadata only; do not load the game/Unity assembly into the fixture process.
-    internal static int Verify(string game, Action<bool, string> observe = null)
+    internal static int Verify(string game, Action<bool, string> observe = null, Type fixtureTimingHooks = null)
     {
         int checks = 0;
         Action<bool, string> check = (value, message) => { observe?.Invoke(value, message); if (!value) throw new Exception(message); checks++; };
@@ -82,7 +82,40 @@ internal static class RegressionBinaryContract
             check(field != null ? field.IsStatic && field.FieldType.FullName == world.FullName
                 : getter != null && getter.IsStatic && getter.ReturnType.FullName == world.FullName, "actual world identity getter");
         }
+        VerifyTimingHooks(Path.Combine(game, "BepInEx/plugins/DDEN/DDEN.NetPerfTracker.Enhanced.dll"), fixtureTimingHooks, check);
         return checks;
+    }
+    private static void VerifyTimingHooks(string path, Type fixture, Action<bool, string> check)
+    {
+        using (var module = ModuleDefinition.ReadModule(path))
+        {
+            const string hooksName = "DDEN.NetPerfTracker.Enhanced.DeepHooks";
+            const string stampName = "DDEN.NetPerfTracker.Enhanced.CallStamp";
+            var hooks = module.Types.Single(type => type.FullName == hooksName);
+            var stamp = module.Types.Single(type => type.FullName == stampName);
+            check(module.Assembly.Name.Name == "DDEN.NetPerfTracker.Enhanced" && stamp.IsValueType,
+                "installed Enhanced owns the actual timing state value type");
+            var before = hooks.Methods.Single(method => method.Name == "Before");
+            var after = hooks.Methods.Single(method => method.Name == "After");
+            check(before.IsStatic && before.ReturnType.FullName == "System.Void" && before.Parameters.Count == 2
+                && before.Parameters[0].ParameterType.FullName == "System.Reflection.MethodBase" && before.Parameters[1].IsOut
+                && before.Parameters[1].ParameterType is ByReferenceType state && state.ElementType.FullName == stampName,
+                "installed Enhanced prefix uses out DDEN.NetPerfTracker.Enhanced.CallStamp");
+            check(after.IsStatic && after.ReturnType.FullName == "System.Void" && after.Parameters.Count == 2
+                && after.Parameters[0].ParameterType.FullName == stampName && after.Parameters[1].ParameterType.FullName == "System.Exception",
+                "installed Enhanced finalizer takes timing state and exception by value");
+            if (fixture == null) return;
+            foreach (var method in new[] { before, after })
+            {
+                var candidate = fixture.GetMethod(method.Name, System.Reflection.BindingFlags.Public
+                    | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                check(candidate != null && candidate.DeclaringType.FullName == hooksName && candidate.IsStatic == method.IsStatic
+                    && candidate.IsPrivate == method.IsPrivate && candidate.ReturnType.FullName == method.ReturnType.FullName
+                    && candidate.GetParameters().Select(parameter => parameter.ParameterType.FullName).SequenceEqual(method.Parameters.Select(parameter => parameter.ParameterType.FullName))
+                    && candidate.GetParameters().Select(parameter => parameter.IsOut).SequenceEqual(method.Parameters.Select(parameter => parameter.IsOut)),
+                    "timing fixture signature must match installed Enhanced metadata: " + method.Name);
+            }
+        }
     }
 }
 

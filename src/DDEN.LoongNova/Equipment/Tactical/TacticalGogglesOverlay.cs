@@ -22,7 +22,7 @@ namespace DDEN.LoongNova
         }
         private struct Mark { internal Vector2 Position; internal float Range; internal string Label; }
         private static readonly List<Target> Targets = new List<Target>();
-        private static readonly HashSet<BuildingEntity> Known = new HashSet<BuildingEntity>();
+        private static readonly Dictionary<BuildingEntity,Target> Known = new Dictionary<BuildingEntity,Target>();
         private static bool _seeded;
         private WorldGeneration _world;
         private BuildingEntity[] _seed;
@@ -38,11 +38,11 @@ namespace DDEN.LoongNova
         private readonly List<Mark> _traders=new List<Mark>(4), _nextTraders=new List<Mark>(4);
         private bool _belowWarning;
         private Vector2 _belowPosition;
-        private GUIStyle _labelStyle;
+        private TacticalCanvasSurface _markers;
+        private float _nextDiscovery,_nextMoveDiscovery;private Vector2 _discoveryPosition;
         private struct SoundAlert{internal Vector2 Position;internal float Until;}
         private static readonly List<SoundAlert> SoundAlerts=new List<SoundAlert>(4);
         private static readonly System.Reflection.FieldInfo SoundCharging=HarmonyLib.AccessTools.Field(typeof(SoundCannon),"charging"),SoundSpent=HarmonyLib.AccessTools.Field(typeof(SoundCannon),"spent");
-        private Rect _protectedHud;
         private readonly Rect[] _labelRects=new Rect[24];private int _labelCount;
         internal static void SoundWarning(Vector2 position)
         {
@@ -54,9 +54,9 @@ namespace DDEN.LoongNova
         private Rect _view;
         private Vector2 _player;
         private static readonly Color TerrainColor = new Color(0.3f,0.95f,1,0.95f), DangerColor = new Color(1,0.3f,0.12f,0.95f);
-        internal static void Observe(BuildingEntity building)
+        internal static void Observe(BuildingEntity building,bool refresh=false)
         {
-            if (!_seeded || building == null || Known.Contains(building)) return;
+            if (!_seeded || building == null || Known.ContainsKey(building) && !refresh) return;
             var turret = building.GetComponent<TurretScript>(); var ceiling = building.GetComponent<CeilingTurret>(); var sound = building.GetComponent<SoundCannon>();
             var drone = building.GetComponent<LaserDroneScript>(); var guard = building.GetComponent<GuardScript>();
             bool elder = building.GetComponent<ElderThornbackBehaviour>() != null;
@@ -66,35 +66,47 @@ namespace DDEN.LoongNova
                 if(script!=null && TacticalRules.HazardScript(script.GetType().Name))stationary=true;
             bool hazard = building.animal || stationary;
             if(!hazard && turret==null && ceiling==null && sound==null && drone==null && guard==null && !elder && trader==null)return;
-            Known.Add(building);
-            Targets.Add(new Target { Building = building, Renderers = building.GetComponentsInChildren<SpriteRenderer>(true), Collider=building.GetComponentInChildren<Collider2D>(true), Trader=trader, Turret = turret, Ceiling = ceiling, Sound = sound, Drone = drone, Guard = guard, Elder = elder,
-                Kind = sound != null ? TacticalKind.Sound : turret != null || ceiling != null || drone != null || guard != null ? TacticalKind.Turret : building.animal && !stationary ? TacticalKind.Creature : TacticalKind.Trap });
+            var fresh=new Target { Building = building, Renderers = building.GetComponentsInChildren<SpriteRenderer>(true), Collider=building.GetComponentInChildren<Collider2D>(true), Trader=trader, Turret = turret, Ceiling = ceiling, Sound = sound, Drone = drone, Guard = guard, Elder = elder,
+                Kind = sound != null ? TacticalKind.Sound : turret != null || ceiling != null || drone != null || guard != null ? TacticalKind.Turret : building.animal && !stationary ? TacticalKind.Creature : TacticalKind.Trap };
+            if(Known.TryGetValue(building,out var cached))
+            {
+                cached.Renderers=fresh.Renderers;cached.Collider=fresh.Collider;cached.Trader=fresh.Trader;cached.Kind=fresh.Kind;
+                cached.Turret=fresh.Turret;cached.Ceiling=fresh.Ceiling;cached.Sound=fresh.Sound;
+                cached.Drone=fresh.Drone;cached.Guard=fresh.Guard;cached.Elder=fresh.Elder;
+            }
+            else {Known.Add(building,fresh);Targets.Add(fresh);}
         }
         private bool VisibleOverlay() => _camera != null && TacticalGogglesPatches.Active(PlayerCamera.main) && !PauseHandler.paused
-            && !DdenHub.AnyPanelVisible && !PlayerCamera.main.radialOpen && !PlayerCamera.main.woundView.activeSelf && !PlayerCamera.main.tradeMenu.activeSelf;
+            && PlayerCamera.main.mainCanvas!=null && !DdenHub.AnyPanelVisible && (PlayerCamera.main.craftingPanel==null || !PlayerCamera.main.craftingPanel.activeSelf) && !PlayerCamera.main.radialOpen && !PlayerCamera.main.woundView.activeSelf && !PlayerCamera.main.tradeMenu.activeSelf;
         private void LateUpdate()
         {
             _camera = Camera.main;
             if (_world != WorldGeneration.world || _world != null && _world.generatingWorld)
             { ClearTargets(); _world=WorldGeneration.world; _seed=null; }
-            if (!VisibleOverlay()) { _terrain?.Show(false); _hazards?.Show(false); return; }
+            if (!VisibleOverlay()) { _terrain?.Show(false); _hazards?.Show(false); _markers?.Show(false); return; }
             if (!_seeded)
             {
                 _seeded = true;
                 // One discovery snapshot per world, processed in bounded batches, never a per-frame scene search.
-                _seed = Object.FindObjectsOfType<BuildingEntity>(); _seedIndex = _targetIndex = 0;
+                _seed = Object.FindObjectsByType<BuildingEntity>(FindObjectsInactive.Include,FindObjectsSortMode.None); _nextDiscovery=Time.unscaledTime+15;_nextMoveDiscovery=Time.unscaledTime+2; _discoveryPosition=PlayerCamera.main.body.transform.position; _seedIndex = _targetIndex = 0;
                 _terrain?.Begin(); _terrain?.Commit(); _hazards?.Begin(); _hazards?.Commit();
                 _nextTerrain = _nextTargets = 0; _scanningTerrain = false; _warnings.Clear(); _bosses.Clear(); _traders.Clear(); _belowWarning = false;
             }
             if (_terrain == null) { _terrain = new TacticalLineMesh("LoongNova local terrain",94,transform); _hazards = new TacticalLineMesh("LoongNova local warnings",96,transform); }
             _terrain.Show(true); _hazards.Show(true);
+            // MP can enable or rebuild a region without calling native Start again. Reconcile locally.
+            if(_seed==null && (Time.unscaledTime>=_nextDiscovery || Time.unscaledTime>=_nextMoveDiscovery && ((Vector2)PlayerCamera.main.body.transform.position-_discoveryPosition).sqrMagnitude>=32*32))
+            {
+                _seed=Object.FindObjectsByType<BuildingEntity>(FindObjectsInactive.Include,FindObjectsSortMode.None);_seedIndex=0;
+                _nextDiscovery=Time.unscaledTime+15;_nextMoveDiscovery=Time.unscaledTime+2;_discoveryPosition=PlayerCamera.main.body.transform.position;
+            }
             int seeded = 0;
-            while (_seed != null && _seedIndex < _seed.Length && seeded++ < TacticalRules.TargetsPerFrame) Observe(_seed[_seedIndex++]);
+            while (_seed != null && _seedIndex < _seed.Length && seeded++ < TacticalRules.TargetsPerFrame) Observe(_seed[_seedIndex++],true);
             if (_seed != null && _seedIndex >= _seed.Length) _seed = null;
             var a = _camera.ViewportToWorldPoint(new Vector3(0,0,0)); var b = _camera.ViewportToWorldPoint(new Vector3(1,1,0));
             _view = Rect.MinMaxRect(Mathf.Min(a.x,b.x),Mathf.Min(a.y,b.y),Mathf.Max(a.x,b.x),Mathf.Max(a.y,b.y));
             _player = PlayerCamera.main.body.transform.position;
-            ScanTerrain(); ScanTargets();
+            ScanTerrain(); ScanTargets(); DrawHud();
         }
         private void ScanTargets()
         {
@@ -107,7 +119,10 @@ namespace DDEN.LoongNova
                 if (building == null)
                 { Known.Remove(building); Targets[_targetIndex] = Targets[Targets.Count-1]; Targets.RemoveAt(Targets.Count-1); continue; }
                 _targetIndex++;
-                if (!building.gameObject.activeInHierarchy || building.animal && building.health <= 0 && !building.indestructible && target.Trader==null) continue;
+                bool sceneLoaded=building.gameObject.scene.IsValid()&&building.gameObject.scene.isLoaded;
+                bool locator=target.Elder||target.Trader!=null;
+                bool available=locator?TacticalRules.LocatorAvailable(sceneLoaded,building.health>0):sceneLoaded&&building.gameObject.activeInHierarchy;
+                if(!available || building.animal&&building.health<=0&&!building.indestructible&&target.Trader==null)continue;
                 Vector2 position = building.transform.position;
                 var bounds=new Bounds(position,new Vector3(1,1,0)); bool hasBounds=false;
                 foreach(var renderer in target.Renderers)
@@ -137,7 +152,7 @@ namespace DDEN.LoongNova
                     if(spent)for(int k=SoundAlerts.Count-1;k>=0;k--)if((SoundAlerts[k].Position-position).sqrMagnitude<4)SoundAlerts.RemoveAt(k);
                 }
                 float range = target.Sound != null ? target.Sound.maxDistance : target.Drone != null ? 64 : target.Guard != null ? GuardScript.MAX_ACTIVE_DISTANCE : 100;
-                bool boss = target.Elder && TacticalRules.ElderSignal(_world.biomeDepth,building.health>0,building.gameObject.activeInHierarchy,(position-_player).sqrMagnitude);
+                bool boss = target.Elder && TacticalRules.ElderSignal(_world.biomeDepth,building.health>0,available,(position-_player).sqrMagnitude);
                 bool extra = TacticalRules.ExtraWarning(target.Kind,position.x-_player.x,position.y-_player.y,range);
                 if (!inside && !extra && !boss) continue;
                 if (boss && _nextBosses.Count < 3)
@@ -215,17 +230,12 @@ namespace DDEN.LoongNova
             }
             _terrain.Commit(); _scanningTerrain = false; _nextTerrain = Time.unscaledTime+0.5f;
         }
-        private void OnGUI()
+        private void DrawHud()
         {
-            if(Event.current.type!=EventType.Repaint || !VisibleOverlay())return;
-            var previousColor=GUI.color;var previousMatrix=GUI.matrix;int depth=GUI.depth;
-            try
-            {
-                GUI.matrix=Matrix4x4.identity;GUI.depth=-50;
-                float scale=PlayerCamera.main.mainCanvas!=null?PlayerCamera.main.mainCanvas.scaleFactor:1;
-                _protectedHud=new Rect(0,Screen.height-Mathf.Max(190*scale,Screen.height*0.19f),Mathf.Max(560*scale,Screen.width*0.38f),Screen.height);
-                _terrain?.Draw(_camera,_protectedHud);_hazards?.Draw(_camera,_protectedHud);_labelCount=0;
-                if(_labelStyle==null)_labelStyle=new GUIStyle(GUI.skin.label){fontSize=14,fontStyle=FontStyle.Bold,alignment=TextAnchor.MiddleCenter};
+            if(!VisibleOverlay())return;
+            _terrain?.Draw(_camera);_hazards?.Draw(_camera);_labelCount=0;
+            if(_markers==null)_markers=new TacticalCanvasSurface("LoongNova direction markers");
+            _markers.Begin();
                 for(int i=0;i<_warnings.Count+_bosses.Count+_traders.Count+(_belowWarning?1:0);i++)
                 {
                     int n=i-_warnings.Count;
@@ -244,10 +254,8 @@ namespace DDEN.LoongNova
                     var targetScreen=new Vector2(v.x*Screen.width,(1-v.y)*Screen.height);
                     TacticalScreenGeometry.Edge(origin.x,origin.y,targetScreen.x,targetScreen.y,70,70,Screen.width-70,Screen.height-70,out float px,out float py);
                     var point=new Vector2(px,py);
-                    if(TacticalScreenGeometry.Span(origin.x,origin.y,point.x,point.y,_protectedHud.xMin-30,_protectedHud.yMin-30,_protectedHud.xMax+30,_protectedHud.yMax+30,out float entry,out _) && entry>0)
-                        point=Vector2.Lerp(origin,point,Mathf.Max(0,entry-0.02f));
                     var direction=targetScreen-origin;
-                    if(!_protectedHud.Contains(point))Arrow(point,direction,color,boss||trader?25:18);
+                    Arrow(point,direction,color,boss||trader?25:18);
                     if(boss||trader)Plate(point-direction.normalized*38,warning.Label,color);
                 }
                 for(int i=SoundAlerts.Count-1;i>=0;i--)
@@ -258,46 +266,35 @@ namespace DDEN.LoongNova
                     TacticalScreenGeometry.Edge(origin.x,origin.y,center.x,center.y,90,90,Screen.width-90,Screen.height-90,out float x,out float y);
                     bool inside=center.x>=90&&center.x<=Screen.width-90&&center.y>=90&&center.y<=Screen.height-90;
                     var point=inside?center:new Vector2(x,y);
-                    if(TacticalScreenGeometry.Span(origin.x,origin.y,point.x,point.y,_protectedHud.xMin-35,_protectedHud.yMin-35,_protectedHud.xMax+35,_protectedHud.yMax+35,out float alarmEntry,out _)&&alarmEntry>0)point=Vector2.Lerp(origin,point,Mathf.Max(0,alarmEntry-0.02f));
-                    if(!_protectedHud.Contains(point))Arrow(point,center-(Vector2)origin,new Color(1,0.18f,0.08f,1),30);
+                    Arrow(point,center-(Vector2)origin,new Color(1,0.18f,0.08f,1),30);
                     Plate(point+Vector2.up*34,Registration.Text("tacticalSoundCharging"),new Color(1,0.18f,0.08f,1));
                 }
-            }
-            finally{GUI.matrix=previousMatrix;GUI.color=previousColor;GUI.depth=depth;}
+            _markers.Finish();
         }
         private void Plate(Vector2 point,string label,Color color)
         {
             var rect=new Rect(Mathf.Clamp(point.x-83,8,Screen.width-174),Mathf.Clamp(point.y-14,8,Screen.height-38),166,28);
-            if(rect.Overlaps(_protectedHud))rect.y=Mathf.Max(8,_protectedHud.yMin-rect.height-12);
             for(int attempt=0;attempt<18;attempt++)
             {
                 bool overlap=false;for(int i=0;i<_labelCount;i++)if(rect.Overlaps(_labelRects[i])){overlap=true;break;}
                 if(!overlap)break;
                 rect.y=rect.y>Screen.height/2?rect.y-32:rect.y+32;
                 rect.y=Mathf.Clamp(rect.y,8,Screen.height-38);
-                if(rect.Overlaps(_protectedHud))rect.y=_protectedHud.yMin-rect.height-12;
             }
             if(_labelCount<_labelRects.Length)_labelRects[_labelCount++]=rect;
-            GUI.color=new Color(0.015f,0.025f,0.04f,0.94f);GUI.DrawTexture(rect,Texture2D.whiteTexture);
-            GUI.color=color;GUI.DrawTexture(new Rect(rect.x,rect.y,4,rect.height),Texture2D.whiteTexture);
-            GUI.color=Color.white;GUI.Label(rect,label,_labelStyle);
+            _markers.Rect(rect,new Color(0.015f,0.025f,0.04f,0.94f));
+            _markers.Rect(new Rect(rect.x,rect.y,4,rect.height),color);_markers.Label(rect,label);
         }
-        private static void Arrow(Vector2 point,Vector2 direction,Color color,float size)
+        private void Arrow(Vector2 point,Vector2 direction,Color color,float size)
         {
-            var matrix=GUI.matrix;float angle=Mathf.Atan2(direction.y,direction.x)*Mathf.Rad2Deg;
-            for(int pass=0;pass<2;pass++)
-            {
-                GUI.color=pass==0?new Color(0.01f,0.02f,0.03f,1):color;
-                float width=pass==0?8:4;
-                GUIUtility.RotateAroundPivot(angle+45,point);
-                GUI.DrawTexture(new Rect(point.x-size,point.y-width/2,size,width),Texture2D.whiteTexture);
-                GUI.matrix=matrix;GUIUtility.RotateAroundPivot(angle-45,point);
-                GUI.DrawTexture(new Rect(point.x-size,point.y-width/2,size,width),Texture2D.whiteTexture);
-                GUI.matrix=matrix;
-            }
+            if(direction.sqrMagnitude<0.001f)return;
+            var d=direction.normalized;var side=new Vector2(-d.y,d.x);
+            var a=point-d*size+side*(size*0.65f);var c=point-d*size-side*(size*0.65f);
+            _markers.Line(a,point,8,new Color(0.01f,0.02f,0.03f,1));_markers.Line(point,c,8,new Color(0.01f,0.02f,0.03f,1));
+            _markers.Line(a,point,4,color);_markers.Line(point,c,4,color);
         }
         private static void ClearTargets() { Targets.Clear(); Known.Clear(); SoundAlerts.Clear(); _seeded=false; }
-        private void OnDisable() { _terrain?.Show(false); _hazards?.Show(false); TacticalGogglesPatches.Reset(); }
-        private void OnDestroy() { _terrain?.Dispose(); _hazards?.Dispose(); ClearTargets(); TacticalGogglesPatches.Reset(); }
+        private void OnDisable() { _terrain?.Show(false); _hazards?.Show(false); _markers?.Show(false); TacticalGogglesPatches.Reset(); }
+        private void OnDestroy() { _terrain?.Dispose(); _hazards?.Dispose(); _markers?.Dispose(); TacticalCanvasSurface.ReleaseRoot(); ClearTargets(); TacticalGogglesPatches.Reset(); }
     }
 }

@@ -10,7 +10,7 @@ using System.Threading;
 using DDEN.Shared;
 using HarmonyLib;
 
-namespace DDEN.MoreThreadOnMP.Integration
+namespace DDEN.MPreducer.Integration
 {
     // A/B controls for two verified 5.5.3 -> 5.5.4 version changes. No transport, save,
     // registration, object enumeration, or replacement simulation implementation.
@@ -43,6 +43,8 @@ namespace DDEN.MoreThreadOnMP.Integration
         internal string Problem => RadiusProblem == null ? DiagnosticProblem : DiagnosticProblem == null
             ? RadiusProblem : RadiusProblem + "; " + DiagnosticProblem;
         internal int EffectiveRadius => Radius();
+        internal bool DiagnosticSuppressionActive => _scanPatched && _decayPatched && _enabled && _suppress
+            && DiagnosticProblem == null && _wasSuppressing && Host();
         internal long SkippedScans { get; private set; }
         internal long SkippedDecayNotes { get; private set; }
         internal int SimulatedChunks { get; private set; } = -1;
@@ -295,12 +297,14 @@ namespace DDEN.MoreThreadOnMP.Integration
             MethodInfo method = patch.PatchMethod;
             if (patch.owner != "com.dden.perfdeep" || method == null || method.ReturnType != typeof(void)
                 || !method.IsStatic || method.DeclaringType != _resolve("DDEN.NetPerfTracker.Enhanced.DeepHooks")) return false;
+            Type stamp = method.DeclaringType.Assembly.GetType("DDEN.NetPerfTracker.Enhanced.CallStamp", false);
+            if (stamp == null || !stamp.IsValueType) return false;
             var args = method.GetParameters();
             return kind == "prefix" && method.Name == "Before" && args.Length == 2
                 && args[0].ParameterType == typeof(MethodBase) && args[1].IsOut
-                && args[1].ParameterType.FullName == "DDEN.Diagnostics.CallStamp&"
+                && args[1].ParameterType == stamp.MakeByRefType()
                 || kind == "finalizer" && method.Name == "After" && args.Length == 2
-                && args[0].ParameterType.FullName == "DDEN.Diagnostics.CallStamp" && args[1].ParameterType == typeof(Exception);
+                && args[0].ParameterType == stamp && args[1].ParameterType == typeof(Exception);
         }
         internal static IEnumerable<CodeInstruction> RadiusTranspiler(IEnumerable<CodeInstruction> instructions, ILGenerator generator)
         {

@@ -31,7 +31,19 @@ namespace UnityEngine
     }
     public static class Time { public static float unscaledTime; public static int frameCount; }
 }
-public sealed class Item : UnityEngine.Component { public string id; public Item(string value) { id = value; } }
+public sealed class ItemInfo { public string fullName; }
+public sealed class Item : UnityEngine.Component
+{
+    public string id; public float condition=1;
+    public Item(string value) { id = value; }
+    [MethodImpl(MethodImplOptions.NoInlining)] public static ItemInfo GetItem(string id) => new ItemInfo {fullName=id};
+}
+public static class Locale
+{
+    // Match the real game's parameter name: a fixture named id would conceal the reported failure.
+    [MethodImpl(MethodImplOptions.NoInlining)] public static string GetOther(string str) => "native:"+str;
+    [MethodImpl(MethodImplOptions.NoInlining)] public static void LoadLanguage() { }
+}
 public sealed class Body : UnityEngine.Component
 {
     public readonly List<Item> Inventory = new List<Item>();
@@ -46,11 +58,21 @@ public sealed class Container : UnityEngine.Component
     [MethodImpl(MethodImplOptions.NoInlining)] public void LoadItem(Item item)
     { item.transform.parent = transform; var owner = Parent as Body; if (owner != null) owner.Inventory.Add(item); }
 }
+public sealed class CraftingQuality{public string id; public int amount=100;}
+public sealed class RecipeItem
+{
+    public CraftingQuality quality;
+    [MethodImpl(MethodImplOptions.NoInlining)] public void UseItem(Item item) {item.condition-=quality.amount/10000f;}
+}
 public sealed class RecipeResult { public string id; }
 public sealed class Recipe
 {
     public int INT = 18;
     public RecipeResult result;
+    public List<RecipeItem> items;
+    public bool hasMadeBefore;
+    public string simpleName { [MethodImpl(MethodImplOptions.NoInlining)] get { return "native recipe"; } }
+    public string fullName { [MethodImpl(MethodImplOptions.NoInlining)] get { return "native full recipe"; } }
     public bool visible { [MethodImpl(MethodImplOptions.NoInlining)] get { return PlayerCamera.main.body.Intelligence >= INT - 3; } }
     [MethodImpl(MethodImplOptions.NoInlining)] public List<Item> GetItemsForRecipe() => new List<Item>();
 }
@@ -110,8 +132,15 @@ namespace DDEN.LoongNova
 {
     internal static class Registration
     {
+        internal const string SmeltingQuality="loongnova.smelting", DragonQuality="loongnova.dragonization", SmelterId="dden.loongnova.portable-dragonflame-smelter";
         internal const string WrenchId = "dden.loongnova.dragon-claw-wrench", DragonId = "dden.loongnova.dragon", CellId = "dden.loongnova.dragon-breath-cell";
         internal static string Text(string key) => key;
+    }
+    internal static class LoongLocalization
+    {
+        internal static int Refreshed;
+        internal static void RefreshItem(string id,ItemInfo info) { info.fullName="localized:"+id; }
+        internal static void RefreshItems() { Refreshed++; }
     }
     internal sealed class OfflineLog { internal void Warn(string message) { Console.WriteLine(message); } }
     internal sealed class WeaponService { internal const string Channel = "test.recipes"; internal bool Ready = true; }

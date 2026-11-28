@@ -75,13 +75,14 @@ namespace DDEN.LoongNova
             using (ItemRegistry.BeginOwnerRegistration(LoongNovaPlugin.Guid))
             {
                 ItemRegistry.Register(GunId, (ItemInfo)gun, GunSprite, 0);
-                ItemRegistry.Register(CellId, (ItemInfo)cell, LoadSprite("dragon-breath-cell.png", "riflemagazine"), 0);
+                ItemRegistry.Register(CellId, (ItemInfo)cell, LoadSprite("dragon-breath-cell.png", "riflemagazine", preserveFrame: true), 0);
                 RegisterEquipment();
                 RegisterChargeGun(originalGun);
                 RegisterMedical();
                 RegisterSupplyCrates();
                 RegisterSpatialItems();
                 RegisterTacticalGoggles();
+                RegisterSmelter();
             }
             using (RecipeRegistry.BeginOwnerRegistration(LoongNovaPlugin.Guid)) RegisterRecipes();
         }
@@ -276,7 +277,7 @@ namespace DDEN.LoongNova
             for (int y = 0; y < texture.height; y++)
             for (int x = 0; x < texture.width; x++)
             {
-                if (pixels[y * texture.width + x].a < 32) continue;
+                if (pixels[y * texture.width + x].a == 0) continue;
                 minX = Math.Min(minX, x); minY = Math.Min(minY, y);
                 maxX = Math.Max(maxX, x); maxY = Math.Max(maxY, y);
             }
@@ -284,27 +285,13 @@ namespace DDEN.LoongNova
             if (preserveFrame) { minX = minY = 0; maxX = texture.width - 1; maxY = texture.height - 1; }
             var original = sizeReference ?? Resources.Load<GameObject>(reference).GetComponent<SpriteRenderer>().sprite;
             int width = maxX - minX + 1, height = maxY - minY + 1;
-            int targetWidth = pixelWidth > 0 ? pixelWidth : reference == "rifle" ? 64 : reference == "wrench" ? 48 : reference == "belt" ? 32 : 16;
-            int targetHeight = Math.Max(1, Mathf.RoundToInt((float)height * targetWidth / width));
-            var compact = new Texture2D(targetWidth, targetHeight, TextureFormat.RGBA32, false)
-            {
-                filterMode = FilterMode.Point, wrapMode = TextureWrapMode.Clamp
-            };
-            var sampled = new Color32[targetWidth * targetHeight];
-            for (int y = 0; y < targetHeight; y++)
-            for (int x = 0; x < targetWidth; x++)
-            {
-                int sourceX = minX + Math.Min(width - 1, (int)((x + 0.5f) * width / targetWidth));
-                int sourceY = minY + Math.Min(height - 1, (int)((y + 0.5f) * height / targetHeight));
-                sampled[y * targetWidth + x] = pixels[sourceY * texture.width + sourceX];
-            }
-            compact.SetPixels32(sampled);
-            compact.Apply(false, false); // CCL snapshots need a readable texture for serialization.
-            UnityEngine.Object.Destroy(texture);
+            // pixelWidth describes the old logical render scale, never a request to resample the artwork.
+            // Keep every source texel (including faint alpha); CCL snapshots require a readable texture.
+            int logicalWidth = pixelWidth > 0 ? pixelWidth : reference == "rifle" ? 64 : reference == "wrench" ? 48 : reference == "belt" ? 32 : 16;
             // CCL normalizes item transform scale to one; explicit world length must live in the sprite PPU.
-            float ppu = worldPixelsPerUnit > 0 ? worldPixelsPerUnit : worldLength > 0 ? Math.Max(targetWidth, targetHeight) / worldLength
-                : targetWidth / (original.bounds.size.x * widthScale);
-            return Sprite.Create(compact, new Rect(0, 0, targetWidth, targetHeight), pivot ?? new Vector2(0.5f, 0.5f), ppu);
+            float ppu = SpritePixelScale.PixelsPerUnit(width, height, logicalWidth,
+                original.bounds.size.x * widthScale, worldLength, worldPixelsPerUnit);
+            return Sprite.Create(texture, new Rect(minX, minY, width, height), pivot ?? new Vector2(0.5f, 0.5f), ppu);
         }
 
         private static RecipeItem Material(string id) => new RecipeItem(0) { specific = true, specificId = id };
@@ -362,6 +349,7 @@ namespace DDEN.LoongNova
                 Material("canvas"), Material("canvas"), Material(DragonId), Tool("hammering"), Tool("cutting")
             }, 14);
             RegisterSpatialRecipes();
+            RegisterSmeltingRecipes();
         }
     }
 }

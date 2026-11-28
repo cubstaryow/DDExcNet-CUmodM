@@ -12,6 +12,7 @@ internal static class TacticalChecks
         }
         check(TacticalScreenGeometry.Span(0,5,10,5,4,4,6,6,out float enter,out float exit)&&Math.Abs(enter-0.4f)<0.001&&Math.Abs(exit-0.6f)<0.001,"HUD clipping removes only the intersecting part of a terrain edge");
         check(!TacticalScreenGeometry.Span(0,0,10,0,4,4,6,6,out _,out _),"Terrain outside protected native UI remains unchanged");
+        check(TacticalRules.LocatorAvailable(true,true)&&!TacticalRules.LocatorAvailable(false,true)&&!TacticalRules.LocatorAvailable(true,false),"Locator data requires a live actor in a loaded scene, not enabled simulation components");
         check(TacticalRules.TraderSignal(500*500)&&!TacticalRules.TraderSignal(500*500+1)
             &&!TacticalRules.TraderSignal(float.NaN),"Trader guidance stops at exactly 500m and rejects invalid distances");
         foreach(var kind in Enum.GetValues<TacticalKind>())
@@ -36,6 +37,12 @@ internal static class TacticalChecks
     {
         var types=assembly.MainModule.Types;
         var overlay=types.Single(t=>t.Name=="TacticalGogglesOverlay");
+        check(!overlay.Methods.Any(m=>m.Name=="OnGUI"),"Tactical graphics no longer draw above native UI through IMGUI");
+        var surface=types.Single(t=>t.Name=="TacticalCanvasSurface");
+        check(surface.Methods.Single(m=>m.Name=="Root").Body.Instructions.Any(i=>i.Operand is MethodReference m&&m.Name=="SetAsFirstSibling"),"Tactical graphics are placed below all native canvas children");
+        check(overlay.Methods.Single(m=>m.Name=="VisibleOverlay").Body.Instructions.Any(i=>i.Operand is FieldReference f&&f.Name=="craftingPanel"),"Crafting explicitly hides the tactical overlay");
+        check(overlay.Methods.Single(m=>m.Name=="LateUpdate").Body.Instructions.Count(i=>i.Operand is MethodReference m&&m.Name.StartsWith("FindObjects"))>=2,"Discovery reconciles newly loaded and re-enabled regions after the initial snapshot");
+        check(!overlay.Methods.Single(m=>m.Name=="ScanTargets").Body.Instructions.Any(i=>i.Operand is MethodReference m&&m.Name=="SetActive"),"Locating sleeping actors must not wake them or expand simulation");
         var instructions=overlay.Methods.Where(m=>m.HasBody).SelectMany(m=>m.Body.Instructions);
         check(!instructions.Any(i=>i.Operand is MethodReference m&&(m.Name=="Broadcast"||m.Name=="RequestServer")),"Local goggles overlay must never transmit player/terrain/target data");
         foreach(string name in new[]{"ScanTargets","ScanTerrain"})

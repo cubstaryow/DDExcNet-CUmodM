@@ -6,7 +6,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace DDEN.MoreThreadOnMP.Core
+namespace DDEN.MPreducer.Core
 {
     internal static class ThreadRoles
     {

@@ -5,7 +5,7 @@ using System.Reflection;
 using System.Reflection.Emit;
 using System.Runtime.CompilerServices;
 using System.Threading;
-using DDEN.MoreThreadOnMP.Integration;
+using DDEN.MPreducer.Integration;
 using HarmonyLib;
 
 // Independent, tiny managed world. No game/Unity assemblies or real saves are loaded.
@@ -91,15 +91,35 @@ namespace KrokV5Optimization
         }
     }
 }
-namespace DDEN.Diagnostics { public struct CallStamp { } }
 namespace DDEN.NetPerfTracker.Enhanced
 {
+    public struct CallStamp { }
     internal static class DeepHooks
     {
         internal static int BeforeCalls, AfterCalls;
-        public static void Before(MethodBase __originalMethod, out DDEN.Diagnostics.CallStamp __state) { __state = default; BeforeCalls++; }
-        public static void After(DDEN.Diagnostics.CallStamp __state, Exception __exception) { AfterCalls++; }
+        private static void Before(MethodBase __originalMethod, out CallStamp __state) { __state = default; BeforeCalls++; }
+        private static void After(CallStamp __state, Exception __exception) { AfterCalls++; }
     }
+}
+internal static class WrongTimingState
+{
+    private static void Before(MethodBase __originalMethod, out int __state) { __state = 0; }
+    private static void After(int __state, Exception __exception) { }
+}
+internal static class RefTimingState
+{
+    private static void Before(MethodBase __originalMethod, ref DDEN.NetPerfTracker.Enhanced.CallStamp __state) { }
+    private static void After(DDEN.NetPerfTracker.Enhanced.CallStamp __state, Exception __exception) { }
+}
+internal static class RefTimingFinalizer
+{
+    private static void Before(MethodBase __originalMethod, out DDEN.NetPerfTracker.Enhanced.CallStamp __state) { __state = default; }
+    private static void After(ref DDEN.NetPerfTracker.Enhanced.CallStamp __state, Exception __exception) { }
+}
+internal static class RefTimingException
+{
+    private static void Before(MethodBase __originalMethod, out DDEN.NetPerfTracker.Enhanced.CallStamp __state) { __state = default; }
+    private static void After(DDEN.NetPerfTracker.Enhanced.CallStamp __state, ref Exception __exception) { }
 }
 internal static class RegressionFixture
 {
@@ -127,7 +147,7 @@ internal static class RegressionFixture
     private static void Main(string[] args)
     {
         if (args.Length != 0)
-            Console.WriteLine("PASS " + RegressionBinaryContract.Verify(args[0]) + " real DLL metadata/IL regression contract checks");
+            Console.WriteLine("PASS " + RegressionBinaryContract.Verify(args[0], fixtureTimingHooks: typeof(DDEN.NetPerfTracker.Enhanced.DeepHooks)) + " real DLL metadata/IL regression contract checks");
         Reset();
         using (var hooks = New())
         {
@@ -194,14 +214,15 @@ internal static class RegressionFixture
         using (var hooks = New())
         {
             hooks.Install(); hooks.Configure(true, 2, true); Together.FindTheBugReports.Tick();
-            Check(hooks.Problem == null && hooks.SkippedScans == 1 && DDEN.NetPerfTracker.Enhanced.DeepHooks.AfterCalls > 0,
+            Check(hooks.Problem == null && hooks.DiagnosticSuppressionActive && hooks.SkippedScans == 1 && DDEN.NetPerfTracker.Enhanced.DeepHooks.AfterCalls > 0,
                 "exact known pure timing hooks preserved around skipped diagnostic body");
         }
         timing.UnpatchSelf();
         timing.Patch(Scan, prefix: new HarmonyMethod(typeof(RegressionFixture), nameof(Block)));
         using (var hooks = New())
-        { hooks.Install(); hooks.Configure(true, 1, true); Check(hooks.DiagnosticProblem != null && hooks.EffectiveRadius == 1, "timing owner alone cannot authorize business prefix"); }
+        { hooks.Install(); hooks.Configure(true, 1, true); Check(hooks.DiagnosticProblem != null && !hooks.DiagnosticSuppressionActive && hooks.EffectiveRadius == 1, "timing owner alone cannot authorize business prefix"); }
         timing.UnpatchSelf();
+        TimingCompatibility();
 
         Reset();
         using (var hooks = New(pin: true))
@@ -217,6 +238,49 @@ internal static class RegressionFixture
         DiagnosticHistory();
         Console.WriteLine("PASS " + _checks + " real Harmony regression validation fixture checks; no game process or saves");
     }
+    private static void TimingCompatibility()
+    {
+        var actualTiming = typeof(DDEN.NetPerfTracker.Enhanced.DeepHooks);
+        foreach (var candidate in new[] { actualTiming, typeof(WrongTimingState), typeof(RefTimingState), typeof(RefTimingFinalizer), typeof(RefTimingException) })
+        {
+            Reset();
+            var patcher = new Harmony(candidate == actualTiming ? "fixture.unknown.timing" : "com.dden.perfdeep");
+            try
+            {
+                patcher.Patch(Scan, prefix: new HarmonyMethod(candidate, "Before"), finalizer: new HarmonyMethod(candidate, "After"));
+                using (var hooks = New(resolve: name => name == "DDEN.NetPerfTracker.Enhanced.DeepHooks" ? candidate : DDEN.Shared.Reflect.Type(name)))
+                {
+                    hooks.Install(); hooks.Configure(true, 1, true); Together.FindTheBugReports.Tick();
+                    Check(hooks.DiagnosticProblem != null && !hooks.DiagnosticSuppressionActive && hooks.SkippedScans == 0
+                        && Together.FindTheBugReports.Calls == 1 && hooks.EffectiveRadius == 1,
+                        "unknown owner or altered timing signature retains the original scan: " + candidate.Name);
+                }
+            }
+            finally { patcher.UnpatchSelf(); }
+        }
+        Reset();
+        var timing = new Harmony("com.dden.perfdeep");
+        using (var hooks = New())
+        {
+            hooks.Install(); hooks.Configure(true, 2, true);
+            Check(hooks.DiagnosticSuppressionActive, "suppression reports active only after both hooks and history preparation are ready");
+            try
+            {
+                timing.Patch(Scan, prefix: new HarmonyMethod(actualTiming, "Before"), finalizer: new HarmonyMethod(actualTiming, "After"));
+                _now = 2; hooks.Tick(); Together.FindTheBugReports.Tick();
+                Check(hooks.DiagnosticProblem == null && hooks.DiagnosticSuppressionActive && hooks.SkippedScans == 1,
+                    "enabling the real-shape timing pair during suppression does not disable it");
+                timing.UnpatchSelf(); _now = 4; hooks.Tick(); Together.FindTheBugReports.Tick();
+                Check(hooks.DiagnosticSuppressionActive && hooks.SkippedScans == 2,
+                    "removing timing does not change effective suppression");
+                Together.Net.IsServer = false;
+                Check(!hooks.DiagnosticSuppressionActive, "effective suppression immediately reports inactive on a client");
+                Together.Net.IsServer = true; hooks.Configure(false, 2, true);
+                Check(!hooks.DiagnosticSuppressionActive, "disabled validation reports no effective suppression");
+            }
+            finally { timing.UnpatchSelf(); }
+        }
+    }
     private static void DiagnosticHistory()
     {
         Reset();
@@ -225,7 +289,10 @@ internal static class RegressionFixture
         Check(Together.FindTheBugReports.BagCount == 601 && Together.FindTheBugReports.ItemCount == 1, "fixture reproduces retained diagnostic history");
         using (var hooks = New())
         {
-            hooks.Install(); hooks.Configure(true, 1, true);
+            hooks.Install();
+            Check(!hooks.DiagnosticSuppressionActive && Together.FindTheBugReports.BagCount == 601 && Together.FindTheBugReports.ItemCount == 1,
+                "reading inactive suppression status never clears diagnostic history");
+            hooks.Configure(true, 1, true);
             Check(Together.FindTheBugReports.BagCount == 0 && Together.FindTheBugReports.ItemCount == 0, "entering suppression clears old counters and Item references");
             int businessDecays = 0;
             for (int i = 0; i < 3000; i++)
@@ -255,7 +322,7 @@ internal static class RegressionFixture
             hooks.Install(); hooks.Configure(true, 1, true);
             foreign.Patch(note, prefix: new HarmonyMethod(typeof(RegressionFixture), nameof(Foreign)));
             _now = 2; hooks.Tick(); Together.FindTheBugReports.NoteDecay(new Item { Id = 1 }); Together.FindTheBugReports.Tick();
-            Check(hooks.DiagnosticProblem != null && hooks.SkippedScans == 0 && hooks.SkippedDecayNotes == 0
+            Check(hooks.DiagnosticProblem != null && !hooks.DiagnosticSuppressionActive && hooks.SkippedScans == 0 && hooks.SkippedDecayNotes == 0
                 && Together.FindTheBugReports.BagCount == 1 && Together.FindTheBugReports.Calls == 1 && hooks.EffectiveRadius == 1,
                 "late unknown producer patch restores complete diagnostic group independently of radius");
             foreign.UnpatchSelf();
@@ -267,7 +334,7 @@ internal static class RegressionFixture
         using (var hooks = New(resolve: name => name == "Together.FindTheBugReports" ? typeof(BrokenReports) : DDEN.Shared.Reflect.Type(name)))
         {
             hooks.Install(); hooks.Configure(true, 1, true); BrokenReports.Tick(); BrokenReports.NoteDecay(new Item());
-            Check(hooks.DiagnosticProblem != null && BrokenReports.Calls == 1 && BrokenReports.Notes == 1 && hooks.EffectiveRadius == 1,
+            Check(hooks.DiagnosticProblem != null && !hooks.DiagnosticSuppressionActive && BrokenReports.Calls == 1 && BrokenReports.Notes == 1 && hooks.EffectiveRadius == 1,
                 "cleanup failure restores both original diagnostic methods without blocking radius");
         }
         foreach (var invalid in new[] { typeof(WrongReports), typeof(MissingReports) })

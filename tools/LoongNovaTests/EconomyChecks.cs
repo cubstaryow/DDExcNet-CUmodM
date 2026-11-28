@@ -49,15 +49,15 @@ internal static class EconomyChecks
         foreach(int source in new[]{2,8,16,32,64,112,128,256})
         {
             bool regen=source==2||LootRules.IsTrader(source);
-            check(LootRules.Select(source,"medical",0.00525)==(regen?MedicalCatalog.RegenerationId:null),"Regeneration ampoules must appear only in medical crates or merchant stock");
-            check(LootRules.Select(source,"medical",0.0075)==MedicalCatalog.MedicalId,"Ordinary medical ampoules must remain available in medical slots of matching containers");
+            check(LootRules.Select(source,"medical",0.012)==(regen?MedicalCatalog.RegenerationId:null),"Regeneration ampoules must appear only in medical crates or merchant stock");
+            check(LootRules.Select(source,"medical",0.018)==MedicalCatalog.MedicalId,"Ordinary medical ampoules must remain available in medical slots of matching containers");
             check(LootRules.Select(source,"medical",0)==MedicalCatalog.InjectorId,"Matching medical slots must still supply full medical injectors");
         }
         foreach(var pair in new[]{(CannonAmmoState.DrillId,3),(CannonAmmoState.DrainId,4),(CannonAmmoState.BreachId,5)})
         foreach(int source in new[]{8,16,32,64,112,128,256})
         {
             int count=0;for(int i=0;i<10000;i++)if(LootRules.Select(source,"ammo",(i+0.5)/10000)==pair.Item1)count++;
-            check(count==40,"Each functional ammunition type must share the ordinary0.4% matching-slot rate in containers and merchant stock");
+            check(count==60,"Each functional ammunition type must share the ordinary0.4% matching-slot rate in containers and merchant stock");
         }
         for(int i=0;i<LootRules.RoundCount;i++)check(CannonSpawnWeights.Pick((i+0.5)/7)==LootRules.BonusRound(i),"Provisional weights must retain all seven spawn-bonus round types");
         var weights=new double[]{7,6,5,4,3,2,1};var counts=new int[7];

@@ -97,7 +97,7 @@ internal static class SpatialChecks
         check(notice.Any(i => i.Operand is string value && value == "watch") && notice.Any(i => i.Operand is MethodReference m && m.Name == "TalkDelayed"),
             "Low-energy installation errors must use the native electronic-watch Talker presentation");
         var language = LocaleChecks.Chinese(assembly);
-        check(language.Value<string>("rechargerActivationNeed") == "能量单元剩余能源不足\n无法启动内置力场", "Activation failure retains the exact two-line head notice");
+        check(language.Value<string>("rechargerActivationNeed") == "龙源心量卡剩余能源不足\n无法启动内置力场", "Activation failure retains the exact two-line head notice");
         var recipes = registration.Methods.Single(m => m.Name == "RegisterSpatialRecipes").Body.Instructions;
         foreach (string id in new[] { SpatialCatalog.ComponentId, SpatialCatalog.CrateId, SpatialCatalog.ChargerId, "handcrank", "titaniumsheet", "bundleofwires", SupplyCrateRules.OpenId })
             check(recipes.Any(i => i.Operand is string s && s == id), "All requested spatial recipes and materials are present: " + id);

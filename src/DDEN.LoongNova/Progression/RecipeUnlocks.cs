@@ -9,7 +9,7 @@ namespace DDEN.LoongNova
 {
     // Body provider is included in CCL's player-scoped MP saves. The companion component on
     // ScavPlayer carries knowledge across layer/body replacement without sharing it with peers.
-    internal sealed class RecipeKnowledge : MonoBehaviour { internal int Stage; internal bool SupplyCrate; internal int ScanFrame = -1, ObserveFrame = -1; }
+    internal sealed class RecipeKnowledge : MonoBehaviour { internal int Stage; internal bool SupplyCrate, Smelter; internal int ScanFrame = -1, ObserveFrame = -1; }
 
     internal static class RecipeUnlocks
     {
@@ -38,10 +38,13 @@ namespace DDEN.LoongNova
                 var shared = State(player);
                 state.Stage = shared.Stage = Math.Max(RecipeUnlockRules.Clamp(state.Stage), RecipeUnlockRules.Clamp(shared.Stage));
                 state.SupplyCrate = shared.SupplyCrate = state.SupplyCrate || shared.SupplyCrate;
+                state.Smelter = shared.Smelter = state.Smelter || shared.Smelter;
             }
             return RecipeUnlockRules.Clamp(state.Stage);
         }
         internal static bool HasCrate(Body body) { if (body == null) return false; Stage(body); return State(body).SupplyCrate; }
+        internal static bool HasSmelter(Body body){if(body==null)return false;Stage(body);return State(body).Smelter;}
+        internal static bool IsSmelting(Recipe recipe)=>recipe?.items!=null&&recipe.items.Exists(i=>i.quality?.id=="loongnova.smelting");
         internal static void Observe(Body body, List<Item> items)
         {
             if (!IsPlayer(body) || Mp.IsRunning && !Mp.IsServer) return;
@@ -49,21 +52,21 @@ namespace DDEN.LoongNova
             var cached = State(body);
             if (cached.ObserveFrame == Time.frameCount) return;
             cached.ObserveFrame = Time.frameCount;
-            if (items == null || stage == 2 && HasCrate(body)) return;
-            bool supply = HasCrate(body);
-            foreach (var item in items) if (item != null) { stage = RecipeUnlockRules.Acquire(stage, item.id); supply |= item.id == "dden.loongnova.supply-crate"; }
-            Grant(body, stage, supply);
+            if (items == null || stage == 2 && HasCrate(body) && HasSmelter(body)) return;
+            bool supply = HasCrate(body); bool smelter=HasSmelter(body);
+            foreach (var item in items) if (item != null) { stage = RecipeUnlockRules.Acquire(stage, item.id); supply |= item.id == "dden.loongnova.supply-crate"; smelter |= item.id=="dden.loongnova.portable-dragonflame-smelter"; }
+            Grant(body, stage, supply,smelter);
         }
-        private static void Grant(Body body, int stage, bool supply = false)
+        private static void Grant(Body body, int stage, bool supply = false,bool smelter=false)
         {
-            var state = State(body); state.Stage = Math.Max(state.Stage, RecipeUnlockRules.Clamp(stage)); state.SupplyCrate |= supply;
+            var state = State(body); state.Stage = Math.Max(state.Stage, RecipeUnlockRules.Clamp(stage)); state.SupplyCrate |= supply; state.Smelter |= smelter;
             var player = Mp.IsRunning ? Player(body) : null;
-            if (player != null) { var owner = State(player); owner.Stage = Math.Max(owner.Stage, state.Stage); owner.SupplyCrate |= state.SupplyCrate; }
+            if (player != null) { var owner = State(player); owner.Stage = Math.Max(owner.Stage, state.Stage); owner.SupplyCrate |= state.SupplyCrate; owner.Smelter |= state.Smelter; }
         }
         internal static int Inspect(Body body)
         {
             if (body == null) return 0;
-            if (Stage(body) == 2 && HasCrate(body)) return 2;
+            if (Stage(body) == 2 && HasCrate(body) && HasSmelter(body)) return 2;
             var cache = State(body);
             if (cache.ScanFrame == Time.frameCount) return Stage(body);
             cache.ScanFrame = Time.frameCount;
@@ -71,41 +74,44 @@ namespace DDEN.LoongNova
             {
                 var items = body.GetAllItemsThorough();
                 Observe(body, items);
-                int stage = Stage(body); bool supply = HasCrate(body);
-                if ((stage < 2 || !supply) && IsPlayer(body))
+                int stage = Stage(body); bool supply = HasCrate(body); bool smelter=HasSmelter(body);
+                if ((stage < 2 || !supply || !smelter) && IsPlayer(body))
                 {
                     foreach (var item in items)
                     {
                         if (item == null || item.GetComponent<Container>() == null) continue;
                         foreach (var nested in item.GetComponentsInChildren<Item>(true))
-                            if (nested != null) { stage = RecipeUnlockRules.Acquire(stage, nested.id); supply |= nested.id == "dden.loongnova.supply-crate"; }
-                        if (stage == 2 && supply) break;
+                            if (nested != null) { stage = RecipeUnlockRules.Acquire(stage, nested.id); supply |= nested.id == "dden.loongnova.supply-crate"; smelter |= nested.id=="dden.loongnova.portable-dragonflame-smelter"; }
+                        if (stage == 2 && supply && smelter) break;
                     }
-                    Grant(body, stage, supply);
+                    Grant(body, stage, supply,smelter);
                 }
             }
             return Stage(body);
         }
         internal static void Acquired(Body body, Item item)
         {
-            if (!IsPlayer(body) || item == null || Stage(body) == 2 && HasCrate(body)) return;
+            if (!IsPlayer(body) || item == null || Stage(body) == 2 && HasCrate(body) && HasSmelter(body)) return;
             if (Mp.IsRunning && !Mp.IsServer)
             {
                 if (RecipeUnlockRules.Acquire(Stage(body), item.id) > Stage(body)
-                    || item.id == "dden.loongnova.supply-crate" || item.GetComponent<Container>() != null)
+                    || item.id == "dden.loongnova.supply-crate" || item.id=="dden.loongnova.portable-dragonflame-smelter" || item.GetComponent<Container>() != null)
                     _nextRequest = Math.Min(_nextRequest, Time.unscaledTime + 0.5f);
                 return;
             }
             State(body).ScanFrame = State(body).ObserveFrame = -1;
-            int stage = RecipeUnlockRules.Acquire(Stage(body), item.id); bool supply = HasCrate(body) || item.id == "dden.loongnova.supply-crate";
-            if ((stage < 2 || !supply) && item.GetComponent<Container>() != null)
+            int stage = RecipeUnlockRules.Acquire(Stage(body), item.id); bool supply = HasCrate(body) || item.id == "dden.loongnova.supply-crate"; bool smelter=HasSmelter(body)||item.id=="dden.loongnova.portable-dragonflame-smelter";
+            if ((stage < 2 || !supply || !smelter) && item.GetComponent<Container>() != null)
                 foreach (var nested in item.GetComponentsInChildren<Item>(true))
-                    if (nested != null) { stage = RecipeUnlockRules.Acquire(stage, nested.id); supply |= nested.id == "dden.loongnova.supply-crate"; }
-            Grant(body, stage, supply);
+                    if (nested != null) { stage = RecipeUnlockRules.Acquire(stage, nested.id); supply |= nested.id == "dden.loongnova.supply-crate"; smelter |= nested.id=="dden.loongnova.portable-dragonflame-smelter"; }
+            Grant(body, stage, supply,smelter);
         }
-        internal static bool Allows(Recipe recipe, Body body) => recipe == null || RecipeUnlockRules.Required(recipe.result?.id) == 0
-            || RecipeUnlockRules.Allows(Inspect(body), recipe.result?.id, HasCrate(body));
-        internal static JObject Reply(Body body) => new JObject { ["ok"] = body != null, ["stage"] = Inspect(body), ["supplyCrate"] = HasCrate(body) };
+        internal static bool Allows(Recipe recipe, Body body)
+        {
+            if(IsSmelting(recipe)){Inspect(body);return HasSmelter(body);}
+            return recipe==null||RecipeUnlockRules.Required(recipe.result?.id)==0||RecipeUnlockRules.Allows(Inspect(body),recipe.result?.id,HasCrate(body));
+        }
+        internal static JObject Reply(Body body) => new JObject { ["ok"] = body != null, ["stage"] = Inspect(body), ["smelter"] = HasSmelter(body), ["supplyCrate"] = HasCrate(body) };
         internal static string LockHint(string resultId, Body body) => resultId == "dden.loongnova.micro-space-supply-crate" && Stage(body) >= 2 && !HasCrate(body) ? "unlockNeedsSupplyCrate" : RecipeUnlockRules.Required(resultId) == 1 ? "unlockNeedsDragon" : "unlockNeedsWrench";
         internal static string CatalogDetail(string resultId, string detail)
         {
@@ -138,8 +144,8 @@ namespace DDEN.LoongNova
                         || !Mp.IsRunning || Mp.IsServer || reply?.Value<bool>("ok") != true) return;
                     // Only the authenticated host's reply grants a client knowledge. Never trust a claimed stage.
                     int stage = RecipeUnlockRules.Clamp(reply.Value<int>("stage"));
-                    State(body).Stage = stage; State(body).SupplyCrate = reply.Value<bool?>("supplyCrate") == true;
-                    var player = Player(body); if (player != null) { State(player).Stage = stage; State(player).SupplyCrate = State(body).SupplyCrate; }
+                    State(body).Smelter=reply.Value<bool?>("smelter")==true; State(body).Stage = stage; State(body).SupplyCrate = reply.Value<bool?>("supplyCrate") == true;
+                    var player = Player(body); if (player != null) { State(player).Smelter=State(body).Smelter; State(player).Stage = stage; State(player).SupplyCrate = State(body).SupplyCrate; }
                     Refresh(body);
                 });
             }
@@ -147,7 +153,7 @@ namespace DDEN.LoongNova
         }
         private static void Refresh(Body body)
         {
-            int stage = Stage(body) * 2 + (HasCrate(body) ? 1 : 0);
+            int stage = Stage(body) * 2 + (HasCrate(body) ? 1 : 0)+(HasSmelter(body)?8:0);
             if (_shown == stage) return;
             _shown = stage;
             var camera = PlayerCamera.main;
@@ -159,12 +165,13 @@ namespace DDEN.LoongNova
         internal sealed class SaveProvider : IBodySaveProvider
         {
             public int GetVersion() => 1;
-            public JToken Capture(Body body) => IsPlayer(body) ? new JObject { ["stage"] = Inspect(body), ["supplyCrate"] = HasCrate(body) } : null;
+            public JToken Capture(Body body) => IsPlayer(body) ? new JObject { ["stage"] = Inspect(body), ["smelter"] = HasSmelter(body), ["supplyCrate"] = HasCrate(body) } : null;
             public void Restore(Body body, JToken payload, int version, SaveRestoreContext context)
             {
                 if (body == null || version != 1 || !(payload is JObject)) return;
                 State(body).Stage = RecipeUnlockRules.Clamp(payload.Value<int>("stage"));
                 State(body).SupplyCrate = payload.Value<bool?>("supplyCrate") == true;
+                State(body).Smelter=payload.Value<bool?>("smelter")==true;
             }
         }
     }

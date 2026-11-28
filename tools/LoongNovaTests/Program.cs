@@ -34,6 +34,12 @@ CannonRoundRegistry.Register(CannonAmmoState.BioId, new CannonRound(1, 750, 1, 0
 CannonRoundRegistry.Register(CannonAmmoState.DemolitionId, new CannonRound(200, 25, 30, 20, 5, 1).Parameters());
 CannonRoundRegistry.Register(CannonAmmoState.ExplosiveId, new CannonRound(500,400,1,0,1,1,12).Parameters());
 CannonRoundRegistry.Register(CannonAmmoState.RevivalId, new CannonRound(0,0,1,0,1,effect:CannonEffect.Revive).Parameters());
+foreach(float temperature in new[]{20f,36.9f,37f,37.1f,45f})
+foreach(float seconds in new[]{0.02f,1f,1000f})
+{
+    float comfortable=SmelterComfortRules.Normalize(temperature,seconds);
+    Check(temperature<37?comfortable>=temperature&&comfortable<=37:comfortable<=temperature&&comfortable>=37,"Comfort regulates temperature toward normal without crossing it");
+}
 TacticalChecks.Run(Check);
 MinuteSyncChecks.Run(Check);
 SpatialChecks.Run(Check);
@@ -732,15 +738,15 @@ for (int i = 0; i < 1000000; i++)
     CountLoot(LootRules.Select(8, "container", roll));
     CountLoot(LootRules.Select(128, "utility", roll));
 }
-Check(counts[Registration.DragonId] == 5000 && counts[Registration.WrenchId] == 5000 && counts[Registration.PickaxeId] == 8000, "Merchant tool-slot rates must be dragon/wrench 0.5 percent and pickaxe 0.8 percent");
-Check(counts[Registration.BeltId] == 1000 && counts[Registration.GunId] == 500 && counts[Registration.ChargeGunId] == 500 && counts[Registration.CellId] == 4000,
-    "Matching slots must produce belt 0.1 percent, cell 0.4 percent and each gun 0.05 percent");
-Check(counts[CannonAmmoState.BioId]==4000 && counts[CannonAmmoState.DemolitionId]==4000 && counts[CannonAmmoState.ExplosiveId]==4000,
-    "Each ordinary ammunition type must occupy a 0.4 percent interval of a compatible utility draw");
+Check(counts[Registration.DragonId] == 10000 && counts[Registration.WrenchId] == 5000 && counts[Registration.PickaxeId] == 20000, "Merchant tool-slot rates must be dragon 1 percent, wrench 0.5 percent and pickaxe 2 percent");
+Check(counts[Registration.BeltId] == 1000 && counts[Registration.GunId] == 1000 && counts[Registration.ChargeGunId] == 1000 && counts[Registration.CellId] == 8000,
+    "Matching slots must produce belt 0.1 percent, cell 0.8 percent and each gun 0.1 percent");
+Check(counts[CannonAmmoState.BioId]==6000 && counts[CannonAmmoState.DemolitionId]==6000 && counts[CannonAmmoState.ExplosiveId]==6000,
+    "Each ordinary ammunition type must occupy a 0.6 percent interval of a compatible utility draw");
 LootRateChecks.Run(Check);
 SupplyCrateChecks.Run(Check);
 int crateDragons=0;for(int rollIndex=0;rollIndex<100000;rollIndex++)if(LootRules.Select(8,"tool",(rollIndex+0.5)/100000)==Registration.DragonId)crateDragons++;
-Check(crateDragons==100,"Supply-crate dragon chance must be exactly 0.1 percent per tool-category draw");
+Check(crateDragons==500,"Supply-crate dragon chance must be exactly 0.5 percent per tool-category draw");
 var bossWon = new BossDropGate();
 Check(bossWon.TryRoll(0.249999) && !bossWon.TryRoll(0), "A winning boss may drop only once");
 var bossLost = new BossDropGate();
@@ -751,6 +757,12 @@ Check(bossWins == 2500, "Elder dragon reward must have exactly a 25 percent roll
 string root = args.Length == 0 ? Path.GetFullPath(".") : args[0];
 using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(root, "src/DDEN.LoongNova/bin/Release/DDEN.LoongNova.dll")))
 {
+    var smelting=assembly.MainModule.Types.Single(t=>t.Name=="Registration");
+    var smeltingRegistration=smelting.Methods.Single(m=>m.Name=="RegisterSmelter").Body.Instructions;
+    Check(smeltingRegistration.Any(i=>i.Operand as string=="loongnova.smelting")&&smeltingRegistration.Any(i=>i.Operand is float f&&f==10000),"The portable smelter exposes a 10000-unit native crafting quality");
+    var smeltingRecipes=smelting.Methods.Single(m=>m.Name=="RegisterSmeltingRecipes").Body.Instructions;
+    foreach(string id in new[]{"rawcopper","processedcopper","ilmenitechunk","titaniumslab","woodcube","charcoal"})Check(smeltingRecipes.Any(i=>i.Operand as string==id),"Direct smelting preserves the native ore and metal IDs: "+id);
+    Check(!smelting.Methods.Single(m=>m.Name=="Smelt").Body.Instructions.Any(i=>i.Operand as string==Registration.SmelterId),"The smelter itself has no crafting recipe");
     TacticalChecks.Inspect(assembly,Check);
     UtilityAmmoChecks.Inspect(assembly,Check);
     MedicalChecks.Inspect(assembly,Check);
@@ -958,9 +970,9 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
     var page = types.Single(t => t.Name == "ModuleItemPage");
     var cards = page.Methods.Single(m => m.Name == ".cctor");
     var catalogIds = cards.Body.Instructions.Where(i => i.Operand is string s && s.StartsWith("dden.loongnova.")).Select(i => (string)i.Operand).ToList();
-    Check(catalogIds.Count == 27 && catalogIds.Contains(SupplyCrateRules.SealedId) && catalogIds.Contains(SupplyCrateRules.OpenId)
+    Check(catalogIds.Count == 28 && catalogIds.Contains(SupplyCrateRules.SealedId) && catalogIds.Contains(SupplyCrateRules.OpenId)
         && catalogIds.Contains(CannonAmmoState.RevivalId) && catalogIds.Contains(MedicalCatalog.EmptyId) && !catalogIds.Contains("dden.loongnova.dragon-claw-refitted-wrench"),
-        "Catalog must include both supply crates among twenty-seven active items and exclude the deferred wrench");
+        "Catalog must include both supply crates among twenty-eight active items and exclude the deferred wrench");
     var drawing = page.Methods.Single(m => m.Name == "Draw");
     Check(drawing.Body.ExceptionHandlers.Any(h => h.HandlerType == Mono.Cecil.Cil.ExceptionHandlerType.Finally),
         "Module page must always close its scroll view even if drawing fails");
@@ -1090,7 +1102,7 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
     Check(equipment.Body.Instructions.Any(instruction => instruction.Operand is string text && text == "cutting")
         && equipment.Body.Instructions.Any(instruction => instruction.Operand is string text && text == "hammering")
         && equipment.Body.Instructions.Any(instruction => instruction.Operand is string text && text == "loongnova.dragonization"), "Wrench must provide cutting, hammering and dragonization");
-    Check(assembly.MainModule.Resources.Count(resource => resource.Name.EndsWith(".png")) == 33, "Thirty-three small sprites must include both user-provided supply crate images while excluding superseded art");
+    Check(assembly.MainModule.Resources.Count(resource => resource.Name.EndsWith(".png")) == 34, "Thirty-four small sprites must include both user-provided supply crate images while excluding superseded art");
     Check(assembly.MainModule.Resources.Any(r => r.Name.EndsWith("dragon-scorch-rifle-v2.png"))
         && definition.Body.Instructions.Any(i => i.Operand is string s && s == "dragon-scorch-rifle-v2.png"),
         "Gun registration must use the new sprite without an external magazine");
@@ -1185,26 +1197,26 @@ using (var assembly = Mono.Cecil.AssemblyDefinition.ReadAssembly(Path.Combine(ro
     foreach (var expected in new[] { ("Trader1", 16), ("Trader2", 32), ("Trader3", 64), ("AllTraders", 112), ("ContainerCrate", 8), ("DropCapsule", 128), ("CapsuleContainer", 256) })
         Check(Convert.ToInt32(poolEnum.Fields.Single(f => f.Name == expected.Item1).Constant) == expected.Item2, "Loot source mapping must match the installed CCL API");
     var content = LocaleChecks.Chinese(assembly);
-    Check(content.Value<string>("beltSocketEmpty") == "可安装电池：龙域武库-龙息能量单元", "Empty socket wording must match the requested compact hint");
-    Check(string.Format(content.Value<string>("beltSocketLoaded")!, 1000, 100) == "龙息能量单元就绪：1000/1000（100%）", "Loaded wording must exactly match the requested compact hint");
-    Check(string.Format(content.Value<string>("beltSocketLoaded")!, 0, 0) == "龙息能量单元就绪：0/1000（0%）", "An exhausted installed cell must retain the compact status");
+    Check(content.Value<string>("beltSocketEmpty") == "可安装电池：龙域-龙源心量卡", "Empty socket wording must match the requested compact hint");
+    Check(string.Format(content.Value<string>("beltSocketLoaded")!, 1000, 100) == "龙源心量卡就绪：1000/1000（100%）", "Loaded wording must exactly match the requested compact hint");
+    Check(string.Format(content.Value<string>("beltSocketLoaded")!, 0, 0) == "龙源心量卡就绪：0/1000（0%）", "An exhausted installed cell must retain the compact status");
     Check(content.Value<string>("beltDescription")!.Contains("每秒消耗0.5") && content.Value<string>("beltDescription")!.Contains("每秒消耗8"),
         "Compact belt description must disclose both actual energy rates");
-    Check(content.Value<string>("cellDescription")!.Contains("容量1000单位能源") && content.Value<string>("gunDescription")!.Contains("0.12秒"),
+    Check(content.Value<string>("cellDescription")!.Contains("可容纳1000单位能源") && content.Value<string>("gunDescription")!.Contains("0.12秒"),
         "Gun and cell descriptions must match the updated shot cost and interval");
     Check(string.Format(System.Globalization.CultureInfo.InvariantCulture, content.Value<string>("cellEnergy")!, 12.375, 1.2375)
         == "能源：12.375/1000（1.2375%）", "Loose cells must show fractional energy rather than a rounded whole percent");
     Check(string.Format(System.Globalization.CultureInfo.InvariantCulture, content.Value<string>("beltSocketLoaded")!, 12.375, 1.2375)
-        == "龙息能量单元就绪：12.375/1000（1.2375%）", "Installed cells must retain the same fractional display precision");
+        == "龙源心量卡就绪：12.375/1000（1.2375%）", "Installed cells must retain the same fractional display precision");
     foreach (int charge in new[] { 0, 1000 })
         Check(string.Format(content.Value<string>("cellEnergy")!, charge, charge / 10) == $"能源：{charge}/1000（{charge / 10}%）",
             "Loose-cell empty and full display must agree with the exact capacity");
     Check(content.Value<string>("beltCard")!.Contains("飞行 8/s"), "Belt card must disclose the new flight cost");
-    Check(content.Value<string>("beltLowEnergy") == "龙翼单元：能源储备低", "Low-energy warning must match the requested text exactly");
+    Check(content.Value<string>("beltLowEnergy") == "龙源心量卡：能源储备低", "Low-energy warning must use the renamed energy card");
     foreach (string key in new[] { "matterRecipe", "cellRecipe", "gunRecipe", "beltRecipe", "refillRecipe", "pickaxeRecipe" })
         Check(content.Value<string>(key)!.Contains("可龙化100单位") && !content.Value<string>(key)!.Contains("%耐久"), "Dragonization recipes disclose required units and leave durability cost to native quality information");
     Check(content.Value<string>("dragonRecipe")!.Contains("25%") && content.Value<string>("matterDescription")!.Contains("只能"), "Catalog must disclose the exclusive dragon sources and crafted-only matter");
-    Check(content.Value<string>("refillName") == "重装填龙域武库-龙息能量单元", "Refill recipe must retain the requested display name");
+    Check(content.Value<string>("refillName") == "重装填龙域-龙源心量卡", "Refill recipe must retain the requested display name");
     Check(content.Value<string>("beltName") == "龙域武库-龙翼腰带", "Belt display name must use the new dragon-wing name");
 }
 Console.WriteLine($"PASS {checks} LoongNova gun/belt energy/save/recipes/prices/hearing/performance checks");

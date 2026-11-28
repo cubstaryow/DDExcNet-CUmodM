@@ -8,6 +8,7 @@ namespace DDEN.LoongNova
         internal const int CellsPerFrame = 384, TargetsPerFrame = 128, MaxWarnings = 8;
         internal const int ElderBiome = 4;
         internal const float ElderRange = 1000, TraderRange = 500;
+        internal static bool LocatorAvailable(bool sceneLoaded,bool living)=>sceneLoaded&&living;
         internal static bool TraderSignal(float squared) => squared >= 0 && squared <= TraderRange * TraderRange;
         internal static bool ElderSignal(int biome, bool living, bool active, float distanceSquared) => biome == ElderBiome
             && living && active && distanceSquared >= 0 && distanceSquared <= ElderRange * ElderRange;

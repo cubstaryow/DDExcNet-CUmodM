@@ -32,7 +32,7 @@ N 网分两个包：主包 `DDExcNet-1.8.5-Nexus.zip` 含 DDEN 公共层、管�
 | DDEN.NetPerfTracker.Enhanced.dll | 可选：深层计时诊断（Together / LES / 物体更新），默认关闭 |
 | DDEN.SaveEditor.dll | 可选：图形化存档编辑器 |
 | DDEN.UnitListMgr.dll | 可选：单位／物品清单管理器（查看、生成、滤镜、轮盘） |
-| DDEN.LoongNova.dll | 龙域武库（龙化装备包）：龙灼线束／龙息单元／重力腰带／龙化工具与配方，含联机适配 |
+| DDEN.LoongNova.dll | 龙域武库（龙化装备包）：龙灼线束／龙源心量卡／重力腰带／龙化工具与配方，含联机适配 |
 
 ## 实验性模块声明
 

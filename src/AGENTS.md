@@ -6,12 +6,12 @@
 | --- | --- |
 | `DDEN.Shared` | 模块契约、配置绘制、兼容、反射／联机桥、存档编解码与日志 |
 | `DDExcNet.CUmodM` | 管理器窗口、路由、输入隔离 |
-| `DDEN.LoongNova` | 龙域武库（LoongNova，龙化装备包）：龙灼线束、龙息单元、重力腰带、龙化工具／配方与CCL联机适配 |
+| `DDEN.LoongNova` | 龙域武库（LoongNova，龙化装备包）：龙灼线束、龙源心量卡、重力腰带、龙化工具／配方与CCL联机适配 |
 | `DDEN.MPfix` | 多人修复、可选主机配置与娱乐分支 |
 | `DDEN.SaveEditor` | 存档工作副本、图形化编辑与保存 |
 | `DDEN.NetPerfTracker` | 只读性能采样／图表／日志，无Harmony补丁 |
 | `DDEN.NetPerfTracker.Enhanced` | 独立可选深层诊断，承载Together／LES／物体更新的纯计时Harmony钩子，默认关闭 |
-| `DDEN.MoreThreadOnMP` | 独立可选主机性能对照：模拟范围、周期诊断扫描与只读线程观察，默认保留原版；原收发接管、预解压、亲和性及保存等优化已撤除 |
+| `DDEN.MPreducer` | 产物`DDEN.MPreducer.dll`：独立主机性能对照，含模拟范围、诊断扫描、只读线程观察及可独立开关的检查点后台保存／间隔控制，默认原版；收发接管、预解压与亲和性仍已撤除 |
 | `外部mod/ET-Fix` | 独立ET加热笼修复，专属文档及检查在其目录内 |
 | `外部mod/JDI-DDEN` | 独立工具撬石果修复，专属文档及检查在其目录内 |
 | `外部mod/DS Tool Extension` | 独立工具扩展（CCL 物品），专属文档在其目录内 |

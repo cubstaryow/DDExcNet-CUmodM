@@ -139,8 +139,8 @@ internal static class MedicalChecks
             "Ground/container ampoule dragging must use the same early inventory loading path as existing equipment");
         camera.dragItem=new Item{id=CannonAmmoState.BioId};int requests=MedicalInjector.For(tool).Requests;
         check(BeltInteractionPatches.InventoryAction(camera,hit,hits,ref result)&&MedicalInjector.For(tool).Requests==requests,"Weapon rounds must never dispatch an injector load");
-        check(LootRules.Select(2,"medical",0)==MedicalCatalog.InjectorId&&LootRules.Select(2,"medical",0.00525)==MedicalCatalog.RegenerationId
-            &&LootRules.Select(2,"medical",0.0075)==MedicalCatalog.MedicalId&&LootRules.Select(2,"ammo",0)==null,"Medical equipment must enter medical-crate slots without adding weapon ammo to those crates");
+        check(LootRules.Select(2,"medical",0)==MedicalCatalog.InjectorId&&LootRules.Select(2,"medical",0.012)==MedicalCatalog.RegenerationId
+            &&LootRules.Select(2,"medical",0.018)==MedicalCatalog.MedicalId&&LootRules.Select(2,"ammo",0)==null,"Medical equipment must enter medical-crate slots without adding weapon ammo to those crates");
         foreach(string id in new[]{"grabbershroom","mushroomdropper","bouncecap","fungalibungali","mushroomplatform","sidestabber","sidestabberflip","skullcrusher","jumppad","soundcannon","coil","piston","pistonleft","pistonright","turret","ceilingturret","sawblade","landmine"})
             check(BreachTargets.IsTarget("BuildingEntity",id,true),"Explicit stationary traps must be included even if generic/organic: "+id);
         foreach(string type in new[]{"GrabberPlant","BounceShroom","SoundCannon","JumpPadScript","PistonScript","BarbedFence","SpikeStabberScript","BearTrap","SawbladeScript"})

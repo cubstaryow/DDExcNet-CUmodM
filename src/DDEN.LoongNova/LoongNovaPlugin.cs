@@ -58,6 +58,8 @@ namespace DDEN.LoongNova
                 _harmony.PatchAll(typeof(CellRefillMatching));
                 _harmony.PatchAll(typeof(EquipmentPatches));
                 _harmony.PatchAll(typeof(LoongLocalePatches));
+                _harmony.PatchAll(typeof(SmeltingRecipePatches));
+                _harmony.PatchAll(typeof(SmelterComfortPatch));
                 _harmony.PatchAll(typeof(RecipeUnlockPatches));
                 _harmony.PatchAll(typeof(MedicalPatches));
                 _harmony.PatchAll(typeof(SupplyCratePatches));

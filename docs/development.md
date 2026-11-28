@@ -13,6 +13,7 @@ src/DDExcNet.CUmodM/               管理器
 src/DDEN.MPfix/                    多人修复
 src/DDEN.SaveEditor/               存档编辑器
 src/DDEN.NetPerfTracker/           性能跟踪器
+src/DDEN.MPreducer/               联机性能对照与检查点保存（原MoreThreadOnMP）
 src/外部mod/ET-Fix/      独立外部模组，含自身文档／检查／许可
 src/外部mod/JDI-DDEN/    独立工具撬石果模组，含自身文档／许可
 tools/                            跨模块及DDEN组件的离线检查
@@ -39,6 +40,8 @@ docs/history/                     明确过时的历史记录
 ```powershell
 dotnet build DDExcNet.slnx -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=false
 ```
+
+独立MPreducer不加入上述六组件发布包；单独构建使用`dotnet build src/DDEN.MPreducer/DDEN.MPreducer.csproj -c Release -m:1 -nodeReuse:false -p:DeployOnBuild=false`，开发解决方案`CUmod.slnx`也已同步新项目路径。
 
 `DeployOnBuild`默认false；单纯构建不应写游戏目录。中文路径项目与嵌套检查项目已纳入解决方案／相对引用。DDEN组件均在各自csproj维护独立版本，不再使用DdenVersion统一属性：Shared 2.0.1（API v1）、管理器2.1.0、MPfix 1.8.0、性能跟踪器2.3.1、增强0.2.1-alpha、存档编辑器2.0.1-alpha、UnitListMgr 0.1.2-alpha、LoongNova 1.0.1。Alpha的加载器声明使用数字版2.0.0，发行元数据及模块显示保留alpha；外部模组版本不变。产品版本、两个适配最低要求和API代际见[版本契约](component-versions.md)。
 

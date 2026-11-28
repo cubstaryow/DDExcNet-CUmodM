@@ -96,11 +96,11 @@ internal static class RevivalChecks
 
         foreach(int source in new[]{0,1,2,4,8,16,32,64,112,128,256,511})
         {
-            check(LootRules.Select(source,"medical",0.01)==(LootRules.Eligible(source,"medical")?CannonAmmoState.RevivalId:null),
+            check(LootRules.Select(source,"medical",0.0225)==(LootRules.Eligible(source,"medical")?CannonAmmoState.RevivalId:null),
                 "Only eligible medical supplies/merchants may naturally select the mysterious round");
-            check(LootRules.Select(source,"ammo",0.02425)==(LootRules.Eligible(source,"ammo")?CannonAmmoState.RevivalId:null),
+            check(LootRules.Select(source,"ammo",0.0365)==(LootRules.Eligible(source,"ammo")?CannonAmmoState.RevivalId:null),
                 "Eligible ammo containers and merchants may now yield a standalone mysterious round");
-            check(LootRules.Select(source,"utility",0.02925)==(LootRules.Eligible(source,"utility")?CannonAmmoState.RevivalId:null),
+            check(LootRules.Select(source,"utility",0.0465)==(LootRules.Eligible(source,"utility")?CannonAmmoState.RevivalId:null),
                 "Eligible utility containers and merchants must share the new mysterious-round interval");
         }
         check(LootRules.BonusRound(6)==CannonAmmoState.RevivalId&&!ArsenalRecipes.Create().Any(r=>r.result.id==CannonAmmoState.RevivalId),

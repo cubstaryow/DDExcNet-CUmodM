@@ -20,6 +20,9 @@ internal static class Program
         var harmony = new Harmony(LoongNovaPlugin.Guid);
         try
         {
+            // Use the production startup order so a locale patch failure cannot be concealed by recipe-only tests.
+            harmony.PatchAll(typeof(LoongLocalePatches));
+            harmony.PatchAll(typeof(SmeltingRecipePatches));
             harmony.PatchAll(typeof(RecipeUnlockPatches));
             RecipeUnlockPatches.InstallMultiplayer();
             Check(RecipeUnlockPatches.Installed, "Production MP scope/matcher hooks must actually detour independent mocks");
@@ -31,6 +34,11 @@ internal static class Program
     }
     private static void Run()
     {
+        Check(Locale.GetOther("cq"+Registration.SmeltingQuality)=="smeltingQuality","Real Harmony binds the native str parameter and localizes the smelting quality");
+        Check(Locale.GetOther("cq"+Registration.DragonQuality)=="dragonQuality","The dragon quality uses the same working positional binding");
+        Check(Locale.GetOther("unrelated")=="native:unrelated","Other native locale keys are untouched");
+        Locale.LoadLanguage();Check(LoongLocalization.Refreshed==1,"Language refresh hooks install alongside the quality hook");
+        Check(Item.GetItem(Registration.SmelterId).fullName=="localized:"+Registration.SmelterId,"Item locale hook remains installed");
         var micro = Make("dden.loongnova.micro-space-supply-crate");
         var wrench = Make(Registration.WrenchId); var cell = Make(Registration.CellId); var vanilla = Make("rifle");
         Recipes.recipes.AddRange(new[] { wrench, cell, vanilla });
@@ -49,6 +57,9 @@ internal static class Program
         Check(Together.CraftCommit.Commit(first.Net, 1, 2, wrench, new ushort[0]) && Together.CraftCommit.Spent == 1,
             "The unlocked actor can use the original MP transaction");
         second.PickUpItem(new Item(Registration.WrenchId), 0);
+        Check(RecipeUnlocks.Allows(cell,second),"High INT plus successful wrench acquisition unlocks the arsenal recipe");
+        second.Inventory.Clear();
+        Check(RecipeUnlocks.Allows(cell,second),"Previously acquired wrench recipes remain visible after the wrench is put down");
         Check(!RecipeUnlocks.Allows(micro, second), "Wrench knowledge alone does not reveal the microspace-crate recipe");
         second.PickUpItem(new Item("dden.loongnova.supply-crate"), 0);
         Check(RecipeUnlocks.Allows(micro, second) && !RecipeUnlocks.Allows(micro, first), "Ordinary crate acquisition grants only its owner the additional recipe requirement");
@@ -94,6 +105,21 @@ internal static class Program
         NetworkAccess.Connection = new object(); RecipeUnlocks.Tick();
         stale(new JObject { ["ok"] = true, ["stage"] = 0 });
         Check(RecipeUnlocks.Stage(first) == 2, "A delayed reply from an earlier connection cannot overwrite current knowledge");
+        Mp.IsServer=true;
+        var smith=Peer();var otherSmith=Peer();PlayerCamera.main.body=smith;
+        var melt=Make("titaniumslab");melt.items=new List<RecipeItem>{new RecipeItem{quality=new CraftingQuality{id="loongnova.smelting"}}};
+        Check(!RecipeUnlocks.Allows(melt,smith),"Smelting recipes start locked without owning the smelter");
+        var smelter=new Item("dden.loongnova.portable-dragonflame-smelter");smith.PickUpItem(smelter,0);
+        Check(RecipeUnlocks.Allows(melt,smith)&&!RecipeUnlocks.Allows(melt,otherSmith),"Acquiring the smelter unlocks only the acquiring character's smelting recipes");
+        Check(melt.visible&&melt.simpleName=="smeltTitanium"&&melt.fullName=="<sprite index=25>smeltTitanium","Smelting visibility and recipe names work after the locale and recipe patches actually install");
+        melt.hasMadeBefore=true;Check(melt.fullName=="smeltTitanium","Known smelting recipe keeps the native new-recipe indicator convention");
+        Check(vanilla.simpleName=="native recipe"&&vanilla.fullName=="native full recipe","Other recipe names are untouched");
+        melt.items[0].UseItem(smelter);Check(Math.Abs(smelter.condition-0.99f)<0.000001f,"Smelting retains the original one-percent tool debit without charging twice");
+        for(int i=1;i<100;i++)melt.items[0].UseItem(smelter);
+        Check(smelter.condition==0,"The hundredth native smelt settles floating-point wear to zero");
+        smith.Inventory.Clear();Check(RecipeUnlocks.Allows(melt,smith),"Smelting knowledge persists after dropping the smelter");
+        var smeltSave=provider.Capture(smith);var reloadedSmith=Peer();provider.Restore(reloadedSmith,smeltSave,1,null);
+        Check(RecipeUnlocks.Allows(melt,reloadedSmith),"Smelting knowledge survives the existing player save provider");
         RecipeUnlocks.ResetView();
     }
 }

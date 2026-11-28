@@ -36,7 +36,7 @@ internal static class LocaleChecks
                 var formatsA = Regex.Matches(a, @"\{\d+(?:[^{}]*)\}").Select(m => m.Value).Order();
                 var formatsB = Regex.Matches(b, @"\{\d+(?:[^{}]*)\}").Select(m => m.Value).Order();
                 check(formatsA.SequenceEqual(formatsB), "Language variants must preserve identical composite format arguments: " + property.Name);
-                check(property.Name.StartsWith("dden.loongnova.", StringComparison.Ordinal) || property.Name == "cqloongnova.dragonization",
+                check(property.Name.StartsWith("dden.loongnova.", StringComparison.Ordinal) || property.Name == "cqloongnova.dragonization" || property.Name == "cqloongnova.smelting",
                     "The locale overlay must not replace other modules' or vanilla keys");
                 _ = string.Format(CultureInfo.InvariantCulture, a, 12.375, 1.2375, 2);
                 _ = string.Format(CultureInfo.InvariantCulture, b, 12.375, 1.2375, 2);
@@ -98,5 +98,28 @@ internal static class LocaleChecks
         using var ccl = AssemblyDefinition.ReadAssembly(File.Exists(@"L:\SteamLibrary\steamapps\common\Casualties Unknown\BepInEx\plugins\CUCoreLib.dll") ? @"L:\SteamLibrary\steamapps\common\Casualties Unknown\BepInEx\plugins\CUCoreLib.dll" : @"L:\SteamLibrary\steamapps\common\Casualties Unknown\BepInEx\plugins\Together\CUCoreLib.dll");
         check(ccl.MainModule.Types.Single(t => t.FullName == "CUCoreLib.Helpers.LocaleLoader").Methods.Any(m => m.Name == "FindEmbeddedOverlayResources"),
             "The installed CCL must support the chosen native-format embedded locale overlays");
+        using var game = AssemblyDefinition.ReadAssembly(@"L:\SteamLibrary\steamapps\common\Casualties Unknown\CasualtiesUnknown_Data\Managed\Assembly-CSharp.dll");
+        // Validate the names Harmony actually binds against the installed game, not just our own mocks.
+        foreach(var type in types.Where(t=>new[]{"LoongLocalePatches","SmeltingRecipePatches","SmelterComfortPatch","RecipeUnlockPatches"}.Contains(t.Name)))
+        foreach(var patch in type.Methods.Where(m=>m.CustomAttributes.Any(a=>a.AttributeType.Name=="HarmonyPrefix"||a.AttributeType.Name=="HarmonyPostfix")))
+        {
+            var target = patch.CustomAttributes.Concat(type.CustomAttributes).FirstOrDefault(a=>a.AttributeType.Name=="HarmonyPatch"&&a.ConstructorArguments.Count==2
+                &&a.ConstructorArguments[0].Value is TypeReference&&a.ConstructorArguments[1].Value is string);
+            check(target!=null,"Startup patch target must resolve for signature validation: "+type.Name+"."+patch.Name);
+            var declaring=(TypeReference)target!.ConstructorArguments[0].Value;
+            var name=(string)target.ConstructorArguments[1].Value;
+            var native=game.MainModule.Types.Single(t=>t.FullName==declaring.FullName).Methods.Where(m=>m.Name==name).ToArray();
+            check(native.Length==1,"Startup patch must target an unambiguous installed native method: "+declaring.FullName+"."+name);
+            foreach(var parameter in patch.Parameters)
+            {
+                if(parameter.Name.StartsWith("__",StringComparison.Ordinal))
+                {
+                    if(int.TryParse(parameter.Name.AsSpan(2),out int position))
+                        check(position>=0&&position<native[0].Parameters.Count,"Positional Harmony argument must exist in native method: "+patch.FullName);
+                    continue;
+                }
+                check(native[0].Parameters.Any(p=>p.Name==parameter.Name),"Named Harmony argument must match actual native metadata: "+patch.FullName+" / "+parameter.Name);
+            }
+        }
     }
 }

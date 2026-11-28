@@ -14,30 +14,31 @@ internal static class LootRateChecks
             {
                 if (category == "tool")
                 {
-                    if (LootRules.IsTrader(source)) expected[Registration.DragonId] = 500;
-                    else if (source == 8) expected[Registration.DragonId] = 100;
+                    if (LootRules.IsTrader(source)) expected[Registration.DragonId] = 1000;
+                    else if (source == 8) expected[Registration.DragonId] = 500;
                     expected[Registration.WrenchId] = 500;
-                    expected[Registration.PickaxeId] = 800;
+                    expected[Registration.PickaxeId] = 2000;
+                    expected[Registration.SmelterId] = 1500;
                 }
                 else if (category == "container") expected[Registration.BeltId] = 100;
                 else if (category == "medical")
                 {
-                    expected[MedicalCatalog.InjectorId] = 500;
-                    expected[MedicalCatalog.MedicalId] = 400;
+                    expected[MedicalCatalog.InjectorId] = 1000;
+                    expected[MedicalCatalog.MedicalId] = 800;
                     expected[CannonAmmoState.RevivalId] = 100;
-                    if (source == 2 || LootRules.IsTrader(source)) expected[MedicalCatalog.RegenerationId] = 50;
+                    if (source == 2 || LootRules.IsTrader(source)) expected[MedicalCatalog.RegenerationId] = 400;
                 }
                 else
                 {
                     if (category == "utility")
                     {
-                        expected[Registration.GunId] = 50;
-                        expected[Registration.ChargeGunId] = 50;
-                        expected[Registration.CellId] = 400;
-                        expected[SpatialCatalog.ChargerId] = 50;
+                        expected[Registration.GunId] = 100;
+                        expected[Registration.ChargeGunId] = 100;
+                        expected[Registration.CellId] = 800;
+                        expected[SpatialCatalog.ChargerId] = 400;
                     }
-                    for (int n = 0; n < 6; n++) expected[LootRules.BonusRound(n)] = 400;
-                    expected[CannonAmmoState.RevivalId] = 50;
+                    for (int n = 0; n < 6; n++) expected[LootRules.BonusRound(n)] = 600;
+                    expected[CannonAmmoState.RevivalId] = 100;
                 }
             }
             var direct = new Dictionary<string, int>();
@@ -64,8 +65,8 @@ internal static class LootRateChecks
         int awarded = 0;
         for (int i = 0; i < 100000; i++)
             if (ArsenalLootPool.TryPick(8, "tool", (i + 0.5) / 100000, 0.9) != null) awarded++;
-        check(awarded == 25000 && ArsenalLootPool.TryPick(8, "tool", 0.25, 0) == null,
-            "A CCL bonus-entry hit must award an item exactly 25 percent of the time");
+        check(awarded == 40000 && ArsenalLootPool.TryPick(8, "tool", 0.4, 0) == null,
+            "A CCL bonus-entry hit must award an item exactly 40 percent of the time");
         foreach (int source in new[] { 0, 1, 4, 511 })
         foreach (string category in new[] { "tool", "utility", "medical", "ammo", "battery", "food", "custom", "", null! })
             check(ArsenalLootPool.TryPick(source, category, 0, 0) == null,

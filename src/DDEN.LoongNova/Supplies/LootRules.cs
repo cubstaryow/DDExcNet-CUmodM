@@ -5,19 +5,20 @@ namespace DDEN.LoongNova
     // Chance per successful draw of the matching category, not per container or per generated loot pool.
     internal static class LootRules
     {
-        internal const double DragonChance = 0.005;
+        internal const double DragonChance = 0.01;
         internal const double WrenchChance = 0.005;
-        internal const double PickaxeChance = 0.008;
+        internal const double PickaxeChance = 0.02;
+        internal const double SmelterChance = 0.015, ChargerChance = 0.004;
         internal const double BeltChance = 0.001;
-        internal const double InjectorChance = 0.005;
-        internal const double MedicalChance = 0.004;
-        internal const double RegenerationChance = 0.0005;
+        internal const double InjectorChance = 0.01;
+        internal const double MedicalChance = 0.008;
+        internal const double RegenerationChance = 0.004;
         internal const double RevivalMedicalChance = 0.001;
-        internal const double RevivalAmmoChance = 0.0005;
-        internal const double GunChance = 0.0005;
-        internal const double CellChance = 0.004;
-        internal const double AmmoChance = 0.004;
-        internal const double CrateDragonChance = 0.001;
+        internal const double RevivalAmmoChance = 0.001;
+        internal const double GunChance = 0.001;
+        internal const double CellChance = 0.008;
+        internal const double AmmoChance = 0.006;
+        internal const double CrateDragonChance = 0.005;
         internal const double ElderChance = 0.25;
         internal static bool IsTrader(int source) => source == 16 || source == 32 || source == 64 || source == 112;
         internal static bool IsContainer(int source) => source == 8 || source == 128 || source == 256;
@@ -57,6 +58,7 @@ namespace DDEN.LoongNova
                 if (roll < dragon) return Registration.DragonId;
                 if (roll < dragon + WrenchChance) return Registration.WrenchId;
                 if (roll < dragon + WrenchChance + PickaxeChance) return Registration.PickaxeId;
+                if (roll < dragon + WrenchChance + PickaxeChance + SmelterChance) return Registration.SmelterId;
             }
             else if (category == "utility")
             {
@@ -64,7 +66,7 @@ namespace DDEN.LoongNova
                 if (roll < GunChance * 2) return Registration.ChargeGunId;
                 if (roll < GunChance * 2 + CellChance) return Registration.CellId;
                 double chargerStart = GunChance * 2 + CellChance + AmmoChance * 6 + RevivalAmmoChance;
-                if (roll >= chargerStart && roll < chargerStart + GunChance) return SpatialCatalog.ChargerId;
+                if (roll >= chargerStart && roll < chargerStart + ChargerChance) return SpatialCatalog.ChargerId;
                 return SelectAmmo(roll - (GunChance * 2 + CellChance));
             }
             else if (category == "ammo") return SelectAmmo(roll);

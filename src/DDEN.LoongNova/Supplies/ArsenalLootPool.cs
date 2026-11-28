@@ -5,7 +5,7 @@ namespace DDEN.LoongNova
 {
     internal static class ArsenalLootPool
     {
-        internal const double AwardChance = 0.25;
+        internal const double AwardChance = 0.40;
         internal static string TryPick(int source, string category, double awardRoll, double weightRoll)
         {
             if (double.IsNaN(awardRoll) || awardRoll < 0 || awardRoll >= AwardChance) return null;
@@ -28,6 +28,7 @@ namespace DDEN.LoongNova
                 else if (source == 8) yield return new Entry(Registration.DragonId, LootRules.CrateDragonChance);
                 yield return new Entry(Registration.WrenchId, LootRules.WrenchChance);
                 yield return new Entry(Registration.PickaxeId, LootRules.PickaxeChance);
+                yield return new Entry(Registration.SmelterId, LootRules.SmelterChance);
             }
             else if (category == "container") yield return new Entry(Registration.BeltId, LootRules.BeltChance);
             else if (category == "medical")
@@ -44,7 +45,7 @@ namespace DDEN.LoongNova
                     yield return new Entry(Registration.GunId, LootRules.GunChance);
                     yield return new Entry(Registration.ChargeGunId, LootRules.GunChance);
                     yield return new Entry(Registration.CellId, LootRules.CellChance);
-                    yield return new Entry(SpatialCatalog.ChargerId, LootRules.GunChance);
+                    yield return new Entry(SpatialCatalog.ChargerId, LootRules.ChargerChance);
                 }
                 for (int i = 0; i < 6; i++) yield return new Entry(LootRules.BonusRound(i), LootRules.AmmoChance);
                 yield return new Entry(CannonAmmoState.RevivalId, LootRules.RevivalAmmoChance);

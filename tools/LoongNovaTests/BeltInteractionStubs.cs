@@ -89,6 +89,7 @@ namespace DDEN.LoongNova
         internal const string GunId = "dden.loongnova.dragon-scorch";
         internal const string ChargeGunId = "dden.loongnova.charge-prototype";
         internal static bool IsGun(string id) => id == GunId || id == ChargeGunId;
+        internal const string SmelterId="dden.loongnova.portable-dragonflame-smelter";
         internal const string TacticalGogglesId = "dden.loongnova.tactical-goggles";
         internal const string DragonId = "dden.loongnova.dragon";
         internal const string MatterId = "dden.loongnova.dragon-breath-matter";
